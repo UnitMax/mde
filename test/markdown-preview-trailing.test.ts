@@ -10,7 +10,7 @@ const editors: Editor[] = []
 function preview(content: string): Editor {
   const editor = new Editor({
     element: document.createElement('div'),
-    extensions: markdownPreviewExtensions,
+    extensions: markdownPreviewExtensions(),
     content,
     contentType: 'markdown',
     editable: false,

@@ -1205,6 +1205,16 @@ draws more by itself. A thread that stays open gathers every message of a long r
 left the store keeps only its newest 50 (`CHAT_KEPT_MESSAGES`) to show at once the next time, marked
 `cut`; the next read replaces them with the newest page and its cursor instead of adding to them.
 
+**Long replies and reasoning.** Every Markdown editor gets its own `marked` parser
+(`markdownPreviewExtensions()` and `markdownExtensions()` in `lib/markdown-extensions.ts` build a fresh list
+each call). Tiptap otherwise adds each editor's tokenizers to the global `marked` and never takes them off, so
+every parse ran the tokenizers of all editors ever made and grew slower the longer the app ran. Tiptap's
+ordered-list, task-list and table tokenizers, and the math block's start, are wrapped so they look only at the
+lines they need instead of all the rest of the text at every block, which made parsing quadratic in length
+(hundreds of KB of reasoning took seconds; now tens of milliseconds). While a reply streams, `ChatMarkdown`
+redraws it every 120 ms or four times as long as its last redraw took, whichever is longer, and the thinking
+row's preview reads lines from the end instead of splitting the whole text on every token.
+
 **Timeline and scrolling.** From the second prompt on, a slim rail at the left edge of the
 conversation (the left, because the floating sidebar card takes the top right corner and would cover it) has one short mark for each of the user's prompts (`ChatTimeline`, with the pure
 logic in `lib/chat-timeline.ts`). The marks follow the reading position: the turn being read, the

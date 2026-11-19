@@ -15,7 +15,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     // Keep the editor instance in this child so modal state updates do not recreate it.
     const editor = useEditor(
       {
-        extensions: markdownExtensions,
+        extensions: markdownExtensions(),
         content: defaultValue,
         contentType: 'markdown',
         injectCSS: false,

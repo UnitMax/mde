@@ -26,7 +26,7 @@ export function MarkdownPreview({ path, content, width, onOpenFile, finderRef, o
   focusRef.current = onFocus
   const editor = useEditor(
     {
-      extensions: markdownPreviewExtensions,
+      extensions: markdownPreviewExtensions(),
       content,
       contentType: 'markdown',
       editable: false,

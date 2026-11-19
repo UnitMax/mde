@@ -466,9 +466,51 @@ function headingOf(line: string): string | null {
   return title ? (title.length > 120 ? `${title.slice(0, 119)}…` : title) : null
 }
 
+/*
+ * These run on every token of a streamed reply, and a model's reasoning can be hundreds of KB, so they read lines from
+ * the end they need without splitting all of the text.
+ */
+
+/** The first line of `text` for which `take` gives something, and what it gave. */
+function firstLineOf<T>(text: string, take: (line: string) => T | null | undefined | ''): T | undefined {
+  for (let start = 0; start <= text.length;) {
+    const newline = text.indexOf('\n', start)
+    const end = newline < 0 ? text.length : newline
+    const value = take(text.slice(start, end))
+    if (value) return value
+    start = end + 1
+  }
+  return undefined
+}
+
+/** The last line of `text` for which `take` gives something, and what it gave. */
+function lastLineOf<T>(text: string, take: (line: string) => T | null | undefined | ''): T | undefined {
+  for (let end = text.length; end >= 0;) {
+    // At 0 there is nothing before the line (and lastIndexOf would still look at index 0).
+    const start = end === 0 ? 0 : text.lastIndexOf('\n', end - 1) + 1
+    const value = take(text.slice(start, end))
+    if (value) return value
+    if (start === 0) return undefined
+    end = start - 1
+  }
+  return undefined
+}
+
 /** The heading a thought opens with, as the models that title their thoughts write it (`**Planning the change**`). */
 export function reasoningTitle(text: string): string | null {
-  return headingOf(text.split('\n').find((line) => line.trim()) ?? '')
+  return headingOf(firstLineOf(text, (line) => line.trim() && line) ?? '')
+}
+
+/** The latest line of `text` that is a heading. Only lines starting with `*` or `#` can be, and a search finds those. */
+function latestHeading(text: string): string | null {
+  // Lines are split at "\n" alone; the `m` flag would also start one after "\r" or "\u2028".
+  const starts = Array.from(text.matchAll(/(?:^|\n)[^\S\n]*[*#]/g), (match) => match.index + (match[0].startsWith('\n') ? 1 : 0))
+  for (let index = starts.length - 1; index >= 0; index -= 1) {
+    const end = text.indexOf('\n', starts[index]!)
+    const title = headingOf(text.slice(starts[index]!, end < 0 ? text.length : end))
+    if (title) return title
+  }
+  return null
 }
 
 /**
@@ -481,12 +523,9 @@ export function reasoningPreview(text: string, max = 160): string | null {
   // The last line is open until a newline closes it; of it, only the sentences that have ended are taken.
   const closed = text.slice(0, text.lastIndexOf('\n') + 1)
   const ended = /^[\s\S]*[.!?:](?=\s)/.exec(text.slice(closed.length))?.[0] ?? ''
-  const headings = closed.split('\n')
-  for (let index = headings.length - 1; index >= 0; index -= 1) {
-    const title = headingOf(headings[index]!)
-    if (title) return title
-  }
-  const last = (closed + ended).split('\n').map(plainMarkdown).filter(Boolean).pop()
+  const heading = latestHeading(closed)
+  if (heading) return heading
+  const last = plainMarkdown(ended) || lastLineOf(closed, plainMarkdown)
   if (!last) return null
   const sentence = last.split(/(?<=[.!?])\s+/).filter(Boolean).pop() ?? last
   return sentence.length > max ? `${sentence.slice(0, max - 1)}…` : sentence
@@ -494,7 +533,7 @@ export function reasoningPreview(text: string, max = 160): string | null {
 
 /** The first line of the words the agent wrote, without its markup, for a row that opens onto all of them. */
 export function textHeadline(text: string, max = 160): string {
-  const line = text.split('\n').map(plainMarkdown).find(Boolean) ?? ''
+  const line = firstLineOf(text, plainMarkdown) ?? ''
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 

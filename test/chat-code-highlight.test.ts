@@ -14,7 +14,7 @@ const colors = Extension.create({ name: 'chatCodeColors', addProseMirrorPlugins:
 function preview(code: string, label = 'cpp'): Editor {
   const editor = new Editor({
     element: document.createElement('div'),
-    extensions: [...markdownPreviewExtensions, colors],
+    extensions: [...markdownPreviewExtensions(), colors],
     content: `\`\`\`${label}\n${code}\n\`\`\``,
     contentType: 'markdown',
     editable: false,

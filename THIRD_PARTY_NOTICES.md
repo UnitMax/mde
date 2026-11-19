@@ -512,8 +512,8 @@ Generated from `package-lock.json` by `npm run licenses`. 268 shipped package en
 | `lodash-es` | `4.18.1` | no | MIT | https://registry.npmjs.org/lodash-es/-/lodash-es-4.18.1.tgz |
 | `loose-envify` | `1.4.0` | no | MIT | https://registry.npmjs.org/loose-envify/-/loose-envify-1.4.0.tgz |
 | `lucide-react` | `1.31.0` | yes | ISC | https://registry.npmjs.org/lucide-react/-/lucide-react-1.31.0.tgz |
-| `marked` | `16.4.2` | no | MIT | https://registry.npmjs.org/marked/-/marked-16.4.2.tgz |
-| `marked` | `17.0.6` | no | MIT | https://registry.npmjs.org/marked/-/marked-17.0.6.tgz |
+| `marked` | `16.4.2` | yes | MIT | https://registry.npmjs.org/marked/-/marked-16.4.2.tgz |
+| `marked` | `17.0.6` | yes | MIT | https://registry.npmjs.org/marked/-/marked-17.0.6.tgz |
 | `mermaid` | `12.1.0` | yes | MIT | https://registry.npmjs.org/mermaid/-/mermaid-12.1.0.tgz |
 | `node-addon-api` | `7.1.1` | no | MIT | https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.1.tgz |
 | `node-pty` | `1.1.0` | yes | MIT | https://registry.npmjs.org/node-pty/-/node-pty-1.1.0.tgz |

@@ -152,8 +152,11 @@ export const MathBlock = Node.create({
   markdownTokenizer: {
     name: 'mathBlock',
     level: 'block',
+    // Asked at every paragraph, so it looks only to the end of this one: past a blank line a new block begins anyway, and
+    // a search of all the rest of the text each time made a long text quadratic to parse.
     start: (src: string) => {
-      const match = /^ {0,3}(?:\$\$|\\\[)/m.exec(src)
+      const end = src.search(/\n[ \t]*\n/)
+      const match = /^ {0,3}(?:\$\$|\\\[)/m.exec(end < 0 ? src : src.slice(0, end))
       return match ? match.index : -1
     },
     tokenize: (src: string) => blockMath(src),

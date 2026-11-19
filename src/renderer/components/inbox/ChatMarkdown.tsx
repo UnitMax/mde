@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 
 /** Streaming text is re-parsed at most this often. */
 const MARKDOWN_UPDATE_MS = 120
+/** A streamed redraw waits at least this many times as long as the last one took. */
+const REDRAW_COST_FACTOR = 4
 
 /**
  * The Markdown a reply is drawn from. The parser keeps blank lines at either end as empty paragraphs, which drew a
@@ -37,7 +39,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const editor = useEditor(
     {
       extensions: [
-        ...markdownPreviewExtensions.filter((extension) => extension.name !== 'codeBlock'),
+        ...markdownPreviewExtensions().filter((extension) => extension.name !== 'codeBlock'),
         ChatCodeBlock,
         ChatFileLinks.configure({ source: filesRef }),
       ],
@@ -61,15 +63,26 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 
   // The editor starts with the text it is given, so only a change to it needs the editor to be filled again. Redrawing
   // what is already drawn would replace its nodes under a selection or a search match for nothing.
+  // While text streams in, it is redrawn on a steady beat rather than once the stream pauses, and the beat slows as the
+  // text grows: each redraw parses all of it, so the wait is a few times what the last one took, which keeps a long
+  // reply from taking up the renderer.
   const drawn = useRef(text)
+  const redrawCost = useRef(0)
+  const timer = useRef<number | null>(null)
   useEffect(() => {
-    if (drawn.current === text) return undefined
-    const timer = window.setTimeout(() => {
+    if (drawn.current === text || timer.current !== null) return
+    timer.current = window.setTimeout(() => {
+      timer.current = null
+      if (drawn.current === latest.current) return
+      const started = performance.now()
       drawn.current = latest.current
       editor.commands.setContent(chatMarkdownSource(latest.current), { contentType: 'markdown', emitUpdate: false })
-    }, MARKDOWN_UPDATE_MS)
-    return () => window.clearTimeout(timer)
+      redrawCost.current = performance.now() - started
+    }, Math.max(MARKDOWN_UPDATE_MS, redrawCost.current * REDRAW_COST_FACTOR))
   }, [text, editor])
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current)
+  }, [])
 
   /** A file of the thread's folder that the reply names, clicked or chosen with the keyboard: it opens in the viewer. */
   const openFile = (target: HTMLElement): boolean => {
