@@ -102,6 +102,17 @@ describe('the Inbox terminal store', () => {
     expect(store.getState().layout.panes).toEqual([{ terminalId: ID(1), paneId: 'pane-1' }])
   })
 
+  it('saves a new pane\'s key at once, so the pane has the same ID at the next start', async () => {
+    const first = await load()
+    const terminalId = first.getState().layout.panes[0]!.terminalId
+    expect(stored()).toEqual({ tree: first.getState().layout.tree })
+    // A key made at the next start would be another one.
+    lastPane = 41
+    vi.resetModules()
+    const { useInboxTerminal: restarted } = await import('../src/renderer/store/inbox-terminal')
+    expect(restarted.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([terminalId])
+  })
+
   it('splits on a chosen side, focuses the new pane and stores only the arrangement', async () => {
     const store = await load()
     store.getState().titlePane(ID(1), 'private title')
@@ -402,6 +413,24 @@ describe('the Inbox terminal store', () => {
       expect(refuse).toHaveBeenCalledWith({ requestId: 'req-1', reason: expect.stringContaining('already has 9 panes') })
       expect(store.getState().layout.panes).toHaveLength(panes)
       expect(store.getState().agentArrivals).toBe(0)
+    })
+
+    it('counts panes still being opened for other agents, so requests at once cannot pass the limit', async () => {
+      const releases: Array<() => void> = []
+      const claim = vi.fn(() => new Promise<void>((resolve) => { releases.push(resolve) }))
+      const refuse = vi.fn(async () => {})
+      stubApi({ agentTerminals: { claim, refuse } })
+      const store = await loadNative()
+      for (let index = 0; index < 7; index += 1) store.getState().splitPane(store.getState().layout.panes.at(-1)!.terminalId, 'right')
+      const first = store.getState().openForAgent(request)
+      await vi.waitFor(() => expect(claim).toHaveBeenCalledTimes(1))
+      await store.getState().openForAgent({ ...request, requestId: 'req-2' })
+      expect(claim).toHaveBeenCalledTimes(1)
+      expect(refuse).toHaveBeenCalledWith({ requestId: 'req-2', reason: expect.stringContaining('already has 9 panes') })
+      releases[0]!()
+      await first
+      expect(store.getState().layout.panes).toHaveLength(9)
+      expect(store.getState().agentArrivals).toBe(1)
     })
 
     it('adds nothing when main refuses the claim, and does not answer twice', async () => {

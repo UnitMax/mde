@@ -26,6 +26,8 @@ import { writeTextAtomic } from '../store/atomic-json'
  */
 
 export const TERMINAL_REFERENCES_FILE = 'terminal-references.json'
+/** 2 since Inbox panes got keys that are never handed out again; refs of version 1 are not read. */
+export const TERMINAL_REFERENCES_VERSION = 2
 /** The most refs kept; the oldest go first. */
 export const TERMINAL_REFERENCE_LIMIT = 200
 /** How long the window has to read a pane before the agent is told it could not. */
@@ -89,7 +91,11 @@ export class TerminalReferences {
     this.loaded ??= (async () => {
       try {
         const parsed = JSON.parse(await fs.readFile(this.file(), 'utf8')) as unknown
-        const list = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).references : undefined
+        const record = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : undefined
+        // Refs written before panes had keys of their own may already name a pane that took a closed one's key, which
+        // nothing can tell apart from the pane the person meant: they are dropped, and the person drags the pane in again.
+        if (record?.version !== TERMINAL_REFERENCES_VERSION) return
+        const list = record.references
         if (!Array.isArray(list)) return
         this.entries = list.flatMap((item): Entry[] => {
           if (!item || typeof item !== 'object') return []
@@ -105,7 +111,7 @@ export class TerminalReferences {
   }
 
   private async save(): Promise<void> {
-    await writeTextAtomic(this.file(), `${JSON.stringify({ version: 1, references: this.entries }, null, 2)}\n`)
+    await writeTextAtomic(this.file(), `${JSON.stringify({ version: TERMINAL_REFERENCES_VERSION, references: this.entries }, null, 2)}\n`)
   }
 
   /** The pane's ref, made now if it has none, with the title it is shown with. */

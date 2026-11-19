@@ -627,7 +627,8 @@ place where something other than the window can ask the main process to act, so 
   ones push them out. A ref is bound to its pane, not to its place: Inbox panes get random keys that are never
   handed out again, main forgets a pane's refs when the window says it closed, and at start it keeps only the refs
   of the panes the window brought back (reading waits for that), so a pane that replaced a shared one cannot be
-  read through the old ref.
+  read through the old ref. Refs saved before this (version 1 of the file) are dropped unread, as one may already
+  name such a replacement.
 
 - **Views agents show.** `show_view` sends data, never code: the view is a JSON tree of MDE's own components,
   checked against a fixed catalog (`checkView` in `src/shared/view-spec.ts`) by the bridge before it answers

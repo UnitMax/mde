@@ -350,7 +350,8 @@ appeared, and a reply such as `ESC[?1;2c` landed at the prompt as typed text (`1
 keyboard and without showing a hidden terminal; if the layout changed meanwhile so that the pane would get
 another place (the pane it was to go beside closed), the shell is ended instead. The pane keeps the random key
 it was claimed with, so a pane the person split meanwhile does not take it. A window that cannot add the pane answers `agent-terminal:refuse` with
-the reason; one that does not answer within 20 s fails the call; at most four requests wait at once, and
+the reason; one that does not answer within 20 s fails the call; panes still being opened for other requests count
+toward the pane limit, so requests at once cannot pass it; at most four requests wait at once, and
 agents may open ten terminals a minute.
 
 The command is typed by main from its own copy (`writeWhenStarted`: on the shell's first output, or after
@@ -382,7 +383,9 @@ goes with its pane: a new pane of the Inbox terminal gets a random key (`randomP
 `src/renderer/terminal/tabs.ts`), never the lowest free number as in Sessions, so it never takes the ID of a
 closed one, and the window tells main when a pane closes (`terminal-reference:forget`) and, at start, which panes
 it brought back (`terminal-reference:retain`); main forgets the refs of all others and reads no pane before that.
-An agent given a pane therefore never reads one that came after it. Only Inbox terminal panes that are running
+The single pane the terminal starts with when no arrangement is saved is saved at once, so it keeps its key. Refs
+written before panes had such keys (file version 1) are not read, since one may already name a pane that took a
+closed one's number. An agent given a pane therefore never reads one that came after it. Only Inbox terminal panes that are running
 can get one. After a drop the box asks whether OpenCode's configuration
 for the thread's target has the MDE MCP (`mde-mcp:status`); when it is missing, or starts another copy of MDE,
 a line under the box says the agent cannot read the terminal and links to Settings → OpenCode. It goes once no

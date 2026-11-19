@@ -192,4 +192,15 @@ describe('TerminalReferences', () => {
     expect(sent[0]).toMatchObject({ terminalId: PANE })
     references.answer({ requestId: sent[0]!.requestId, error: 'done' })
   })
+
+  it('drops refs written before panes had keys of their own, which may already name a replacement pane', async () => {
+    await fs.writeFile(join(folder, TERMINAL_REFERENCES_FILE), JSON.stringify({ version: 1, references: [{ ref: 'k3m9x2qavw', terminalId: PANE, title: 'old', createdAt: 1 }] }))
+    const references = new TerminalReferences(folder, counter())
+    await attached(references)
+    expect(await references.resolve('k3m9x2qavw')).toBeUndefined()
+    const { ref } = await references.create(PANE, 'new')
+    const stored = JSON.parse(await fs.readFile(join(folder, TERMINAL_REFERENCES_FILE), 'utf8'))
+    expect(stored).toMatchObject({ version: 2, references: [{ ref }] })
+    expect(await new TerminalReferences(folder, counter()).resolve(ref)).toMatchObject({ terminalId: PANE })
+  })
 })

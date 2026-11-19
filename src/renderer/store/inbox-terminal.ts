@@ -57,6 +57,8 @@ function splitInboxPane(
 function startingLayout(): SessionTerminalLayout {
   const stored = getInboxTerminalLayout()
   const tree = stored?.tree ?? { type: 'pane' as const, paneId: randomPaneId([]) }
+  // Saved at once, so the pane keeps its key, and with it its refs and its folder, at the next start.
+  if (!stored) saveInboxTerminalLayout({ tree })
   return createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, {
     ...INBOX_TERMINAL_TAB,
     layout: { tree, panes: terminalPaneIds(tree).map((id) => ({ id })) },
@@ -127,6 +129,9 @@ export const useInboxTerminal = create<Store>((set, get) => {
     focused = target
     focusTerminalWhenReady(target)
   }
+
+  /** Panes agents asked for whose shells main is starting, not in the layout yet. */
+  let agentPanesOpening = 0
 
   /** An agent given a pane that was closed reads nothing more through it, even from a pane that comes later. */
   const forgetReferences = (terminalId: string): void => {
@@ -241,18 +246,25 @@ export const useInboxTerminal = create<Store>((set, get) => {
         // pane rather than the one in use, so it never lands in the middle of what the person is working in.
         const side: TerminalSplitSide = useInboxFloatingTerminal.getState().floating ? 'right' : 'bottom'
         const previous = get().layout
-        if (previous.panes.length >= MDE_MCP_TERMINAL_PANE_LIMIT) {
-          throw new Error(`The Inbox terminal already has ${previous.panes.length} panes, which is as many as agents may open into. The person has to close one first.`)
+        // Panes other requests are still opening count too: each is checked before main starts its shell, and main
+        // tells the agent it is open as soon as it has started.
+        if (previous.panes.length + agentPanesOpening >= MDE_MCP_TERMINAL_PANE_LIMIT) {
+          throw new Error(`The Inbox terminal already has ${previous.panes.length + agentPanesOpening} panes, which is as many as agents may open into. The person has to close one first.`)
         }
         const source = previous.panes.at(-1)
         const next = source && splitInboxPane(previous, source.terminalId, side)
         const added = next?.panes.find((pane) => !previous.panes.includes(pane))
         if (!source || !next || !added) throw new Error('The Inbox terminal has no room for another pane. The person has to close one first.')
-        await window.api.agentTerminals.claim({
-          requestId: request.requestId,
-          terminalId: added.terminalId,
-          palette: getTerminalPalette(getTerminalSettings().theme),
-        })
+        agentPanesOpening += 1
+        try {
+          await window.api.agentTerminals.claim({
+            requestId: request.requestId,
+            terminalId: added.terminalId,
+            palette: getTerminalPalette(getTerminalSettings().theme),
+          })
+        } finally {
+          agentPanesOpening -= 1
+        }
         claimed = added.terminalId
         // The layout may have changed while main started the shell: split what is there now. If that names another
         // pane than the one main started, the shell is ended rather than shown in the wrong place.
