@@ -1014,12 +1014,14 @@
   background-image: linear-gradient(
     100deg,
     var(--color-fg-muted) 0%,
-    var(--color-fg-muted) 38%,
+    var(--color-fg-muted) 35%,
     var(--color-fg) 50%,
-    var(--color-fg-muted) 62%,
+    var(--color-fg-muted) 65%,
     var(--color-fg-muted) 100%
   );
-  background-size: 250% 100%;
+  /* Twice the text's width: the gradient repeats, and the run from 100% to -100% below moves it by exactly one
+     repeat, so each pass ends where the next begins. Any other size makes the loop jump, with a part-way pass. */
+  background-size: 200% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
