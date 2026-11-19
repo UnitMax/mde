@@ -10,6 +10,15 @@ import { cn } from '@/lib/utils'
 /** Streaming text is re-parsed at most this often. */
 const MARKDOWN_UPDATE_MS = 120
 
+/**
+ * The Markdown a reply is drawn from. The parser keeps blank lines at either end as empty paragraphs, which drew a
+ * line's worth of room under a text that ended in "\n\n" (as text before a tool call often does), so they are cut.
+ * Only whole blank lines go at the start, so an indented first line keeps its indent.
+ */
+export function chatMarkdownSource(text: string): string {
+  return text.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd()
+}
+
 /** Read-only Markdown for assistant replies and reasoning; the main process checks external links. */
 export const ChatMarkdown = memo(function ChatMarkdown({
   text,
@@ -32,7 +41,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         ChatCodeBlock,
         ChatFileLinks.configure({ source: filesRef }),
       ],
-      content: text,
+      content: chatMarkdownSource(text),
       contentType: 'markdown',
       editable: false,
       injectCSS: false,
@@ -57,7 +66,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     if (drawn.current === text) return undefined
     const timer = window.setTimeout(() => {
       drawn.current = latest.current
-      editor.commands.setContent(latest.current, { contentType: 'markdown', emitUpdate: false })
+      editor.commands.setContent(chatMarkdownSource(latest.current), { contentType: 'markdown', emitUpdate: false })
     }, MARKDOWN_UPDATE_MS)
     return () => window.clearTimeout(timer)
   }, [text, editor])

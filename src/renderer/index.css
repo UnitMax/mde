@@ -435,6 +435,14 @@
     margin: 0.75em 0;
   }
 
+  /*
+   * The parser keeps a run of blank lines inside a reply as an empty paragraph (ChatMarkdown cuts those at the ends);
+   * Markdown draws blank lines as one paragraph break, so a reply does too. ProseMirror fills an empty one with a lone break.
+   */
+  .chat-markdown > p:has(> br.ProseMirror-trailingBreak:only-child) {
+    display: none;
+  }
+
   .chat-markdown strong {
     font-weight: 600;
   }
