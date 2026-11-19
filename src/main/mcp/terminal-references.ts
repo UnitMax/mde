@@ -20,6 +20,9 @@ import { writeTextAtomic } from '../store/atomic-json'
  * Main keeps which pane each ref names, so a message holds only the ref and an agent can name no other pane. A
  * pane keeps its ref, so dragging it in again writes the same one. The refs are kept between runs, because the
  * Inbox terminal's panes keep their IDs between runs and an old message should still name its pane.
+ *
+ * A ref goes with its pane: the window says when a pane is closed, and at start which panes it brought back, so no
+ * ref outlives the pane it was made for. No pane can then be read through a ref the person made for another one.
  */
 
 export const TERMINAL_REFERENCES_FILE = 'terminal-references.json'
@@ -64,6 +67,8 @@ export class TerminalReferences {
   private host: TerminalReferenceHost | null = null
   private entries: Entry[] = []
   private loaded: Promise<void> | null = null
+  /** Whether the window has said which panes it brought back; until then a ref may still name a pane that is gone. */
+  private retained = false
   private readonly pending = new Map<string, Pending>()
 
   constructor(
@@ -124,6 +129,28 @@ export class TerminalReferences {
     return { ref: entry.ref, text: terminalReferenceText(entry.ref, entry.title) }
   }
 
+  /** Forgets the refs of panes that were closed. */
+  async forget(terminalIds: readonly string[]): Promise<void> {
+    await this.load()
+    const gone = new Set(terminalIds)
+    await this.keepOnly((entry) => !gone.has(entry.terminalId))
+  }
+
+  /** Forgets the refs of every pane but these, the ones the window brought back at start. Reading waits for this. */
+  async retain(terminalIds: readonly string[]): Promise<void> {
+    await this.load()
+    const kept = new Set(terminalIds)
+    await this.keepOnly((entry) => kept.has(entry.terminalId))
+    this.retained = true
+  }
+
+  private async keepOnly(keep: (entry: Entry) => boolean): Promise<void> {
+    const entries = this.entries.filter(keep)
+    if (entries.length === this.entries.length) return
+    this.entries = entries
+    await this.save()
+  }
+
   /** The pane a ref names, or undefined when MDE made no such ref (or has let it go). */
   async resolve(ref: string): Promise<{ terminalId: string; title: string } | undefined> {
     await this.load()
@@ -135,9 +162,9 @@ export class TerminalReferences {
   /** What the pane a ref names shows: its last `lines` lines. Throws with a reason the agent reads. */
   async read(ref: string, lines: number): Promise<TerminalReading> {
     const entry = await this.resolve(ref)
-    if (!entry) throw new Error(`MDE has no terminal ${ref}. Only a terminal the person dragged into a message can be read.`)
+    if (!entry) throw new Error(`MDE has no terminal ${ref}: its pane was closed, or it was never put into a message. Only a terminal the person dragged into a message can be read.`)
     const host = this.host
-    if (!host) throw new Error('MDE is still starting. Try again in a moment.')
+    if (!host || !this.retained) throw new Error('MDE is still starting. Try again in a moment.')
     if (this.pending.size >= TERMINAL_READ_PENDING_LIMIT) throw new Error('MDE is still reading other terminals. Try again in a moment.')
     const requestId = randomUUID()
     return new Promise<TerminalReading>((resolve, reject) => {

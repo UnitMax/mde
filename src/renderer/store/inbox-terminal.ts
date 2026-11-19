@@ -27,23 +27,40 @@ import {
   removeTerminalPane,
   terminalFocusTargetAfterRemoval,
   type SessionTerminalLayout,
+  type TerminalPaneState,
   type TerminalSplitSide,
 } from '@/terminal/layout'
-import { splitRuntimePane, createRuntimeLayout, defaultSessionTab } from '@/terminal/tabs'
+import { splitRuntimePane, createRuntimeLayout, defaultSessionTab, randomPaneId } from '@/terminal/tabs'
 
 /** The Inbox terminal is one tab of one session, so it has one tab and nothing to choose between. */
 export const INBOX_TERMINAL_TAB = defaultSessionTab(INBOX_TERMINAL_SESSION_ID)
 
 const RESIZE_SAVE_DELAY_MS = 180
 
-/** One pane, or the arrangement the user last left, with its dividers where they were. */
+/**
+ * A new pane of the Inbox terminal never takes the key of one that was closed: an agent given a closed pane to read
+ * would otherwise read the new one, which nobody gave it.
+ */
+function splitInboxPane(
+  layout: SessionTerminalLayout,
+  sourceTerminalId: string,
+  side: TerminalSplitSide,
+  newPaneId: (panes: readonly TerminalPaneState[]) => string = randomPaneId,
+): SessionTerminalLayout | null {
+  return splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, layout, sourceTerminalId, side, newPaneId)
+}
+
+/**
+ * The arrangement the user last left, with its dividers where they were, or one new pane. That pane gets a new key
+ * too, as the one of a lost arrangement may be named by a pane given to an agent.
+ */
 function startingLayout(): SessionTerminalLayout {
-  const single = createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB)
   const stored = getInboxTerminalLayout()
-  return stored ? createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, {
+  const tree = stored?.tree ?? { type: 'pane' as const, paneId: randomPaneId([]) }
+  return createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, {
     ...INBOX_TERMINAL_TAB,
-    layout: { tree: stored.tree, panes: terminalPaneIds(stored.tree).map((id) => ({ id })) },
-  }) : single
+    layout: { tree, panes: terminalPaneIds(tree).map((id) => ({ id })) },
+  })
 }
 
 interface Store {
@@ -111,6 +128,11 @@ export const useInboxTerminal = create<Store>((set, get) => {
     focusTerminalWhenReady(target)
   }
 
+  /** An agent given a pane that was closed reads nothing more through it, even from a pane that comes later. */
+  const forgetReferences = (terminalId: string): void => {
+    void window.api.terminalReferences.forget({ terminalIds: [terminalId] }).catch(() => undefined)
+  }
+
   const dropAgentCommand = (terminalId: string): void => {
     if (!(terminalId in get().agentCommands)) return
     const { [terminalId]: _dropped, ...rest } = get().agentCommands
@@ -165,7 +187,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
 
     splitPane: (terminalId, side) => {
       const previous = get().layout
-      const next = splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, previous, terminalId, side)
+      const next = splitInboxPane(previous, terminalId, side)
       if (!next) return
       commit(next)
       const added = next.panes.find((pane) => !previous.panes.includes(pane))
@@ -182,7 +204,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
       }
       const previous = get().layout
       const source = previous.panes.find((pane) => pane.terminalId === focused) ?? previous.panes.at(-1)
-      const next = source && splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, previous, source.terminalId, side)
+      const next = source && splitInboxPane(previous, source.terminalId, side)
       const added = next?.panes.find((pane) => !previous.panes.includes(pane))
       if (!next || !added) throw new Error('The terminal has no room for another pane.')
       await window.api.pty.startInFolder({ terminalId: added.terminalId, sessionId: INBOX_TERMINAL_SESSION_ID, folder })
@@ -223,7 +245,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
           throw new Error(`The Inbox terminal already has ${previous.panes.length} panes, which is as many as agents may open into. The person has to close one first.`)
         }
         const source = previous.panes.at(-1)
-        const next = source && splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, previous, source.terminalId, side)
+        const next = source && splitInboxPane(previous, source.terminalId, side)
         const added = next?.panes.find((pane) => !previous.panes.includes(pane))
         if (!source || !next || !added) throw new Error('The Inbox terminal has no room for another pane. The person has to close one first.')
         await window.api.agentTerminals.claim({
@@ -235,7 +257,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
         // The layout may have changed while main started the shell: split what is there now. If that names another
         // pane than the one main started, the shell is ended rather than shown in the wrong place.
         const latest = get().layout
-        const settled = latest === previous ? next : splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, latest, source.terminalId, side)
+        const settled = latest === previous ? next : splitInboxPane(latest, source.terminalId, side, () => added.paneId!)
         if (!settled?.panes.some((pane) => pane.terminalId === added.terminalId && !latest.panes.includes(pane))) {
           disposeRuntimeTerminal(added.terminalId)
           return
@@ -300,6 +322,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
       const next = removeTerminalPane(previous, terminalId)
       if (!next) return
       disposeRuntimeTerminal(terminalId)
+      forgetReferences(terminalId)
       dropAgentCommand(terminalId)
       commit(next)
       focusAfterRemoval(previous, [terminalId], next)
@@ -321,6 +344,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
       const next = removeTerminalPane(previous, info.terminalId)
       if (!next) return
       disposeRuntimeTerminal(info.terminalId)
+      forgetReferences(info.terminalId)
       commit(next)
       focusAfterRemoval(previous, [info.terminalId], next)
     },
@@ -347,6 +371,8 @@ export const useInboxTerminal = create<Store>((set, get) => {
     },
 
     init: () => {
+      // Panes given to agents before this run name panes that may be gone; main keeps only the ones still here.
+      void window.api.terminalReferences.retain({ terminalIds: get().layout.panes.map((pane) => pane.terminalId) }).catch(() => undefined)
       const stopExits = window.api.pty.onExit((info) => get().paneExited(info))
       const stopAgents = window.api.agentTerminals.onOpen((request) => { void get().openForAgent(request) })
       const stopReads = window.api.terminalReferences.onRead((request) => get().answerRead(request))

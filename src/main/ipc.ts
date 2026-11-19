@@ -721,6 +721,12 @@ export function registerIpcHandlers(
     const entry = await terminalReferences?.resolve(req.ref)
     return entry ? { terminalId: entry.terminalId } : null
   })
+  handle<{ terminalIds: string[] }, void>(IpcChannels.terminalReferenceForget, async (req) => {
+    await terminalReferences?.forget(req.terminalIds)
+  })
+  handle<{ terminalIds: string[] }, void>(IpcChannels.terminalReferenceRetain, async (req) => {
+    await terminalReferences?.retain(req.terminalIds)
+  })
   handle<TerminalReadAnswer, void>(IpcChannels.terminalReadAnswer, (req) => terminalReferences?.answer(req))
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))

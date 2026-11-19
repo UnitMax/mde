@@ -1,4 +1,4 @@
-import { isPersistedTerminalLayout } from '@shared/terminal-layouts'
+import { isPersistedTerminalLayout, MAX_TERMINAL_COUNT } from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
 import { goalObjectiveProblem } from '@shared/goal'
 import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@shared/inbox-folder-icons'
@@ -284,6 +284,8 @@ export const ipcPayloadValidators = {
   [IpcChannels.agentTerminalDecide]: object({ terminalId: id, decision: oneOf('run', 'run-for-hour', 'cancel') }),
   [IpcChannels.terminalReferenceCreate]: object({ terminalId: id, title: string(1000, true) }),
   [IpcChannels.terminalReferenceResolve]: object({ ref: isTerminalRef }),
+  [IpcChannels.terminalReferenceForget]: object({ terminalIds: array(id, MAX_TERMINAL_COUNT) }),
+  [IpcChannels.terminalReferenceRetain]: object({ terminalIds: array(id, MAX_TERMINAL_COUNT) }),
   [IpcChannels.terminalReadAnswer]: (value) =>
     object({ requestId: id, error: string(1000) })(value) ||
     object({

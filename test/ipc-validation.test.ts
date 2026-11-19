@@ -145,6 +145,8 @@ const validPayloads = {
   [IpcChannels.agentTerminalDecide]: { terminalId: 'inbox-terminal:tab:default:pane:2', decision: 'run-for-hour' },
   [IpcChannels.terminalReferenceCreate]: { terminalId: 'inbox-terminal:tab:default:pane:pane-2', title: 'Dev server' },
   [IpcChannels.terminalReferenceResolve]: { ref: 'k3m9x2qavw' },
+  [IpcChannels.terminalReferenceForget]: { terminalIds: ['inbox-terminal:tab:inbox-terminal:tab:default:pane:pane-1'] },
+  [IpcChannels.terminalReferenceRetain]: { terminalIds: [] },
   [IpcChannels.terminalReadAnswer]: { requestId: 'r1', reading: { title: 'Dev server', directory: null, running: true, totalLines: 2, text: 'a\tb\nc' } },
   [IpcChannels.opencodeConfigPreview]: { kind: 'native', draft: configDraft },
   [IpcChannels.opencodeConfigSave]: { kind: 'wsl', distro: 'Ubuntu-24.04', draft: configDraft, revision: 'a'.repeat(64) },

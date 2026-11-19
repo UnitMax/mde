@@ -623,7 +623,11 @@ place where something other than the window can ask the main process to act, so 
   the person dropped that pane into a message box (`terminal-reference:create`). An agent can therefore read a
   pane only when it was shown the ref: in its own thread, or passed on by another agent or person. The tool
   takes nothing but a well-formed ref and a line count; the window reads the pane and main checks the answer's
-  shape and size. Reading never writes to the terminal. Refs stay valid until 200 newer ones push them out.
+  shape and size. Reading never writes to the terminal. Refs stay valid until their pane closes or 200 newer
+  ones push them out. A ref is bound to its pane, not to its place: Inbox panes get random keys that are never
+  handed out again, main forgets a pane's refs when the window says it closed, and at start it keeps only the refs
+  of the panes the window brought back (reading waits for that), so a pane that replaced a shared one cannot be
+  read through the old ref.
 
 - **Views agents show.** `show_view` sends data, never code: the view is a JSON tree of MDE's own components,
   checked against a fixed catalog (`checkView` in `src/shared/view-spec.ts`) by the bridge before it answers

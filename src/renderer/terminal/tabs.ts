@@ -48,17 +48,32 @@ export function nextPaneId(panes: readonly TerminalPaneState[]): string {
   return `pane-${index}`
 }
 
+/**
+ * A pane key no pane has had before: random, where `nextPaneId` hands out the lowest number free. The Inbox terminal
+ * uses it because an agent can be given a pane to read (see `@shared/terminal-references`), and a pane that took the
+ * key of a closed one would also take what the agent was given.
+ */
+export function randomPaneId(panes: readonly TerminalPaneState[]): string {
+  const used = new Set(panes.map((pane) => pane.paneId))
+  for (;;) {
+    const bytes = crypto.getRandomValues(new Uint8Array(6))
+    const paneId = `pane-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+    if (!used.has(paneId)) return paneId
+  }
+}
+
 export function splitRuntimePane(
   sessionId: string,
   tabId: string,
   layout: SessionTerminalLayout,
   sourceTerminalId: string,
   side: TerminalSplitSide,
+  newPaneId: (panes: readonly TerminalPaneState[]) => string = nextPaneId,
 ): SessionTerminalLayout | null {
   if (layout.panes.length >= MAX_TERMINAL_COUNT) return null
   const source = layout.panes.find((pane) => pane.terminalId === sourceTerminalId)
   if (!source) return null
-  const paneId = nextPaneId(layout.panes)
+  const paneId = newPaneId(layout.panes)
   const added: TerminalPaneState = {
     terminalId: terminalIdForPane(sessionId, tabId, paneId),
     paneId,

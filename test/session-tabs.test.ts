@@ -6,6 +6,8 @@ import {
   createRuntimeLayout,
   nextPaneId,
   persistRuntimeLayout,
+  randomPaneId,
+  splitRuntimePane,
   sessionTabs,
   tabCloseSelection,
   terminalIdForPane
@@ -89,5 +91,21 @@ describe('session tab runtime helpers', () => {
     const runtime = createRuntimeLayout(session.id, tab)
     expect(runtime.panes).toHaveLength(12)
     expect(persistRuntimeLayout(runtime)).toEqual(tab.layout)
+  })
+})
+
+describe('pane keys that are never handed out again', () => {
+  it('are random, unlike the lowest free number, and skip a key in use', () => {
+    const keys = new Set(Array.from({ length: 200 }, () => randomPaneId([])))
+    expect(keys.size).toBe(200)
+    for (const key of keys) expect(key).toMatch(/^pane-[0-9a-f]{12}$/)
+  })
+
+  it('are used for a split when given, in place of the lowest free number', () => {
+    const layout = createRuntimeLayout('ses', { id: 'tab', name: 'Tab', layout: { tree: { type: 'pane', paneId: 'pane-1' }, panes: [{ id: 'pane-1' }] } })
+    const split = splitRuntimePane('ses', 'tab', layout, terminalIdForPane('ses', 'tab', 'pane-1'), 'right', randomPaneId)
+    expect(split?.panes[1]?.paneId).toMatch(/^pane-[0-9a-f]{12}$/)
+    expect(split?.panes[1]?.terminalId).toBe(terminalIdForPane('ses', 'tab', split!.panes[1]!.paneId!))
+    expect(splitRuntimePane('ses', 'tab', layout, terminalIdForPane('ses', 'tab', 'pane-1'), 'right')?.panes[1]?.paneId).toBe('pane-2')
   })
 })

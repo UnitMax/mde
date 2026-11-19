@@ -267,6 +267,8 @@ export const IpcChannels = {
   agentTerminalDecide: 'agent-terminal:decide',
   terminalReferenceCreate: 'terminal-reference:create',
   terminalReferenceResolve: 'terminal-reference:resolve',
+  terminalReferenceForget: 'terminal-reference:forget',
+  terminalReferenceRetain: 'terminal-reference:retain',
   terminalReadAnswer: 'terminal-read:answer',
 
   windowModeGet: 'window-mode:get',
@@ -799,6 +801,10 @@ export interface RendererApi {
     create(req: TerminalReferenceCreateRequest): Promise<TerminalReferenceCreated>
     /** The pane a ref names, or null when MDE has no such ref. */
     resolve(req: { ref: string }): Promise<{ terminalId: string } | null>
+    /** Panes that were closed: their refs are forgotten, so a pane that comes later cannot be read through them. */
+    forget(req: { terminalIds: string[] }): Promise<void>
+    /** The panes the window brought back at start: the refs of all others are forgotten. */
+    retain(req: { terminalIds: string[] }): Promise<void>
     onRead(listener: (request: TerminalReadRequest) => void): () => void
     answer(req: TerminalReadAnswer): Promise<void>
   }

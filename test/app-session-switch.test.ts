@@ -36,8 +36,9 @@ function stubApi(): unknown {
   const call = (name: string) => (...args: unknown[]) => {
     if (name === 'files.list') listFiles(...args)
     if (name === 'tabs.create') return createTab(...args)
-    const result = (() => undefined) as unknown as { then: (resolve: (value: unknown) => unknown) => Promise<unknown> }
+    const result = (() => undefined) as unknown as { then: (resolve: (value: unknown) => unknown) => Promise<unknown>; catch: () => Promise<unknown> }
     result.then = (resolve) => Promise.resolve(answers[name]).then(resolve)
+    result.catch = () => Promise.resolve(answers[name])
     return result
   }
   return new Proxy({}, {

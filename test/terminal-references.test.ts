@@ -77,8 +77,10 @@ describe('TerminalReferences', () => {
     }
   }
 
-  function attached(references: TerminalReferences, sent: TerminalReadRequest[] = [], window = true): TerminalReadRequest[] {
+  /** A window that brought back `PANE` at start. */
+  async function attached(references: TerminalReferences, sent: TerminalReadRequest[] = [], window = true): Promise<TerminalReadRequest[]> {
     references.attach({ send: (request) => { if (window) sent.push(request); return window }, now: () => 1000 })
+    await references.retain([PANE])
     return sent
   }
 
@@ -119,7 +121,7 @@ describe('TerminalReferences', () => {
 
   it('asks the window for the pane a ref names and passes on its answer', async () => {
     const references = new TerminalReferences(folder, counter())
-    const sent = attached(references)
+    const sent = await attached(references)
     const { ref } = await references.create(PANE, 'Dev server')
     const reading = references.read(ref, 50)
     await vi.waitFor(() => expect(sent).toHaveLength(1))
@@ -140,11 +142,11 @@ describe('TerminalReferences', () => {
     await expect(references.read('k3m9x2qavw', 10)).rejects.toThrow(/dragged into a message/)
     const { ref } = await references.create(PANE, 'a')
     await expect(references.read(ref, 10)).rejects.toThrow(/starting/)
-    attached(references, [], false)
+    await attached(references, [], false)
     await expect(references.read(ref, 10)).rejects.toThrow(/no window/)
 
     const busy = new TerminalReferences(folder, counter())
-    attached(busy)
+    await attached(busy)
     const waiting = Array.from({ length: TERMINAL_READ_PENDING_LIMIT }, () => busy.read(ref, 10))
     await vi.waitFor(async () => expect(await busy.read(ref, 10).catch((error: Error) => error.message)).toMatch(/other terminals/))
     void Promise.allSettled(waiting)
@@ -152,12 +154,42 @@ describe('TerminalReferences', () => {
 
   it('gives up on a window that does not answer', async () => {
     const references = new TerminalReferences(folder, counter())
-    attached(references)
+    await attached(references)
     const { ref } = await references.create(PANE, 'a')
     vi.useFakeTimers()
     const reading = references.read(ref, 10)
     const outcome = expect(reading).rejects.toThrow(/did not answer/)
     await vi.advanceTimersByTimeAsync(TERMINAL_READ_TIMEOUT_MS)
     await outcome
+  })
+
+  it('forgets the refs of a closed pane, so a later pane is not read through them', async () => {
+    const references = new TerminalReferences(folder, counter())
+    const sent = await attached(references)
+    const closed = await references.create(PANE, 'shared')
+    const other = await references.create(`${PANE}x`, 'other')
+    await references.forget([PANE])
+    await expect(references.read(closed.ref, 10)).rejects.toThrow(/dragged into a message/)
+    expect(sent).toHaveLength(0)
+    expect(await new TerminalReferences(folder, counter()).resolve(closed.ref)).toBeUndefined()
+    expect(await references.resolve(other.ref)).toMatchObject({ terminalId: `${PANE}x` })
+  })
+
+  it('reads nothing until the window says which panes it brought back, and forgets the refs of all others', async () => {
+    const earlier = new TerminalReferences(folder, counter())
+    const kept = await earlier.create(PANE, 'kept')
+    const gone = await earlier.create(`${PANE}x`, 'gone')
+
+    const references = new TerminalReferences(folder, counter())
+    const sent: TerminalReadRequest[] = []
+    references.attach({ send: (request) => { sent.push(request); return true }, now: () => 1000 })
+    await expect(references.read(kept.ref, 10)).rejects.toThrow(/starting/)
+    await references.retain([PANE])
+    expect(await references.resolve(gone.ref)).toBeUndefined()
+    expect(await new TerminalReferences(folder, counter()).resolve(gone.ref)).toBeUndefined()
+    void references.read(kept.ref, 10).catch(() => undefined)
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toMatchObject({ terminalId: PANE })
+    references.answer({ requestId: sent[0]!.requestId, error: 'done' })
   })
 })
