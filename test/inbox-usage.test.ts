@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxStore } from '../src/main/inbox/store'
 import { InboxRecorder } from '../src/main/inbox/recorder'
-import { InboxChatService } from '../src/main/inbox/chat'
+import { InboxChatService, USAGE_TIMEOUT_MS } from '../src/main/inbox/chat'
 import { OpenCodeServiceError, serviceUrl, type ServiceOperation, type ServiceRequest } from '../src/main/opencode/service/client'
 import { parseUsageStats } from '../src/main/opencode/service/parse'
 import {
@@ -98,12 +98,12 @@ describe('OpenCode usage statistics', () => {
     expect(calls).toEqual([{
       target: { kind: 'wsl', distro: 'Ubuntu' },
       operation: 'session.stats',
-      request: { query: { tools: 'detail', from: '1700000000000', timezone: 'Europe/Berlin' } },
+      request: { query: { tools: 'detail', from: '1700000000000', timezone: 'Europe/Berlin' }, timeoutMs: USAGE_TIMEOUT_MS },
     }])
 
     response = new OpenCodeServiceError('Not found', 404)
     await expect(service.usage({ folderId: folder.id })).resolves.toEqual({ supported: false, stats: null })
-    expect(calls[1]?.request).toEqual({ query: { tools: 'detail' } })
+    expect(calls[1]?.request).toEqual({ query: { tools: 'detail' }, timeoutMs: USAGE_TIMEOUT_MS })
     response = new OpenCodeServiceError('Broken', 500)
     await expect(service.usage({ folderId: folder.id })).rejects.toThrow('Broken')
     await expect(service.usage({ folderId: 'fld_gone' })).rejects.toThrow('no longer in the Inbox')
@@ -222,6 +222,33 @@ describe('the usage dialog', () => {
     expect(usage).toHaveBeenLastCalledWith(expect.objectContaining({ folderId: 'fld_deb' }))
     await act(async () => testId('usage-refresh')!.click())
     expect(usage).toHaveBeenCalledTimes(4)
+  })
+
+  it('says it is still reading, for how long, and why a long history takes a while', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveUsage!: (state: ChatUsageState) => void
+      usage.mockReturnValueOnce(new Promise((resolve) => { resolveUsage = resolve }))
+      await render()
+      expect(testId('usage-loading')?.textContent).toContain('Reading OpenCode’s statistics')
+      expect(testId('usage-loading-seconds')).toBeNull()
+      await act(async () => { vi.advanceTimersByTime(2_000) })
+      expect(testId('usage-loading-seconds')?.textContent).toBe('2 s')
+      expect(testId('usage-loading-hint')).toBeNull()
+      await act(async () => { vi.advanceTimersByTime(4_000) })
+      expect(testId('usage-loading-hint')?.textContent).toContain('long history')
+      await act(async () => resolveUsage({ supported: true, stats: parseUsageStats(answer) }))
+      expect(testId('usage-loading')).toBeNull()
+
+      // Over the figures already shown while another range is read, its seconds counted from the start again.
+      usage.mockReturnValueOnce(new Promise(() => {}))
+      await act(async () => testId('usage-range-all')!.click())
+      expect(testId('usage-total-tokens')).not.toBeNull()
+      expect(testId('usage-loading')).not.toBeNull()
+      expect(testId('usage-loading-seconds')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('says so when OpenCode has no statistics, or an error when it fails', async () => {

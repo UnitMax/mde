@@ -329,6 +329,39 @@ function timezone(): string | undefined {
   }
 }
 
+/** Whole seconds since it was put on screen, counted once a second. */
+function useElapsedSeconds(): number {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const started = Date.now()
+    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return elapsed
+}
+
+/**
+ * Says the statistics are on their way. OpenCode counts them afresh from every message on each request, so a long
+ * history (All time most of all) can take a while: the seconds and, after a few, why show the app is not stuck.
+ */
+function UsageLoading(): JSX.Element {
+  const elapsed = useElapsedSeconds()
+  return (
+    <div role="status" data-testid="usage-loading" className="flex flex-col items-center gap-2 text-center">
+      <div className="flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1.5 text-xs text-fg-muted shadow-sm">
+        <LoaderCircle className="h-3.5 w-3.5 animate-spin text-fg-subtle" />
+        <span>Reading OpenCode&rsquo;s statistics&hellip;</span>
+        {elapsed >= 2 && <span data-testid="usage-loading-seconds" className="tabular-nums text-fg-subtle">{elapsed} s</span>}
+      </div>
+      {elapsed >= 5 && (
+        <p data-testid="usage-loading-hint" className="max-w-xs rounded-md bg-panel/90 px-2 py-1 text-[11px] text-fg-subtle">
+          OpenCode counts every session again each time, so a long history takes a while.
+        </p>
+      )}
+    </div>
+  )
+}
+
 type Load = { status: 'loading' } | { status: 'error'; message: string } | { status: 'done'; state: ChatUsageState }
 
 /**
@@ -361,6 +394,8 @@ export function InboxUsageDialog({ open, onOpenChange, project }: { open: boolea
   }, [open, service?.folder.id, range, reload])
 
   const loading = load.status === 'loading'
+  // A new count starts the seconds again.
+  const loadKey = `${service?.key}:${range}:${reload}`
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -441,11 +476,18 @@ export function InboxUsageDialog({ open, onOpenChange, project }: { open: boolea
             This OpenCode has no usage statistics. Update OpenCode to see them.
           </p>
         ) : shown ? (
-          <div className={cn('transition-opacity', loading && 'opacity-60')}>
-            <Overview stats={shown.stats} range={shown.range} />
+          <div className="relative" aria-busy={loading}>
+            <div className={cn('transition-opacity', loading && 'pointer-events-none opacity-40')}>
+              <Overview stats={shown.stats} range={shown.range} />
+            </div>
+            {loading && (
+              <div className="absolute inset-x-0 top-8 flex justify-center">
+                <UsageLoading key={loadKey} />
+              </div>
+            )}
           </div>
         ) : (
-          <div className="flex justify-center py-12 text-fg-subtle"><LoaderCircle className="h-5 w-5 animate-spin" /></div>
+          <div className="py-12"><UsageLoading key={loadKey} /></div>
         )}
       </DialogContent>
     </Dialog>

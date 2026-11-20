@@ -603,7 +603,12 @@ the renderer's IANA time zone, which OpenCode uses to cut days. `parseUsageStats
 variants into one row and orders models by tokens and tools by calls. Each OpenCode service counts only its own
 sessions, so with folders in more than one place (several WSL distros) the dialog offers one tab per service, the
 filtered project's first. An OpenCode without the route answers 404 and the dialog asks for an update. Nothing is
-cached: opening the dialog, changing the range and Refresh read again.
+cached: opening the dialog, changing the range and Refresh read again. OpenCode has no cache either: every request
+reads every message in the range from its SQLite database (in 31-day windows, one after another, with `json_extract`
+over each message), so All time on a long history can take many seconds. The request therefore waits up to
+`USAGE_TIMEOUT_MS` (3 minutes) instead of the usual 30 s, and while it runs the dialog shows a "Reading OpenCode's
+statistics…" pill (over the previous figures, dimmed, if any) with the seconds counted from 2 s and, after 5 s, a line
+saying why it takes a while.
 
 ### Inbox sidebar tabs
 

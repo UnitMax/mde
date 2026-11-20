@@ -167,6 +167,11 @@ export const ASIDE_TIMEOUT_MS = 180_000
  * can take well over the usual 30 s for.
  */
 export const TITLE_TIMEOUT_MS = 120_000
+/**
+ * OpenCode counts its usage afresh from every message on each request (no cache), so on a long history All time
+ * can take well over the usual 30 s.
+ */
+export const USAGE_TIMEOUT_MS = 180_000
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
@@ -489,7 +494,7 @@ export class InboxChatService {
     if (request.since !== undefined) query.from = String(request.since)
     if (request.timezone) query.timezone = request.timezone
     try {
-      return { supported: true, stats: parseUsageStats(await this.dependencies.client.request(target, 'session.stats', { query })) }
+      return { supported: true, stats: parseUsageStats(await this.dependencies.client.request(target, 'session.stats', { query, timeoutMs: USAGE_TIMEOUT_MS })) }
     } catch (error) {
       if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { supported: false, stats: null }
       throw error
