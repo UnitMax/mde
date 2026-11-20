@@ -874,6 +874,16 @@ describe('OpenCode service parsing', () => {
     }
   })
 
+  it('lets multi-line commands be approved and shows them whole', () => {
+    const command = "cat <<'EOF' > notes.txt\n\tfirst line\r\nsecond line\nEOF"
+    const [permission] = parsePermissions({ data: [{ id: 'per_1', action: 'bash', resources: [command] }] })
+    expect(permission?.incomplete).toBeUndefined()
+    expect(permission?.resources).toEqual([command])
+    for (const resource of ['bell\u0007', 'escape\u001b[31m', 'form\u000cfeed']) {
+      expect(parsePermissions({ data: [{ id: 'per_1', action: 'bash', resources: [resource] }] })[0]?.incomplete).toBe(true)
+    }
+  })
+
   it('reads new sessions and active sessions', () => {
     expect(parseCreatedSession({ data: { id: 'ses_1', title: 'New' } })).toEqual({ id: 'ses_1', title: 'New' })
     expect(() => parseCreatedSession({ data: { id: '../x' } })).toThrow()

@@ -265,7 +265,8 @@ the validated `chat:*` channels.
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
   request times out after 30 seconds. Redirects are rejected.
 - **Permission approvals.** Incomplete, malformed, overlong or visually ambiguous
-  resource lists disable approval in the card. Main re-reads the request before
+  resource lists disable approval in the card (line breaks and tabs are allowed, so multi-line
+  shell commands can be approved; other control, zero-width and bidi characters are not). Main re-reads the request before
   granting and refuses incomplete or missing scopes; rejection remains available.
 - **Event streams.** SSE limits count full multiline UTF-8 events and cancel
   oversized streams. Aggregate resource budgets remain an open hardening area.

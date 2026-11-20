@@ -832,7 +832,7 @@ export function parsePermissions(value: unknown): ChatPermission[] {
     const rawResources = list(request.resources)
     const incomplete = !Array.isArray(request.resources) || rawResources.length > 50 ||
       rawResources.some((resource) => typeof resource !== 'string' || !resource.trim() || resource.length > 4096 ||
-        /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(resource)) ||
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(resource)) ||
       (request.message !== undefined && (typeof request.message !== 'string' || request.message.length > 4000))
     const resources = rawResources
       .map((resource) => body(resource, 4096).text.trim())

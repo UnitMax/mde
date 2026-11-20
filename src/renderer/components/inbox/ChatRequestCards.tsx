@@ -76,7 +76,7 @@ export function PermissionCard({
       {permission.resources.length > 0 && (
         <ul className="mb-3 flex flex-col gap-0.5">
           {permission.resources.map((resource) => (
-            <li key={resource} className="truncate rounded bg-bg px-2 py-1 font-mono text-[12px] text-fg-muted" title={resource}>
+            <li key={resource} className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-bg px-2 py-1 font-mono text-[12px] text-fg-muted">
               {resource}
             </li>
           ))}
