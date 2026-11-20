@@ -390,7 +390,6 @@ export const ipcPayloadValidators = {
   [IpcChannels.browserSelect]: object({ tabId: browserTabId }),
   [IpcChannels.browserClose]: object({ tabId: browserTabId }),
   [IpcChannels.browserBounds]: object({ bounds: nullable(object({ x: pixels, y: pixels, width: pixels, height: pixels })) }),
-  [IpcChannels.browserCapture]: noPayload,
   [IpcChannels.browserAllowHost]: object({ host: string(2048) }),
   [IpcChannels.browserRemoveHost]: object({ host: string(2048) }),
   [IpcChannels.browserClearData]: noPayload,

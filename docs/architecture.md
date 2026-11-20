@@ -642,7 +642,10 @@ active tab there. It reports `null` when the panel is not on screen (another tab
 the view switched, the window hidden). A native view is drawn above every element of the page, so the viewport also
 watches for anything over it: children of `<body>` other than the app (Radix menus, dialogs and popovers), toasts,
 the floating terminal, and, by sampling `elementFromPoint` on a 6 × 8 grid, overlays inside the app such as the file
-viewer. While covered it shows a picture of the page (`browser:capture`) and the page is taken off the window. It
+viewer. While covered the page is taken off the window and the panel stays empty. No picture of the page stands in:
+one goes stale, a resize under it stretches it, and Electron 45's `capturePage` on a scaled Windows display returned
+only part of the page, enlarged. The floating terminal stays until moved, so while it covers the panel the panel says
+the page is hidden and that moving the terminal or F11 shows it. It
 measures once per animation frame after a mutation, a resize, a scroll or a visibility change, and every 400 ms for
 animations that change nothing it observes.
 

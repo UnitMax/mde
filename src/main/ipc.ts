@@ -837,7 +837,6 @@ export function registerIpcHandlers(
   handle<{ tabId: string }, BrowserState>(IpcChannels.browserSelect, ({ tabId }) => browserOnly().select(tabId))
   handle<{ tabId: string }, BrowserState>(IpcChannels.browserClose, ({ tabId }) => browserOnly().close(tabId))
   handle<{ bounds: BrowserBounds | null }, void>(IpcChannels.browserBounds, ({ bounds }) => browserOnly().setBounds(bounds))
-  handle<void, string | null>(IpcChannels.browserCapture, () => browserOnly().capture())
   handle<{ host: string }, BrowserState>(IpcChannels.browserAllowHost, ({ host }) => browserOnly().allowHost(host))
   handle<{ host: string }, BrowserState>(IpcChannels.browserRemoveHost, ({ host }) => browserOnly().removeHost(host))
   handle<void, void>(IpcChannels.browserClearData, () => browserOnly().clearData())

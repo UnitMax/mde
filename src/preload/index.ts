@@ -256,7 +256,6 @@ const api: RendererApi = {
     select: (tabId) => ipcRenderer.invoke(IpcChannels.browserSelect, { tabId }),
     close: (tabId) => ipcRenderer.invoke(IpcChannels.browserClose, { tabId }),
     setBounds: (bounds) => ipcRenderer.invoke(IpcChannels.browserBounds, { bounds }),
-    capture: () => ipcRenderer.invoke(IpcChannels.browserCapture),
     allowHost: (host) => ipcRenderer.invoke(IpcChannels.browserAllowHost, { host }),
     removeHost: (host) => ipcRenderer.invoke(IpcChannels.browserRemoveHost, { host }),
     clearData: () => ipcRenderer.invoke(IpcChannels.browserClearData),

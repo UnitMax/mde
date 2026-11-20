@@ -167,7 +167,6 @@ const validPayloads = {
   [IpcChannels.browserSelect]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000' },
   [IpcChannels.browserClose]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000' },
   [IpcChannels.browserBounds]: { bounds: { x: 900, y: 80.5, width: 360, height: 600 } },
-  [IpcChannels.browserCapture]: undefined,
   [IpcChannels.browserAllowHost]: { host: 'staging.example.test' },
   [IpcChannels.browserRemoveHost]: { host: 'staging.example.test' },
   [IpcChannels.browserClearData]: undefined,

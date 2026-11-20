@@ -458,18 +458,6 @@ export class MdeBrowser {
     this.syncView()
   }
 
-  /** A picture of the active page, to stand in for it while a menu or dialog is over the panel. */
-  async capture(): Promise<string | null> {
-    const view = this.shown
-    if (!view || view.webContents.isDestroyed()) return null
-    try {
-      const image = await view.webContents.capturePage()
-      return image.isEmpty() ? null : image.toDataURL()
-    } catch {
-      return null
-    }
-  }
-
   /**
    * Allows a host from now on and keeps it. A tab that was refused it opens its page; a page that was refused it
    * for parts of itself loads again.

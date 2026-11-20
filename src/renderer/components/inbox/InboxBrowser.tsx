@@ -31,6 +31,10 @@ const ICON = 'h-3.5 w-3.5'
 
 /** Layers the app draws over everything that are not children of `<body>` besides the app itself. */
 const LAYERS = '.mde-toasts > *, [data-testid="floating-terminal"]'
+const FLOATING_TERMINAL = '[data-testid="floating-terminal"]'
+
+/** What covers the panel: the floating terminal, which stays until moved, or anything else, which goes by itself. */
+type Cover = 'floating-terminal' | 'other'
 
 function intersects(a: DOMRect, b: DOMRect): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom && a.width > 0 && a.height > 0
@@ -41,13 +45,16 @@ function intersects(a: DOMRect, b: DOMRect): boolean {
  * `<body>`), the floating terminal, or an overlay inside the app such as the file viewer. The page is a native view
  * above the whole window, so it would hide them.
  */
-function coveredPanel(panel: HTMLElement, rect: DOMRect): boolean {
+function coveredPanel(panel: HTMLElement, rect: DOMRect): Cover | null {
+  for (const terminal of Array.from(document.querySelectorAll<HTMLElement>(FLOATING_TERMINAL))) {
+    if (intersects(terminal.getBoundingClientRect(), rect)) return 'floating-terminal'
+  }
   for (const child of Array.from(document.body.children)) {
     if (!(child instanceof HTMLElement) || child.contains(panel) || child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue
-    if (intersects(child.getBoundingClientRect(), rect)) return true
+    if (intersects(child.getBoundingClientRect(), rect)) return 'other'
   }
   for (const layer of Array.from(document.querySelectorAll<HTMLElement>(LAYERS))) {
-    if (intersects(layer.getBoundingClientRect(), rect)) return true
+    if (intersects(layer.getBoundingClientRect(), rect)) return 'other'
   }
   // What is on top at points across the panel: anything there but the panel itself covers it.
   const columns = 6
@@ -57,93 +64,43 @@ function coveredPanel(panel: HTMLElement, rect: DOMRect): boolean {
       const x = rect.left + ((column + 0.5) * rect.width) / columns
       const y = rect.top + ((row + 0.5) * rect.height) / rows
       const hit = document.elementFromPoint(x, y)
-      if (hit && !panel.contains(hit)) return true
+      // A modal menu turns off pointer events for the whole body, so the hit test then passes through the app to the
+      // page's background wherever the menu is not. The background is never over the panel; the menu itself was
+      // measured above.
+      if (hit && hit !== document.documentElement && hit !== document.body && !panel.contains(hit)) return 'other'
     }
   }
-  return false
-}
-
-const SNAPSHOT_LINGER_MS = 300
-
-/** Resolves once a picture is ready to paint, or soon anyway if it never says so. */
-function decoded(url: string): Promise<void> {
-  return new Promise((resolve) => {
-    const image = new Image()
-    const timer = window.setTimeout(() => resolve(), 150)
-    const done = (): void => {
-      window.clearTimeout(timer)
-      resolve()
-    }
-    image.onload = done
-    image.onerror = done
-    image.src = url
-    if (typeof image.decode === 'function') image.decode().then(done, done)
-  })
-}
-
-/** Resolves after the next frame has been painted. */
-function painted(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  return null
 }
 
 /**
- * Where the page is drawn. The page itself is a native view the main process lays over this box; while a menu,
- * dialog or toast is over the box, a picture of the page stands in and the page steps aside.
+ * Where the page is drawn. The page itself is a native view the main process lays over this box. While anything of
+ * the app's is over the box the page steps aside and the box stays empty: no picture stands in, since one goes stale
+ * and a resize under it would stretch it. The floating terminal stays until moved, so the box says why then.
  */
 function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
-  const [snapshot, setSnapshot] = useState<string | null>(null)
+  const [cover, setCover] = useState<Cover | null>(null)
   useLayoutEffect(() => {
     const panel = ref.current
     if (!panel) return
     let frame = 0
     let last = ''
-    let captures = 0
     let stopped = false
-    let clearing = 0
     const measure = (): void => {
       frame = 0
       if (stopped) return
       const rect = panel.getBoundingClientRect()
       const onScreen = rect.width >= 2 && rect.height >= 2 && document.visibilityState === 'visible' &&
         (typeof panel.checkVisibility !== 'function' || panel.checkVisibility({ visibilityProperty: true }))
-      const covered = onScreen && coveredPanel(panel, rect)
-      const key = !onScreen ? 'off' : covered ? 'covered' : [rect.left, rect.top, rect.width, rect.height].join(',')
+      const covered = onScreen ? coveredPanel(panel, rect) : null
+      const key = !onScreen ? 'off' : covered ? `covered:${covered}` : [rect.left, rect.top, rect.width, rect.height].join(',')
       if (key === last) return
-      const wasShown = last !== '' && last !== 'off' && last !== 'covered'
       last = key
-      if (key === 'off') {
-        captures += 1
-        void window.api.browser.setBounds(null)
-        return
-      }
-      if (key === 'covered') {
-        if (!wasShown) return
-        // The picture is taken while the page is still there, decoded and painted under it, and only then does the
-        // page step aside, so nothing blank shows in between.
-        const generation = ++captures
-        window.clearTimeout(clearing)
-        void window.api.browser.capture().then(
-          async (url) => {
-            if (generation !== captures) return
-            if (url) await decoded(url)
-            if (generation !== captures) return
-            setSnapshot(url)
-            await painted()
-          },
-          () => undefined,
-        ).finally(() => {
-          if (generation === captures) void window.api.browser.setBounds(null)
-        })
-        return
-      }
-      captures += 1
-      void window.api.browser.setBounds({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
-      // The page needs a moment to draw again where it was taken off; the picture stays under it until then.
-      window.clearTimeout(clearing)
-      clearing = window.setTimeout(() => {
-        if (!stopped) setSnapshot(null)
-      }, SNAPSHOT_LINGER_MS)
+      setCover(covered)
+      void window.api.browser.setBounds(
+        onScreen && !covered ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null,
+      )
     }
     const schedule = (): void => {
       if (!frame && !stopped) frame = requestAnimationFrame(measure)
@@ -167,13 +124,19 @@ function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
       window.removeEventListener('scroll', schedule, true)
       document.removeEventListener('visibilitychange', schedule)
       window.clearInterval(timer)
-      window.clearTimeout(clearing)
       void window.api.browser.setBounds(null)
     }
   }, [tabId])
   return (
     <div ref={ref} data-testid="inbox-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden bg-bg">
-      {snapshot && <img src={snapshot} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-fill" />}
+      {cover === 'floating-terminal' && (
+        <div data-testid="inbox-browser-covered" className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
+          <p className="max-w-xs rounded-md border border-line bg-panel px-3 py-2 text-center text-[12px] text-fg-muted shadow-sm">
+            The page is hidden while the floating terminal covers it. Move the terminal off the panel, or press F11 to
+            hide it.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

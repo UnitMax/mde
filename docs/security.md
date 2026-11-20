@@ -619,8 +619,7 @@ which can be older than a current browser, so the boundary is what it loads rath
   from one of its tabs and always goes through the save dialog.
 - **Where the page is drawn.** The renderer reports the panel's rectangle (`browser:bounds`, finite numbers only)
   and the main process lays the active tab over it, scaled by the window's zoom. While a menu, dialog, toast or the
-  floating terminal covers the panel, the renderer asks for a picture of the page (`browser:capture`), shows it, and
-  the page is taken off the window, so the native view cannot hide MDE's own UI or take clicks meant for it.
+  floating terminal covers the panel, the page is taken off the window (no picture of it is taken), so the native view cannot hide MDE's own UI or take clicks meant for it.
 - **IPC.** `browser:*` channels take a `brt_<uuid>` tab ID, an address of at most 8192 characters, one of five
   actions (back, forward, reload, stop, devtools) or a host; the main process parses every address again. Developer
   tools open in a window of their own.
