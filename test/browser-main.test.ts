@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -261,12 +261,21 @@ describe('MDE browser (main process)', () => {
     expect(responseHeaders({ 'connection-allowlist': ['(response-origin "https://api.test"); webrtc=allow '] })).toEqual({
       'Connection-Allowlist': ['(response-origin "https://api.test"); webrtc=allow;webrtc=block'],
     })
-    // Chromium reads only the first member of the list; a comma inside a quoted pattern does not end it.
+    // Chromium applies only the first member, which gets the block; a comma inside a quoted pattern does not end it,
+    // and the rest of the list is passed on untouched.
     expect(responseHeaders({ 'Connection-Allowlist': ['("https://a.test/x,y"); redirects=allow, ("*://*:*/*"); webrtc=allow'] })).toEqual({
-      'Connection-Allowlist': ['("https://a.test/x,y"); redirects=allow;webrtc=block'],
+      'Connection-Allowlist': ['("https://a.test/x,y"); redirects=allow;webrtc=block, ("*://*:*/*"); webrtc=allow'],
     })
     expect(responseHeaders({ 'Connection-Allowlist': ['(response-origin)', '("*://*:*/*"); webrtc=allow'] })).toEqual({
-      'Connection-Allowlist': ['(response-origin);webrtc=block'],
+      'Connection-Allowlist': ['(response-origin);webrtc=block, ("*://*:*/*"); webrtc=allow'],
+    })
+  })
+
+  it('keeps a malformed later member, so Chromium still refuses the list rather than finding it permissive', async () => {
+    const browser = make()
+    await browser.load()
+    expect(responseHeaders({ 'Connection-Allowlist': ["(response-origin), ('single-quoted')"] })).toEqual({
+      'Connection-Allowlist': ["(response-origin);webrtc=block, ('single-quoted')"],
     })
   })
 
@@ -349,16 +358,82 @@ describe('MDE browser (main process)', () => {
     expect(browser.state().tabs[0]).toMatchObject({ blocked: null, url: 'http://localhost:3000/' })
   })
 
-  it('opens the pages again under the old rule when the WebRTC choice could not be saved', async () => {
+  it('allows WebRTC only once the choice is saved, so a failed save changes no page', async () => {
     const browser = await enabledBrowser()
+    browser.open('http://localhost:3000/')
+    const old = electron.views.at(-1)!.webContents
+    // browser.json cannot be written: its folder is now a file.
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    const turning = browser.setWebRTC(true)
+    // A page loading while the choice is being saved still gets the block, and may not register a service worker.
+    expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
+    expect(sends({ 'Service-Worker': 'script' })).toBe(false)
+    await expect(turning).rejects.toThrow()
+    await rm(dir, { force: true })
+    expect(browser.state().webrtc).toBe(false)
+    expect(old.close).not.toHaveBeenCalled()
+    expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
+  })
+
+  it('writes browser.json one change at a time, so a host saved alongside cannot put back an earlier WebRTC choice', async () => {
+    const browser = await enabledBrowser()
+    await browser.setWebRTC(true)
+    const saved = (): Promise<{ webrtc: boolean; allowedHosts: string[] }> =>
+      readFile(join(dir, 'browser.json'), 'utf8').then((text) => JSON.parse(text))
+    await Promise.all([browser.allowHost('a.test'), browser.setWebRTC(false), browser.allowHost('b.test')])
+    expect(await saved()).toMatchObject({ webrtc: false, allowedHosts: ['a.test', 'b.test'] })
+    await Promise.all([browser.setWebRTC(true), browser.removeHost('a.test')])
+    expect(await saved()).toMatchObject({ webrtc: true, allowedHosts: ['b.test'] })
+    const restored = make()
+    await restored.load()
+    expect(restored.state()).toMatchObject({ webrtc: true, webrtcUnsaved: false })
+  })
+
+  it('saves a WebRTC opt-out that could not be saved when tried again, without allowing WebRTC in between', async () => {
+    const browser = await enabledBrowser()
+    await browser.setWebRTC(true)
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await expect(browser.setWebRTC(false)).rejects.toThrow(/could not be saved/)
+    expect(browser.state()).toMatchObject({ webrtc: false, webrtcUnsaved: true })
+    // Still failing: it says so again, and stays off.
+    await expect(browser.setWebRTC(false)).rejects.toThrow(/could not be saved/)
+    expect(browser.state()).toMatchObject({ webrtc: false, webrtcUnsaved: true })
+    expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
+    await rm(dir, { force: true })
+    await mkdir(dir)
+    expect((await browser.setWebRTC(false)).webrtcUnsaved).toBe(false)
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ webrtc: false })
+  })
+
+  it('counts any later save of browser.json as saving a WebRTC opt-out that failed', async () => {
+    const browser = await enabledBrowser()
+    await browser.setWebRTC(true)
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await expect(browser.setWebRTC(false)).rejects.toThrow(/could not be saved/)
+    await rm(dir, { force: true })
+    await mkdir(dir)
+    await browser.allowHost('a.test')
+    expect(browser.state().webrtcUnsaved).toBe(false)
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ webrtc: false, allowedHosts: ['a.test'] })
+  })
+
+  it('takes WebRTC away at once, and keeps it away when the choice could not be saved', async () => {
+    const browser = await enabledBrowser()
+    await browser.setWebRTC(true)
     browser.open('http://localhost:3000/')
     const old = electron.views.at(-1)!.webContents
     await rm(dir, { recursive: true, force: true })
     await writeFile(dir, '')
-    await expect(browser.setWebRTC(true)).rejects.toThrow()
+    const turning = browser.setWebRTC(false)
+    // In force before the save, and the page under the old rule is already closed.
+    expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
+    expect(old.close).toHaveBeenCalled()
+    await expect(turning).rejects.toThrow(/could not be saved/)
     await rm(dir, { force: true })
     expect(browser.state().webrtc).toBe(false)
-    expect(old.close).toHaveBeenCalled()
     expect(electron.views.at(-1)!.webContents.loadURL).toHaveBeenCalledWith('http://localhost:3000/')
     expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
   })

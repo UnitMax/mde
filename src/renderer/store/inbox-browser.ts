@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { BrowserAction, BrowserState } from '@shared/browser'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 
-const EMPTY: BrowserState = { enabled: false, webrtc: false, tabs: [], activeId: null, allowedHosts: [] }
+const EMPTY: BrowserState = { enabled: false, webrtc: false, webrtcUnsaved: false, tabs: [], activeId: null, allowedHosts: [] }
 
 interface Store {
   /** The browser as the main process last reported it. */

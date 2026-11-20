@@ -25,7 +25,7 @@ function tab(overrides: Partial<BrowserTab> = {}): BrowserTab {
   return { id: TAB_ID, url: 'http://localhost:3000/', title: 'App', loading: false, canGoBack: false, canGoForward: false, blocked: null, blockedHosts: [], error: null, ...overrides }
 }
 
-const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, webrtc: false, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
+const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, webrtc: false, webrtcUnsaved: false, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
 
 let api: {
   setEnabled: ReturnType<typeof vi.fn>
@@ -201,6 +201,17 @@ describe('Settings → Browser', () => {
     await click(byTestId('browser-webrtc'))
     const alerts = Array.from(document.querySelectorAll('[role="alert"]'))
     expect(alerts.map((alert) => alert.textContent)).toEqual(['WebRTC is off, but the service workers of earlier pages could not be removed.'])
+  })
+
+  it('warns when turning WebRTC off could not be saved, and saves it again on request', async () => {
+    useInboxBrowser.setState({ state: { ...state([]), webrtcUnsaved: true } })
+    api.setWebRTC.mockImplementationOnce(async () => ({ ...state([]), webrtcUnsaved: false }))
+    await render(createElement(BrowserSettings))
+    expect(byTestId('browser-webrtc')!.getAttribute('aria-checked')).toBe('false')
+    expect(byTestId('browser-webrtc-unsaved')!.textContent).toMatch(/start with it on next time/)
+    await click(byTestId('browser-webrtc-save-again'))
+    expect(api.setWebRTC).toHaveBeenCalledWith(false)
+    expect(byTestId('browser-webrtc-unsaved')).toBeNull()
   })
 
   it('says the browsing data was cleared only when it was', async () => {

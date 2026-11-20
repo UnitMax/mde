@@ -157,7 +157,32 @@ export function BrowserSettings(): JSX.Element {
             stopped. Pages can also use service workers again.
           </p>
         )}
-        {webrtcError && <p role="alert" className="px-1 text-[11px] text-danger">{webrtcError}</p>}
+        {store.state.webrtcUnsaved && (
+          <div data-testid="browser-webrtc-unsaved" className="flex items-start gap-2 px-1 text-[11px] text-warn">
+            <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">
+              WebRTC is off, but that could not be saved, so MDE will start with it on next time.
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={switchingWebRTC}
+              data-testid="browser-webrtc-save-again"
+              onClick={() => {
+                setSwitchingWebRTC(true)
+                setWebRTCError(null)
+                void store.setWebRTC(false).then((done) => {
+                  if (!done) setWebRTCError(useInboxBrowser.getState().error)
+                  setSwitchingWebRTC(false)
+                })
+              }}
+            >
+              Save again
+            </Button>
+          </div>
+        )}
+        {webrtcError && !store.state.webrtcUnsaved && <p role="alert" className="px-1 text-[11px] text-danger">{webrtcError}</p>}
       </div>
 
       <div className="space-y-2 rounded border border-line bg-panel p-3">

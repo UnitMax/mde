@@ -39,6 +39,8 @@ export interface BrowserState {
   enabled: boolean
   /** Whether pages may use WebRTC, whose connections the host list does not cover. Off unless turned on. */
   webrtc: boolean
+  /** WebRTC was turned off for now, but saving that failed, so browser.json still says on. */
+  webrtcUnsaved: boolean
   tabs: BrowserTab[]
   activeId: string | null
   /** The hosts allowed besides the local ones, as the person added them. */

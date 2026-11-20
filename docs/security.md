@@ -595,8 +595,10 @@ which can be older than a current browser, so the boundary is what it loads rath
   (`BLOCK_WEBRTC_HEADER`): every address and redirects allowed, leaving hosts to the request filter, and all WebRTC
   blocked, which is its default. A server's own allowlist is kept, so its address and redirect rules still apply,
   with `;webrtc=block` put last: a later parameter replaces an earlier one, so it overrides a `webrtc=allow`.
-  Chromium applies only the first member of the list (and only the first of several headers), so only that member
-  is kept. A server value that does not parse stays unparsable, and Chromium then blocks every connection of the page.
+  Chromium applies only the first member of the list (and only the first of several headers), so the parameter goes
+  on that member and the rest is passed on untouched: Chromium parses the whole list first, so a list with a malformed
+  later member stays one it refuses, blocking every connection of the page, rather than becoming a valid permissive
+  one (checked live).
   Frames and popups without a response of their own (`about:blank`, `srcdoc`, `blob:`) inherit it; a page built by a
   service worker would not, so the session refuses service worker scripts (`Service-Worker: script` in
   `onBeforeSendHeaders`) and removes registered ones at startup and when WebRTC is turned off. Until that removal has
@@ -608,7 +610,11 @@ which can be older than a current browser, so the boundary is what it loads rath
   restriction to its own origin and still had WebRTC blocked. The allowlist needs Chromium 152 or later; keep this in mind
   before ever moving Electron back. When WebRTC is allowed, `disable_non_proxied_udp` still keeps it off plain UDP,
   but WebRTC over TCP (a TURN relay, or ICE-TCP) reaches any host; Settings warns about this beside the switch and
-  PRIVACY.md says so. A page keeps the rule it was loaded with, so changing the switch closes every tab's page,
+  PRIVACY.md says so. Allowing WebRTC is saved first and only then put in force, so a failed save changes nothing;
+  taking it away is in force at once, and stays so for the session even if the choice could not be saved (Settings
+  then says MDE will start with it on, with **Save again**; any later successful write of `browser.json` also saves
+  it). Writes of `browser.json` run one at a time, each from the values in force when its turn comes, so a host saved
+  alongside cannot put back an earlier WebRTC choice; allowing WebRTC takes effect inside its own write. A page keeps the rule it was loaded with, so changing the switch closes every tab's page,
   including one kept alive under an "Allow <host>?" page, and opens it again from its address under the new rule
   (Go back on such a page loads the page under it again); a reload would leave the old page running until the new
   one committed.

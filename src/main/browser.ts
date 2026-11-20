@@ -39,6 +39,8 @@ export const BROWSER_FILE = 'browser.json'
 /** Chromium's net error codes the browser does not report: a load it cancelled itself, or one it refused. */
 const QUIET_LOAD_ERRORS = new Set([-3, -20])
 
+const UNSAVED_OFF = 'WebRTC is off, but the choice could not be saved, so MDE will start with it on next time. Try again.'
+
 const WORKERS_FAILED =
   'The MDE browser could not remove the service workers of earlier pages, so no page opens while WebRTC is off. ' +
   'Try again, or clear the browsing data in Settings → Browser.'
@@ -55,35 +57,39 @@ export function isServiceWorkerScript(headers: Record<string, string> | undefine
 }
 
 /**
- * The first member of a structured-field list: everything before the first comma outside a quoted string. Chromium
- * applies only that member of a `Connection-Allowlist`.
+ * Where the first member of a structured-field list ends: at the first comma outside a quoted string, or the end.
+ * Chromium applies only that member of a `Connection-Allowlist`.
  */
-function firstListMember(value: string): string {
+function firstMemberEnd(value: string): number {
   let quoted = false
   for (let index = 0; index < value.length; index++) {
     const char = value[index]
     if (quoted && char === '\\') index++
     else if (char === '"') quoted = !quoted
-    else if (char === ',' && !quoted) return value.slice(0, index)
+    else if (char === ',' && !quoted) return index
   }
-  return value
+  return value.length
 }
 
 /**
- * A response's headers with WebRTC blocked. A server's own allowlist is kept, with its addresses and redirect rule,
- * and `webrtc=block` is put last on it, where it overrides any `webrtc=allow` (a later parameter replaces an earlier
- * one); only its first member is kept, since Chromium reads no other. A server that sent none gets one that blocks
- * WebRTC and nothing else. A server value that does not parse stays unparsable, and Chromium then blocks every
- * connection of the page, WebRTC included.
+ * A response's headers with WebRTC blocked. A server's own allowlist is kept whole, with `webrtc=block` put last on
+ * its first member, the one Chromium applies: a later parameter replaces an earlier one, so it overrides any
+ * `webrtc=allow`, while the server's addresses and redirect rule still apply. The rest of the list is passed on as
+ * it came, so a list Chromium would refuse as malformed (and then block every connection) stays malformed. A server
+ * that sent none gets one that blocks WebRTC and nothing else.
  */
 export function withoutWebRTC(headers: Record<string, string[]> | undefined): Record<string, string[]> {
   const result: Record<string, string[]> = {}
-  let server: string | null = null
+  const server: string[] = []
   for (const [name, values] of Object.entries(headers ?? {})) {
     if (name.toLowerCase() !== 'connection-allowlist') result[name] = values
-    else if (server === null) server = firstListMember(values.join(', ')).trim()
+    else server.push(...values)
   }
-  result['Connection-Allowlist'] = [server ? `${server};webrtc=block` : BLOCK_WEBRTC_HEADER]
+  const value = server.join(', ').trim()
+  const end = firstMemberEnd(value)
+  result['Connection-Allowlist'] = [
+    value ? `${value.slice(0, end).trimEnd()};webrtc=block${value.slice(end)}` : BLOCK_WEBRTC_HEADER,
+  ]
   return result
 }
 
@@ -139,7 +145,11 @@ export class MdeBrowser {
   private enabled = false
   private changingEnabled = false
   private webrtc = false
+  /** What browser.json says about WebRTC, which differs from `webrtc` after a choice that could not be saved. */
+  private savedWebRTC = false
   private changingWebRTC = false
+  /** The write of browser.json under way; writes run one after another, so the last one written is the newest. */
+  private writing: Promise<void> = Promise.resolve()
   /**
    * Whether the service workers of earlier pages are gone. While WebRTC is off no page loads until they are: one
    * could serve a page without the allowlist.
@@ -162,6 +172,7 @@ export class MdeBrowser {
       }
       this.enabled = raw.enabled === true
       this.webrtc = raw.webrtc === true
+      this.savedWebRTC = this.webrtc
       const list = Array.isArray(raw.allowedHosts) ? raw.allowedHosts : []
       const hosts: string[] = []
       for (const entry of list) {
@@ -231,6 +242,7 @@ export class MdeBrowser {
     return {
       enabled: this.enabled,
       webrtc: this.webrtc,
+      webrtcUnsaved: !this.changingWebRTC && this.webrtc !== this.savedWebRTC,
       tabs: this.tabs.map((tab) => ({ ...tab.state, blockedHosts: [...tab.state.blockedHosts] })),
       activeId: this.activeId,
       allowedHosts: [...this.allowed],
@@ -272,26 +284,43 @@ export class MdeBrowser {
    */
   async setWebRTC(allowed: boolean): Promise<BrowserState> {
     if (this.changingWebRTC) throw new Error('The browser setting is being saved.')
-    if (allowed === this.webrtc) return this.state()
+    if (allowed === this.webrtc && allowed === this.savedWebRTC) return this.state()
     this.changingWebRTC = true
     try {
-      this.webrtc = allowed
+      if (!allowed && !this.webrtc) {
+        // Off already, but browser.json still says on, since saving failed: only the saving is tried again.
+        try {
+          await this.save()
+        } catch {
+          throw new Error(UNSAVED_OFF)
+        } finally {
+          this.changed()
+        }
+        return this.state()
+      }
+      if (allowed) {
+        // Kept first and only then in force, within the same write, so no later write can come between: a failed
+        // save changes nothing, and no page ever loads with WebRTC allowed unless the choice was kept.
+        await this.save({ webrtc: true, written: () => { this.webrtc = true } })
+        this.reopenPages(this.closePages())
+        this.changed()
+        return this.state()
+      }
+      // Taking WebRTC away is in force at once, before anything is awaited, whether or not the choice can be kept.
+      this.webrtc = false
       // Workers registered while WebRTC was allowed are there now, so nothing loads until they are removed.
-      if (!allowed) this.workers = 'removing'
-      // Closed before anything is awaited, so no page goes on under the old rule.
+      this.workers = 'removing'
       const pages = this.closePages()
+      let saved = true
       try {
         await this.save()
-      } catch (error) {
-        // Not kept, so the pages open again under the rule they had.
-        this.webrtc = !allowed
-        this.reopenPages(pages)
-        this.changed()
-        throw error
+      } catch {
+        saved = false
       }
-      if (!allowed) await this.removeServiceWorkers()
+      await this.removeServiceWorkers()
       this.reopenPages(pages)
       this.changed()
+      if (!saved) throw new Error(UNSAVED_OFF)
       if (!this.workersGone()) throw new Error(WORKERS_FAILED)
       return this.state()
     } finally {
@@ -537,13 +566,25 @@ export class MdeBrowser {
     return tab
   }
 
-  private async save(): Promise<void> {
-    await writeJsonAtomic(this.options.file, {
-      version: 1,
-      enabled: this.enabled,
-      webrtc: this.webrtc,
-      allowedHosts: this.allowed,
+  /**
+   * Writes browser.json after any write already under way, from the values in force when its turn comes, so a slow
+   * earlier write cannot put back a value changed since. `webrtc` writes a choice before it is in force, and
+   * `written` puts it in force once written, before the next write starts.
+   */
+  private save(next: { webrtc?: boolean; written?: () => void } = {}): Promise<void> {
+    const write = this.writing.catch(() => undefined).then(async () => {
+      const webrtc = next.webrtc ?? this.webrtc
+      await writeJsonAtomic(this.options.file, {
+        version: 1,
+        enabled: this.enabled,
+        webrtc,
+        allowedHosts: this.allowed,
+      })
+      this.savedWebRTC = webrtc
+      next.written?.()
     })
+    this.writing = write
+    return write
   }
 
   /**
