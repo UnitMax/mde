@@ -4,7 +4,7 @@ import type { HostPlatform } from '@shared/types'
  * Where a shortcut works. A group's id is its scope: the same chord may appear in two scopes (Ctrl+F finds in
  * the Inbox and in the file viewer), but never in `global` and another scope, and never twice in one scope.
  */
-export type KeyboardShortcutScope = 'global' | 'inbox' | 'terminal' | 'files-todo'
+export type KeyboardShortcutScope = 'global' | 'inbox' | 'browser' | 'terminal' | 'files-todo'
 
 export interface KeyboardShortcutEntry {
   id: string
@@ -94,6 +94,16 @@ export function getKeyboardShortcutGroups(
           keys: platform === 'darwin' ? ['Ctrl+Click', 'Cmd+Click'] : ['Ctrl+Click'],
           description: 'Select several threads to pin, mark unread or park.'
         }
+      ]
+    },
+    {
+      id: 'browser',
+      label: 'MDE browser',
+      where: 'Works while a page in the Inbox Browser tab has the keyboard.',
+      shortcuts: [
+        { id: 'browser-reload', keys: ['F5', `${primaryModifier}+R`], description: 'Reload the page.' },
+        { id: 'browser-history', keys: ['Alt+Left', 'Alt+Right'], description: 'Go back, go forward.' },
+        { id: 'browser-devtools', keys: [`${primaryModifier}+Shift+I`], description: 'Open or close the page\'s developer tools, in a window of their own.' }
       ]
     },
     {

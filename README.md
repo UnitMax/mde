@@ -27,6 +27,11 @@ input or fails; on Windows the button is also coloured red, yellow or green with
 Dock icon shows the count.
 It needs nothing installed.
 
+The Inbox sidebar's Browser tab opens the web app you are working on (for example `localhost:5173`) beside the
+conversation, with developer tools. It opens only local addresses and the hosts you allow (it asks first), and
+sends links to anything else to your system browser. Right-click any link in MDE to open it in either browser;
+Settings → Browser chooses which one a left click uses and lists the allowed hosts.
+
 The Inbox terminal can also float as a window over the conversation: use the button beside Collapse sidebar on
 the Terminal tab, then F11 shows and hides it. It can be moved, resized from every edge, maximized, and put back.
 

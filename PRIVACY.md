@@ -9,7 +9,8 @@ model-provider or remote MCP client. Its application HTTP client connects to Ope
 service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
 suppress external filters, except the **Fetch** buttons in the Git graph and in the new-thread
-branch picker, which you press to fetch a repository's remotes; the network section explains the remaining boundaries.
+branch picker, which you press to fetch a repository's remotes. The MDE browser (the Inbox Browser tab) connects
+only to local addresses and to hosts you allowed; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
 
@@ -25,6 +26,12 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   distro name). These plain-text records reopen fresh shells in the same folders after restarting
   MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
   in these records.
+- `browser.json` under Electron's user-data directory: the host names you allowed the MDE browser to open
+  besides local addresses. Written when you allow or remove one.
+- The MDE browser's own Chromium storage (the `persist:mde-browser` partition under Electron's user-data
+  directory): cookies, local storage, IndexedDB, cache and similar data of the pages opened in the Browser tab,
+  kept so that logins to the apps you develop last. It is separate from MDE's own storage. Settings → Browser →
+  Clear browsing data deletes it. Which tabs are open is not saved.
 - `inbox-asides.json` under Electron's user-data directory: the answered `/btw` side questions of each
   Inbox thread (the question, the answer and when it arrived, the newest 20 per thread), so they can
   be read again after their card is closed and after a restart. Written when a side question is
@@ -386,6 +393,14 @@ restored thread activity. Provider and MCP connections resulting from these Open
 made by OpenCode. The accepted `localhost` name still depends on OS name resolution, and MDE does
 not install an application-wide firewall or independently verify the actual socket peer.
 
+The MDE browser in the Inbox sidebar loads the pages you open in it. Its pages can connect only to local
+addresses (`localhost` and its subdomains, `127.0.0.0/8`, `[::1]`, `0.0.0.0`) and to the hosts you allowed in
+Settings → Browser or from its "Allow this host?" page; every other request a page makes, including scripts,
+fonts, analytics, WebSockets and redirects, is cancelled before it is sent and named on the tab. Allowed hosts
+receive whatever the page sends them, as in any browser. Links to other hosts open in the system browser. WebRTC
+is limited so that it cannot reach other hosts over UDP. Name resolution of allowed hosts uses the operating
+system and its proxy settings.
+
 MDE disables Chromium's automatic DNS-over-HTTPS upgrade at startup with
 `app.configureHostResolver({ secureDnsMode: 'off' })`. This does not disable ordinary DNS, Node's
 resolver, OS network filesystems, proxies, child-program networking or all Chromium request paths.
@@ -407,7 +422,9 @@ native compilation. Network-backed paths still involve the operating system as d
 
 MDE may open a web link in the system browser when the user activates it in a terminal, Markdown
 preview or chat view. The browser makes any resulting network connection and receives the full URL,
-which may include query data. Opening a folder in a file manager or VS Code can likewise trigger the
+which may include query data. With Settings → Browser → "Clicking a web link opens it in" set to the MDE
+browser, a link to a local address or an allowed host opens in the MDE browser instead; right-clicking a link
+offers either browser. Opening a folder in a file manager or VS Code can likewise trigger the
 receiving application's filesystem, extension or network behavior.
 
 Commands entered by the user in a terminal, including commands run through third-party terminal applications, may access the network. Those are user-directed child-process activities rather than automatic connections made by MDE.

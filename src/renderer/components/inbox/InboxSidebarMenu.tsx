@@ -4,7 +4,7 @@ import { InboxToolCalls } from '@/components/inbox/InboxToolCalls'
 import { InboxSavedPermissions } from '@/components/inbox/InboxSavedPermissions'
 import { useSavedPermissionCount } from '@/store/inbox-saved-permissions'
 import { usePublishFloatingCardWidth } from '@/components/inbox/use-floating-reserve'
-import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, PanelRight, PanelRightClose, PanelRightOpen, ShieldCheck, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, Globe, PanelRight, PanelRightClose, PanelRightOpen, ShieldCheck, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type { DirectoryContext, InboxThread } from '@shared/types'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { useOpenFolder } from '@/components/OpenFolderButtons'
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { inboxChangesKey, useInboxChanges } from '@/store/inbox-changes'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
+import { showInboxBrowser } from '@/lib/web-links'
 import { useInboxView, type FloatingSection } from '@/store/inbox-view'
 import { useWorkspace } from '@/store/workspace'
 
@@ -136,7 +137,8 @@ function OpenFolderRows({ inboxId, kind, distro }: { inboxId: string; kind: 'nat
  * The sidebar as a card floating over the conversation's top right corner: where the thread works and what can be
  * opened from there, each row with what it holds at a glance. Files, Changes and Tools open out below their row, one
  * at a time, and the card scrolls when that runs past the window. The branch opens the Git graph (the card steps aside
- * meanwhile), and Terminal shows the floating terminal or docks the sidebar on its Terminal tab.
+ * meanwhile), Terminal shows the floating terminal or docks the sidebar on its Terminal tab, and Browser docks it on
+ * its Browser tab.
  */
 export function InboxSidebarMenu({
   session,
@@ -203,6 +205,14 @@ export function InboxSidebarMenu({
           title={floatingTerminal ? 'Show the floating terminal (F11)' : 'Dock the sidebar and show its terminal'}
           onClick={() => showInboxTerminal(true)}
           testId="inbox-menu-terminal"
+        />
+        <Row
+          icon={Globe}
+          label="Browser"
+          meta={<PanelRight aria-hidden className="h-3.5 w-3.5" />}
+          title="Dock the sidebar and show its browser"
+          onClick={showInboxBrowser}
+          testId="inbox-menu-browser"
         />
         {threadId && (
           <>

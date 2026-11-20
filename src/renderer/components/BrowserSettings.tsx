@@ -1,0 +1,141 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { Trash2, X } from 'lucide-react'
+import { isBrowserLinkClick, normalizeAllowedHost, type BrowserLinkClick } from '@shared/browser'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { mdeBrowserAvailable } from '@/lib/web-links'
+import { useInboxBrowser } from '@/store/inbox-browser'
+import { getTerminalSettings, saveTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
+
+const LINK_CLICK_LABELS: Record<BrowserLinkClick, string> = {
+  system: 'System browser',
+  mde: 'MDE browser, for local and allowed hosts',
+}
+
+/** Settings → Browser: where clicked links open, and the hosts the MDE browser may open besides local ones. */
+export function BrowserSettings(): JSX.Element {
+  const [linkClick, setLinkClick] = useState<BrowserLinkClick>(() => getTerminalSettings().linkClick)
+  useEffect(() => subscribeTerminalSettings(() => setLinkClick(getTerminalSettings().linkClick)), [])
+  const store = useInboxBrowser()
+  useEffect(() => useInboxBrowser.getState().init(), [])
+  const [host, setHost] = useState('')
+  const [cleared, setCleared] = useState(false)
+  const typed = host.trim() ? normalizeAllowedHost(host) : null
+  const add = async (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    if (!typed) return
+    if (await store.allowHost(typed)) setHost('')
+  }
+  const available = mdeBrowserAvailable()
+  return (
+    <section className="space-y-4" aria-labelledby="browser-settings">
+      <div>
+        <h3 id="browser-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+          Browser
+        </h3>
+        <p className="mt-1 text-xs text-fg-subtle">
+          The MDE browser is the Browser tab of the Inbox sidebar, for the web apps you are building. It opens localhost,
+          127.0.0.1 and the hosts listed here, and refuses every other request a page makes before anything is sent.
+        </p>
+      </div>
+
+      <label className="block text-xs font-medium text-fg-muted">
+        Clicking a web link opens it in
+        <Select
+          value={linkClick}
+          disabled={!available}
+          onValueChange={(value) => {
+            if (!isBrowserLinkClick(value)) return
+            setLinkClick(value)
+            saveTerminalSettings({ ...getTerminalSettings(), linkClick: value })
+          }}
+        >
+          <SelectTrigger className="mt-1" data-testid="browser-link-click">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(LINK_CLICK_LABELS) as BrowserLinkClick[]).map((value) => (
+              <SelectItem key={value} value={value}>
+                {LINK_CLICK_LABELS[value]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="mt-1 block font-normal text-fg-subtle">
+          {available
+            ? 'With the MDE browser chosen, links to any other host still open in the system browser. Right-click a link to choose either browser.'
+            : 'The MDE browser is part of the Inbox, which is not available here, so links open in the system browser.'}
+        </span>
+      </label>
+
+      <div className="space-y-2 rounded border border-line bg-panel p-3" data-testid="browser-allowed-hosts">
+        <div>
+          <h4 className="text-xs font-medium text-fg">Allowed hosts</h4>
+          <p className="mt-0.5 text-[11px] text-fg-subtle">
+            Hosts besides local ones that the MDE browser may open and load from, on any port. Add only hosts you trust,
+            such as your own staging servers.
+          </p>
+        </div>
+        {store.state.allowedHosts.length === 0 ? (
+          <p className="text-[11px] text-fg-subtle">None. Only local addresses open.</p>
+        ) : (
+          <ul className="space-y-1">
+            {store.state.allowedHosts.map((entry) => (
+              <li key={entry} className="flex items-center gap-2 rounded bg-bg px-2 py-1">
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg">{entry}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  title={`Stop allowing ${entry}`}
+                  aria-label={`Remove ${entry}`}
+                  data-testid="browser-host-remove"
+                  onClick={() => void store.removeHost(entry)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form className="flex items-center gap-2" onSubmit={(event) => void add(event)}>
+          <Input
+            value={host}
+            onChange={(event) => setHost(event.target.value)}
+            placeholder="staging.example.internal"
+            spellCheck={false}
+            aria-label="Host to allow"
+            data-testid="browser-host-input"
+            className="font-mono"
+          />
+          <Button type="submit" size="sm" variant="secondary" disabled={!typed} data-testid="browser-host-add">
+            Allow
+          </Button>
+        </form>
+        {host.trim() && !typed && <p className="text-[11px] text-danger">Enter a host name or an IP address, without wildcards.</p>}
+        {store.error && <p role="alert" className="text-[11px] text-danger">{store.error}</p>}
+      </div>
+
+      <div className="space-y-2 rounded border border-line bg-panel p-3">
+        <div>
+          <h4 className="text-xs font-medium text-fg">Browsing data</h4>
+          <p className="mt-0.5 text-[11px] text-fg-subtle">
+            Cookies, storage and the cache of the MDE browser, kept apart from MDE itself. Clearing them signs you out of
+            the apps opened in it.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          data-testid="browser-clear-data"
+          onClick={() => void store.clearData().then(() => setCleared(true))}
+        >
+          <Trash2 aria-hidden className="h-3.5 w-3.5" />
+          {cleared ? 'Cleared' : 'Clear browsing data'}
+        </Button>
+      </div>
+    </section>
+  )
+}

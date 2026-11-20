@@ -108,7 +108,8 @@ beneath each session; this preference is global and stored with the local termin
 OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
 Inbox, which is its background service, and opens the OpenCode configuration
 editor (see **OpenCode configuration editor** below). A command that is empty or contains a control
-character is explained under the field and not used: the Inbox keeps the previous one. The application theme and zoom are also adjustable
+character is explained under the field and not used: the Inbox keeps the previous one. The Browser section chooses
+where a left-clicked web link opens and lists the hosts the MDE browser may open (see **MDE browser** below). The application theme and zoom are also adjustable
 (see **Themes** below). The Appearance section sets the terminal
 font family, size and line height, and separately the font family of the file viewer's source code
 preview; both families are chosen from the same list of installed monospace fonts and default to
@@ -612,17 +613,55 @@ saying why it takes a while.
 
 ### Inbox sidebar tabs
 
-The right-hand sidebar's tabs (Files, Changes, Tools, Permissions, Terminal) are pills with an icon, so all of them fit at the
-sidebar's 260 px default without scrolling. Below a strip width of 23.5rem (a container query on the strip;
-four named tabs need about 22.5rem) only the tab being shown carries its name, and the others are icons
+The right-hand sidebar's tabs (Files, Changes, Tools, Permissions, Terminal, Browser) are pills with an icon, so all of them fit at the
+sidebar's 260 px default without scrolling. Below a strip width of 27.5rem (a container query on the strip;
+Files to Browser named, with their counts, need about 27rem) only the tab being shown carries its name, and the others are icons
 with their count (changed files, tool calls) as a small mark on the corner; their name and count are in the
 tooltip and the accessible name. Wider, every tab is named, with its count beside it. The strip still scrolls
 sideways as a last resort.
 
 The header holds only the tabs. Every tab has a footer of the same height (`SidebarFooter`, 36 px): the tab's own
 buttons on the left (Open folder and Refresh for Files, Git graph and Refresh for Changes, Float terminal for
-Terminal; Tools and Permissions have none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
+Terminal; Tools, Permissions and Browser have none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
 the rail keeps its Expand button at the bottom, in a strip of the footer's height, where Collapse was.
+
+### MDE browser
+
+The Browser tab of the Inbox sidebar (`InboxBrowser.tsx`) opens the web apps being developed next to the
+conversation. It is one browser for the whole Inbox, like the terminal, and is offered on the new-thread page too.
+Its tabs are owned by the main process (`src/main/browser.ts`, `MdeBrowser`): each is a `WebContentsView` in the
+`persist:mde-browser` session, made when the tab first loads something, and the renderer mirrors their state
+(`store/inbox-browser.ts`, pushed as a whole on `browser:changed`, at most once per 16 ms). Up to 12 tabs are open;
+they are not restored after a restart.
+
+The page is a native view over the window, so the renderer only holds its place: `BrowserViewport` reports the
+panel's rectangle in CSS pixels (`browser:bounds`), and the main process scales it by the window's zoom and lays the
+active tab there. It reports `null` when the panel is not on screen (another tab, the sidebar collapsed or floating,
+the view switched, the window hidden). A native view is drawn above every element of the page, so the viewport also
+watches for anything over it: children of `<body>` other than the app (Radix menus, dialogs and popovers), toasts,
+the floating terminal, and, by sampling `elementFromPoint` on a 6 × 8 grid, overlays inside the app such as the file
+viewer. While covered it shows a picture of the page (`browser:capture`) and the page is taken off the window. It
+measures once per animation frame after a mutation, a resize, a scroll or a visibility change, and every 400 ms for
+animations that change nothing it observes.
+
+What a page may load is in [Security → MDE browser boundary](security.md#mde-browser-boundary). A tab whose host
+is not allowed shows "Allow <host>?" instead of the page; hosts a page was refused are listed under the toolbar, each
+allowable from there (which reloads the page). A page that does not load (a dev server that is not running) or
+crashes shows the error with **Try again**. The toolbar has Back, Forward, Reload (Stop while loading) and the
+address field, which takes `localhost:3000` without a scheme; the ⋯ menu has Developer tools (a separate window),
+Open in system browser, Allowed hosts… (Settings → Browser) and Clear browsing data. Right-clicking a page gives
+Back, Forward, Reload, copy and paste, Inspect element, and for a link Open link in system browser and Copy link
+address. F5 or Ctrl+R reloads, Alt+Left and Alt+Right go back and forward, Ctrl+Shift+I toggles the developer tools,
+and F11 and F12 keep working while a page has the keyboard.
+
+Web links elsewhere in MDE (chat replies, tool rows, the transcript's right-click menu, the Markdown file viewer) go
+through `lib/web-links.ts`. A left click follows Settings → Browser → "Clicking a web link opens it in"
+(`linkClick` in the app settings, `system` by default): with **MDE browser** chosen, a link to a local address or an
+allowed host opens there (in the tab already showing it, or a new one) and brings the Inbox and its Browser tab into
+view, docking a floating sidebar; every other link still opens in the system browser, so a click never asks to allow a
+host. Right-clicking a link offers **Open in MDE browser** and **Open in system browser**; the first opens even a host
+that is not allowed, which then asks. Where the Inbox is not available there is no MDE browser and links open in the
+system browser. Settings → Browser also lists the allowed hosts (add, remove) and clears the browsing data.
 
 ### Floating sidebar menu
 
@@ -630,7 +669,7 @@ The right-hand sidebar can float over the conversation instead of standing besid
 **Float as a menu** button (beside Collapse, at the right end of every tab's footer) turns it into a card in the conversation's top right corner, below
 the thread header, and the card's **Dock as sidebar** row turns it back. The choice is kept in `localStorage`
 (`mde.inbox-sidebar-floating`), off by default. The card lists the project, Open in File Explorer (and VS Code where
-offered), Files and Terminal and, for a thread, its branch (opening the Git graph), Changes with the lines added
+offered), Files, Terminal and Browser and, for a thread, its branch (opening the Git graph), Changes with the lines added
 and removed, Tools with how many actions (commands and MCP calls) and failures, and Permissions with how many
 approvals the project has saved (only while it has any).
 
@@ -639,7 +678,8 @@ between runs): the file tree without its panel chrome, the changed files (each o
 conversation, with a refresh button), and the tool calls. The card widens to at least 22rem (or the sidebar's width)
 while a section is open and scrolls when it runs past the window. The card steps aside while the Git graph is open.
 Terminal shows the floating terminal when there is one (F11); otherwise it docks the sidebar on its Terminal tab, which
-needs the room. "Open in Terminal" from the file tree does the same. The card's hide button shrinks it to one small
+needs the room. "Open in Terminal" from the file tree does the same. Browser always docks the sidebar on its
+Browser tab, since the page is a native view laid over the docked panel. The card's hide button shrinks it to one small
 button in its corner (the same collapsed state as the docked sidebar's).
 
 Where there is room, the conversation makes way for the card instead of running under it (`lib/floating-reserve.ts`,

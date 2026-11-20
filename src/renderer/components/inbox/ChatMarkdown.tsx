@@ -4,6 +4,7 @@ import { ChatCodeBlock } from '@/components/inbox/ChatCodeBlock'
 import { ChatFileSourceContext } from '@/components/inbox/mcp-context'
 import { ChatFileLinks, type ChatFileSource } from '@/lib/chat-file-links'
 import { externalLinkUrl } from '@/lib/file-viewer'
+import { openWebLink } from '@/lib/web-links'
 import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
 import { cn } from '@/lib/utils'
 
@@ -111,7 +112,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     const href = anchor.getAttribute('href')
     if (!href) return
     const external = externalLinkUrl(href)
-    if (external) window.open(external, '_blank', 'noopener,noreferrer')
+    if (external) openWebLink(external)
   }
 
   return (

@@ -157,6 +157,18 @@ const validPayloads = {
   [IpcChannels.attentionBeep]: undefined,
   [IpcChannels.floatingTerminalActive]: { active: true },
   [IpcChannels.fileViewerOpen]: { open: true },
+  [IpcChannels.browserState]: undefined,
+  [IpcChannels.browserOpen]: { url: 'http://localhost:5173/' },
+  [IpcChannels.browserNewTab]: undefined,
+  [IpcChannels.browserNavigate]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000', url: 'localhost:3000' },
+  [IpcChannels.browserAction]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000', action: 'devtools' },
+  [IpcChannels.browserSelect]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000' },
+  [IpcChannels.browserClose]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000' },
+  [IpcChannels.browserBounds]: { bounds: { x: 900, y: 80.5, width: 360, height: 600 } },
+  [IpcChannels.browserCapture]: undefined,
+  [IpcChannels.browserAllowHost]: { host: 'staging.example.test' },
+  [IpcChannels.browserRemoveHost]: { host: 'staging.example.test' },
+  [IpcChannels.browserClearData]: undefined,
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)
@@ -184,6 +196,18 @@ describe('IPC payload boundary', () => {
     // Only the fetch takes a folder: the graph channels still name a thread or a terminal.
     rejects(IpcChannels.gitGraph, { folderId: 'fld_1234', limit: 400, scope: 'all' })
     rejects(IpcChannels.gitGraph, { threadId: 'ses_thread', limit: 400, scope: 'all', threads: 'yes' })
+  })
+
+  it('takes browser tabs by their own IDs, finite bounds and only the known actions', () => {
+    const tabId = 'brt_123e4567-e89b-12d3-a456-426614174000'
+    expect(() => assertIpcPayload(IpcChannels.browserBounds, { bounds: null })).not.toThrow()
+    rejects(IpcChannels.browserBounds, { bounds: { x: Number.NaN, y: 0, width: 10, height: 10 } })
+    rejects(IpcChannels.browserBounds, { bounds: { x: 0, y: 0, width: Infinity, height: 10 } })
+    rejects(IpcChannels.browserBounds, { bounds: { x: 0, y: 0, width: 10 } })
+    rejects(IpcChannels.browserAction, { tabId, action: 'executeJavaScript' })
+    rejects(IpcChannels.browserSelect, { tabId: 'ses_thread' })
+    rejects(IpcChannels.browserOpen, { url: 'x'.repeat(8193) })
+    rejects(IpcChannels.browserOpen, { url: 'http://localhost/\u0000' })
   })
 
   it('searches the files of a project for Ctrl+P with a flag, and only with a true or false one', () => {

@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { FilePreviewMenu } from '@/components/FilePreviewMenu'
 import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
 import { externalLinkUrl, resolveRelativeLink } from '@/lib/file-viewer'
+import { openWebLink } from '@/lib/web-links'
 import { domFinder, type FileFinder } from '@/lib/file-find'
 import { SEARCHABLE_ATTRIBUTE } from '@/lib/chat-find'
 import type { MarkdownPreviewWidth } from '@/lib/markdown-preview-width'
@@ -57,8 +58,9 @@ export function MarkdownPreview({ path, content, width, onOpenFile, finderRef, o
   }, [content, editor])
 
   // The Link extension never navigates on its own (openOnClick is off), so a
-  // click is routed here: web links go through window.open, whose target the
-  // main process validates, and relative links open in this viewer.
+  // click is routed here: web links open where Settings → Browser says (the
+  // system browser through window.open, whose target the main process
+  // validates, or the MDE browser), and relative links open in this viewer.
   const onClick = (event: MouseEvent<HTMLDivElement>): void => {
     const anchor = (event.target as HTMLElement).closest('a')
     const href = anchor?.getAttribute('href')
@@ -67,7 +69,7 @@ export function MarkdownPreview({ path, content, width, onOpenFile, finderRef, o
 
     const external = externalLinkUrl(href)
     if (external) {
-      window.open(external, '_blank', 'noopener,noreferrer')
+      openWebLink(external)
       return
     }
     const target = resolveRelativeLink(path, href)

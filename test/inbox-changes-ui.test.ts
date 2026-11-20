@@ -435,7 +435,7 @@ const sidebar = (): Promise<void> => render(createElement(InboxSidebar, { sessio
 
 it('offers Files, Changes, Tools and Terminal tabs for an open thread, starting on Files', async () => {
   await sidebar()
-  expect(Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent?.replace(/\d+$/, ''))).toEqual(['Files', 'Changes', 'Tools', 'Terminal'])
+  expect(Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent?.replace(/\d+$/, ''))).toEqual(['Files', 'Changes', 'Tools', 'Terminal', 'Browser'])
   expect(tab('files')?.getAttribute('aria-selected')).toBe('true')
   expect(tab('changes')?.getAttribute('aria-selected')).toBe('false')
   expect(container.querySelector('[data-testid="file-tree-panel"]')?.textContent).toContain('README.md')
@@ -451,7 +451,7 @@ it('shows the changes on the Changes tab, the same view as the popover, and revi
   expect(changesPanel()?.textContent).toContain('Uncommitted changes against HEAD')
   expect(changes).toHaveBeenLastCalledWith({ threadId: thread.id, details: true })
   // Only the tab on screen carries tabs.
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(4)
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(5)
   const row = changesPanel()!.querySelector<HTMLButtonElement>('[data-testid="inbox-changes-file"]')!
   expect(row.getAttribute('aria-current')).toBeNull()
   await act(async () => row.click())
@@ -513,15 +513,17 @@ it('moves between the tabs with the arrow keys, Home and End', async () => {
   expect(useInboxChanges.getState().tab).toBe('tools')
   await key('ArrowRight')
   expect(useInboxChanges.getState().tab).toBe('terminal')
+  await key('ArrowRight')
+  expect(useInboxChanges.getState().tab).toBe('browser')
   // The ends are joined, as in any set of tabs.
   await key('ArrowRight')
   expect(useInboxChanges.getState().tab).toBe('files')
   await key('ArrowLeft')
-  expect(useInboxChanges.getState().tab).toBe('terminal')
+  expect(useInboxChanges.getState().tab).toBe('browser')
   await key('ArrowLeft')
-  expect(tab('tools')?.getAttribute('aria-selected')).toBe('true')
+  expect(tab('terminal')?.getAttribute('aria-selected')).toBe('true')
   await key('End')
-  expect(useInboxChanges.getState().tab).toBe('terminal')
+  expect(useInboxChanges.getState().tab).toBe('browser')
   await key('Home')
   expect(useInboxChanges.getState().tab).toBe('files')
   // Choosing the tab that is already showing leaves no pending focus to land somewhere unrelated later.
@@ -547,7 +549,7 @@ it('refreshes the Changes tab by hand, and keeps the list while it does', async 
 
 it('offers only Files and Terminal for a new thread, which has no changes yet, and nothing for a collapsed sidebar', async () => {
   await render(createElement(InboxSidebar, { session }))
-  expect(Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent)).toEqual(['Files', 'Terminal'])
+  expect(Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent)).toEqual(['Files', 'Terminal', 'Browser'])
   expect(container.querySelector('[data-testid="file-tree-panel"]')).not.toBeNull()
   expect(changes).not.toHaveBeenCalled()
   // A choice of Changes made for a thread does not leave the new-thread page without a panel.
@@ -578,7 +580,7 @@ it('shows the terminal on the Terminal tab, with the tabs and the collapse butto
   await act(async () => tab('terminal')!.click())
   expect(tab('terminal')?.getAttribute('aria-selected')).toBe('true')
   expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
-  expect(terminalPanel()?.querySelectorAll('[role="tab"]')).toHaveLength(4)
+  expect(terminalPanel()?.querySelectorAll('[role="tab"]')).toHaveLength(5)
   expect(terminalPanel()?.querySelector('[aria-label="Collapse sidebar"]')).not.toBeNull()
   expect(container.querySelector('[data-testid="file-tree-panel"]')).toBe(tree)
   expect(tree?.closest('[data-testid="inbox-files-panel"]')?.className).toContain('hidden')
@@ -591,7 +593,7 @@ it('shows the terminal for a new thread too: it belongs to no thread', async () 
   await render(createElement(InboxSidebar, { session }))
   await act(async () => tab('terminal')!.click())
   expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
-  expect(Array.from(terminalPanel()!.querySelectorAll('[role="tab"]')).map((item) => item.textContent)).toEqual(['Files', 'Terminal'])
+  expect(Array.from(terminalPanel()!.querySelectorAll('[role="tab"]')).map((item) => item.textContent)).toEqual(['Files', 'Terminal', 'Browser'])
   expect(changes).not.toHaveBeenCalled()
 })
 

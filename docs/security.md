@@ -8,7 +8,8 @@ Security-relevant design and maintenance notes. The privacy and network statemen
 MDE has no telemetry, remote crash uploader, updater, direct provider client or
 remote MCP client. Its own MCP server (the MDE MCP) is a local bridge over a Unix socket or named pipe,
 not a network listener. The application HTTP client accepts loopback OpenCode origins
-and rejects redirects. This is not a guarantee of no external traffic: OpenCode,
+and rejects redirects. The MDE browser (the Inbox Browser tab) loads pages only from local addresses and
+the hosts the person allowed; see [MDE browser boundary](#mde-browser-boundary). This is not a guarantee of no external traffic: OpenCode,
 launched commands, OS network mounts and login-shell startup have their own network
 behavior. See [`PRIVACY.md`](../PRIVACY.md).
 
@@ -552,6 +553,41 @@ scheduled, and neither agents nor the MDE MCP can create or change automations. 
 one thread per automation per look, moves the next run past now and writes the file before starting, and
 leaves a run out while the previous run's thread is still working, so a missed stretch or a short interval
 cannot start a pile of agents.
+
+### MDE browser boundary
+
+The Browser tab of the Inbox sidebar shows web apps under development. It ships the Chromium of MDE's Electron,
+which can be older than a current browser, so the boundary is what it loads rather than how new it is.
+
+- **Only local and allowed hosts.** Every request of every page (documents, frames, scripts, styles, fonts,
+  images, `fetch`, WebSockets, redirects, service workers) passes `session.webRequest.onBeforeRequest` on the
+  browser's own session before it is sent. `classifyBrowserRequest` (`src/shared/browser.ts`) lets through
+  `http`, `https`, `ws` and `wss` to loopback (`localhost` and `*.localhost`, `127.0.0.0/8`, `[::1]`, `0.0.0.0`)
+  and to the hosts in `<userData>/browser.json`, plus inline `data:`, `blob:` and `about:` content; everything else,
+  including `file:` and URLs with a user name or password, is cancelled. A host is allowed by its exact name, on
+  every port, never by wildcard; at most 100 are kept, and the file is checked again when read.
+- **Asking first.** An address typed, opened from a link or reached by a redirect whose host is not allowed is not
+  contacted: the tab shows "Allow <host>?" with **Allow and open** and **Open in system browser**. Hosts a page tried
+  to load from are listed on the tab and can be allowed one by one, which reloads the page. Removing a host in
+  Settings → Browser refuses its next requests.
+- **Leaving the browser.** A link or `window.open` to a host that is not allowed goes to the system browser through
+  `safeExternalWebUrl` (http and https only, at most one a second, so a page cannot open a flood of them); one to an
+  allowed host opens as a tab. MDE never opens a second Electron window for a page.
+- **Isolation.** Each tab is a `WebContentsView` with `sandbox`, `contextIsolation`, no Node integration, no
+  preload, no `<webview>`, and the persistent partition `persist:mde-browser`, so pages share no cookies, storage,
+  permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. WebRTC is limited
+  to `disable_non_proxied_udp`, because UDP to other hosts would not pass the request filter. Spell checking is off,
+  so no dictionary is downloaded.
+- **Permissions and downloads.** The browser's session has the same deny-all permission policy as the window
+  (camera, microphone, notifications, geolocation, clipboard reading, HID, serial, USB). A download is possible only
+  from one of its tabs and always goes through the save dialog.
+- **Where the page is drawn.** The renderer reports the panel's rectangle (`browser:bounds`, finite numbers only)
+  and the main process lays the active tab over it, scaled by the window's zoom. While a menu, dialog, toast or the
+  floating terminal covers the panel, the renderer asks for a picture of the page (`browser:capture`), shows it, and
+  the page is taken off the window, so the native view cannot hide MDE's own UI or take clicks meant for it.
+- **IPC.** `browser:*` channels take a `brt_<uuid>` tab ID, an address of at most 8192 characters, one of five
+  actions (back, forward, reload, stop, devtools) or a host; the main process parses every address again. Developer
+  tools open in a window of their own.
 
 ### MDE MCP boundary
 

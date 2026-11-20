@@ -138,8 +138,8 @@ describe('the right-click menu of a conversation', () => {
     const view = await render()
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     await rightClick(view.querySelector('a[href="https://example.com/docs"]')!)
-    expect(labels()).toEqual(['Copy link address', 'Open link', 'Copy message as Markdown', 'Select all', 'Copy conversation as Markdown'])
-    await choose('Open link')
+    expect(labels()).toEqual(['Copy link address', 'Open in MDE browser', 'Open in system browser', 'Copy message as Markdown', 'Select all', 'Copy conversation as Markdown'])
+    await choose('Open in system browser')
     expect(open).toHaveBeenCalledExactlyOnceWith('https://example.com/docs', '_blank', 'noopener,noreferrer')
 
     await rightClick(view.querySelector('a[href="https://example.com/docs"]')!)
@@ -147,7 +147,8 @@ describe('the right-click menu of a conversation', () => {
     expect(writeText).toHaveBeenLastCalledWith('https://example.com/docs')
 
     await rightClick(view.querySelector('a[href="./notes.md"]')!)
-    expect(labels()).not.toContain('Open link')
+    expect(labels()).not.toContain('Open in system browser')
+    expect(labels()).not.toContain('Open in MDE browser')
     await choose('Copy link address')
     expect(writeText).toHaveBeenLastCalledWith('./notes.md')
     expect(open).toHaveBeenCalledOnce()

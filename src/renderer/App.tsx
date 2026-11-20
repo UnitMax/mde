@@ -38,6 +38,7 @@ import { isTodoNewTaskShortcut, isTodoSearchShortcut } from '@/lib/todo-search'
 import { startAlerts } from '@/lib/alert-controller'
 import { startToasts } from '@/lib/toast-controller'
 import { Toaster } from '@/components/Toaster'
+import { useInboxBrowser } from '@/store/inbox-browser'
 import { useWorkspace } from '@/store/workspace'
 import { useFancyBackgroundOn } from '@/store/fancy-mode'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -643,6 +644,8 @@ export function App(): JSX.Element {
   }
 
   // The Inbox shows the files of the open thread's folder, or of the folder the new thread starts in.
+  // The MDE browser's allowed hosts decide where a clicked link opens, so they are read up front.
+  useEffect(() => useInboxBrowser.getState().init(), [])
   const inboxLock = useInboxLock()
   const inboxThreads = useWorkspace((state) => state.inboxThreads)
   const selectedInboxThreadId = useWorkspace((state) => state.selectedInboxThreadId)

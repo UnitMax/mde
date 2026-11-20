@@ -45,10 +45,10 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(29)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(32)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     expect(Array.from(section?.querySelectorAll('h4') ?? []).map((heading) => heading.textContent))
-      .toEqual(['Everywhere', 'Inbox', 'Terminal', 'Files and To Do'])
+      .toEqual(['Everywhere', 'Inbox', 'MDE browser', 'Terminal', 'Files and To Do'])
     expect(section?.textContent).toContain('In every list, menu and dialog')
     expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-terminal-fullscreen"]')?.textContent).toBe('Ctrl+Shift+Enter')
     expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-inbox-search-all"]')?.textContent).toBe('Ctrl+Shift+F')
