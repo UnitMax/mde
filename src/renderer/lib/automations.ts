@@ -8,27 +8,12 @@ import {
   type AutomationSchedule,
   type InboxAutomation,
 } from '@shared/automations'
+import { dayTimeLabel } from '@/lib/time-label'
 
 /** What an automation is called in a list: the first line of its message, without quote marks, cut short. */
 export function automationTitle(text: string, limit = 80): string {
   const line = text.split('\n').map((entry) => entry.replace(/^\s*>+\s?/, '').trim()).find(Boolean) ?? ''
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-const clock = (date: Date): string => `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
-
-function dayStart(time: number): number {
-  const date = new Date(time)
-  date.setHours(0, 0, 0, 0)
-  return date.getTime()
-}
-
-/** Whole days between two moments by the calendar: 23:00 to 01:00 the next morning is one day. */
-function daysApart(from: number, to: number): number {
-  return Math.round((dayStart(to) - dayStart(from)) / 86_400_000)
 }
 
 /**
@@ -41,13 +26,7 @@ export function automationTimeLabel(at: number, now: number, past = false): stri
   if (minutes === 0) return past ? 'just now' : 'in a moment'
   if (minutes > 0 && minutes < 60) return minutes === 1 ? 'in 1 minute' : `in ${minutes} minutes`
   if (minutes < 0 && minutes > -60) return minutes === -1 ? '1 minute ago' : `${-minutes} minutes ago`
-  const date = new Date(at)
-  const days = daysApart(now, at)
-  if (days === 0) return `today at ${clock(date)}`
-  if (days === 1) return `tomorrow at ${clock(date)}`
-  if (days === -1) return `yesterday at ${clock(date)}`
-  const year = date.getFullYear() === new Date(now).getFullYear() ? '' : ` ${date.getFullYear()}`
-  return `${DAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}${year} at ${clock(date)}`
+  return dayTimeLabel(at, now)
 }
 
 /** The line under an automation's name: when it runs next, or that it does not. */

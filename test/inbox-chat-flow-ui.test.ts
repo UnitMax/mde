@@ -68,7 +68,7 @@ describe('the spacing flow of the conversation', () => {
       createElement(ChatMessageView, { message: { kind: 'user', id: 'u1', time: 1, text: 'Hi' } as ChatMessage, directory: '/home/me/app' }),
       createElement(TurnDuration, { ms: 5000 }),
     ))
-    expect(flow(host.querySelector('[data-chat-message="u1"]'))).toEqual(['user', 'user', false])
+    expect(flow(host.querySelector('[data-chat-message="u1"]')?.parentElement)).toEqual(['user', 'user', false])
     expect(flow(host.querySelector('[data-testid="chat-turn-duration"]'))).toEqual(['footer', 'footer', true])
   })
 })

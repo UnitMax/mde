@@ -6,13 +6,14 @@ import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolCallView } from '@/components/inbox/ChatTools'
-import { ActivityRow, flowAttrs, Surface, type FlowKind } from '@/components/inbox/chat-ui'
+import { ActivityRow, CopyButton, flowAttrs, Surface, type FlowKind } from '@/components/inbox/chat-ui'
 import { formatTokens, messageBlocks } from '@/lib/chat'
 import type { RenderBlock } from '@/lib/chat-tools'
 import { splitQuotes } from '@/lib/chat-quote'
 import { splitMentions, type MentionPart } from '@/lib/file-mentions'
 import { splitTerminalReferences, type TerminalReferenceToken } from '@shared/terminal-references'
 import { TerminalReferenceChip } from '@/components/inbox/TerminalReferenceChip'
+import { dayTimeLabel } from '@/lib/time-label'
 import { cn } from '@/lib/utils'
 
 /**
@@ -82,11 +83,37 @@ export function UserBubble({ message, pending = false }: { message: Extract<Chat
   )
 }
 
-/** One message of the conversation. */
+/**
+ * When one of the user's messages was sent, and a button that copies it: a quiet line under the bubble that shows
+ * while the message is hovered or has focus. It hangs in the room under the message, so showing it moves nothing.
+ * `now` is when the line was last shown, so that "today" stays true on a thread left open overnight.
+ */
+function UserMessageFooter({ message, now }: { message: Extract<ChatMessage, { kind: 'user' }>; now: number }): JSX.Element {
+  return (
+    <div
+      data-testid={`chat-sent-footer-${message.id}`}
+      className="absolute right-0 top-full mt-1 flex items-center gap-1 text-[11px] text-fg-subtle opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+    >
+      {message.time > 0 && (
+        <time
+          data-testid={`chat-sent-time-${message.id}`}
+          dateTime={new Date(message.time).toISOString()}
+          title={new Date(message.time).toLocaleString()}
+          className="select-none tabular-nums"
+        >
+          {dayTimeLabel(message.time, now)}
+        </time>
+      )}
+      <CopyButton text={message.text} label="Copy message" />
+    </div>
+  )
+}
+
 /** The small buttons beside one of the user's messages, which show while the message is hovered or has focus. */
 const MESSAGE_ACTION =
   'mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-hover hover:text-fg focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100'
 
+/** One message of the conversation. */
 export const ChatMessageView = memo(function ChatMessageView({
   message,
   directory,
@@ -108,34 +135,40 @@ export const ChatMessageView = memo(function ChatMessageView({
   /** Offered on the user's own messages: starts a new thread from just before this message. */
   onFork?: (message: Extract<ChatMessage, { kind: 'user' }>) => void
 }): JSX.Element | null {
+  const [now, setNow] = useState(Date.now)
   if (message.kind === 'user') {
     return (
-      <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id} {...flowAttrs('user')}>
-        {onFork && (
-          <button
-            type="button"
-            aria-label="Fork from before this message"
-            title="Fork from here"
-            data-testid={`chat-fork-from-${message.id}`}
-            onClick={() => onFork(message)}
-            className={MESSAGE_ACTION}
-          >
-            <GitFork aria-hidden className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {onRevert && (
-          <button
-            type="button"
-            aria-label="Revert to before this message"
-            title="Revert to here"
-            data-testid={`chat-revert-to-${message.id}`}
-            onClick={() => onRevert(message)}
-            className={MESSAGE_ACTION}
-          >
-            <Undo2 aria-hidden className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <UserBubble message={message} />
+      // The line under the bubble sits outside the message's own element, so that it is no part of what is
+      // quoted, found or copied of the message.
+      <div className="group relative" onPointerEnter={() => setNow(Date.now())} onFocus={() => setNow(Date.now())} {...flowAttrs('user')}>
+        <div className="flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
+          {onFork && (
+            <button
+              type="button"
+              aria-label="Fork from before this message"
+              title="Fork from here"
+              data-testid={`chat-fork-from-${message.id}`}
+              onClick={() => onFork(message)}
+              className={MESSAGE_ACTION}
+            >
+              <GitFork aria-hidden className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onRevert && (
+            <button
+              type="button"
+              aria-label="Revert to before this message"
+              title="Revert to here"
+              data-testid={`chat-revert-to-${message.id}`}
+              onClick={() => onRevert(message)}
+              className={MESSAGE_ACTION}
+            >
+              <Undo2 aria-hidden className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <UserBubble message={message} />
+        </div>
+        <UserMessageFooter message={message} now={now} />
       </div>
     )
   }

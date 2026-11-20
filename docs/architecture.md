@@ -1181,7 +1181,11 @@ mark, and Open and Fork are gone. Main refuses to send, fork, undo, redo, compac
 start a terminal in it.
 
 **Conversation.** The thread view shows the newest 50 messages and loads older ones when you
-scroll up. User messages are bubbles; assistant text and reasoning are Markdown rendered read-only
+scroll up. User messages are bubbles; hovering or focusing one shows, under it, when it was sent
+(OpenCode's `time.created`, as "today at 20:09", "yesterday at 20:09" or "Mon 16 Nov at 9:00", the full
+date on hover, read again each time it shows) and a button that copies its text as written. The line hangs
+in the gap below the bubble, so it moves nothing, and sits outside the message's element, so it is not part
+of what is quoted or found. Assistant text and reasoning are Markdown rendered read-only
 with the preview's extensions (raw HTML off, links opened through the external-link validator).
 Reasoning is a "Thought" row that updates as it streams, using the same Markdown renderer as
 replies; each tool call is a row too (see **Activity rows** below), whose input and output are each
