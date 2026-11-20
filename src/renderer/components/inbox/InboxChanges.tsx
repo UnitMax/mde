@@ -15,6 +15,7 @@ import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { InboxToolCalls } from './InboxToolCalls'
 import { InboxSavedPermissions } from './InboxSavedPermissions'
+import { useInboxBrowser } from '@/store/inbox-browser'
 import { InboxBrowser } from './InboxBrowser'
 import { useInboxSavedPermissions, useSavedPermissionCount } from '@/store/inbox-saved-permissions'
 import { InboxSidebarMenu, InboxSidebarMenuButton } from './InboxSidebarMenu'
@@ -458,9 +459,9 @@ const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, chang
  * Browser.
  * Permissions is there only while the thread's project has "Always allow" approvals saved.
  */
-const tabsFor = (threadId: string | undefined, saved: number): readonly SidebarTab[] =>
+const tabsFor = (threadId: string | undefined, saved: number, browserEnabled: boolean): readonly SidebarTab[] =>
   SIDEBAR_TABS.filter((item) =>
-    (item !== 'changes' || threadId) && (item !== 'tools' || threadId) && (item !== 'permissions' || (threadId && saved > 0)))
+    (item !== 'browser' || browserEnabled) && (item !== 'changes' || threadId) && (item !== 'tools' || threadId) && (item !== 'permissions' || (threadId && saved > 0)))
 /**
  * Each panel draws its own tabs in its header, so switching replaces the strip that has focus. The tab that was
  * chosen is focused again in the one that takes its place.
@@ -472,9 +473,10 @@ let refocusTab: SidebarTab | null = null
  * Home and End) move between them.
  */
 function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
+  const browserEnabled = useInboxBrowser((s) => s.state.enabled)
   const stored = useInboxChanges((s) => s.tab)
   const saved = useSavedPermissionCount(threadId)
-  const tabs = tabsFor(threadId, saved)
+  const tabs = tabsFor(threadId, saved, browserEnabled)
   const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
     const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
@@ -857,6 +859,7 @@ async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryCon
  * only the other two. It can be dragged wider, which the terminal in particular wants.
  */
 export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element | null {
+  const browserEnabled = useInboxBrowser((s) => s.state.enabled)
   const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
   const floating = useInboxView((s) => s.sidebarFloating)
@@ -864,7 +867,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   const thread = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
   const saved = useSavedPermissionCount(threadId)
   // Changes, Tools and Permissions belong to a thread. Without one, they are not offered and Files shows in their place.
-  const tab = tabsFor(threadId, saved).includes(stored) ? stored : 'files'
+  const tab = tabsFor(threadId, saved, browserEnabled).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
   // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
   const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))

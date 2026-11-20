@@ -559,6 +559,10 @@ cannot start a pile of agents.
 The Browser tab of the Inbox sidebar shows web apps under development. It ships the Chromium of MDE's Electron,
 which can be older than a current browser, so the boundary is what it loads rather than how new it is.
 
+- **Off by default.** The browser exists only after the person enables it in Settings → Browser (`enabled` in
+  `browser.json`). While it is off, the main process refuses to make tabs and cancels every request of its session;
+  turning it off closes all tabs and keeps the allowed hosts and browsing data.
+
 - **Only local and allowed hosts.** Every request of every page (documents, frames, scripts, styles, fonts,
   images, `fetch`, WebSockets, redirects, service workers) passes `session.webRequest.onBeforeRequest` on the
   browser's own session before it is sent. `classifyBrowserRequest` (`src/shared/browser.ts`) lets through
@@ -570,14 +574,23 @@ which can be older than a current browser, so the boundary is what it loads rath
   contacted: the tab shows "Allow <host>?" with **Allow and open** and **Open in system browser**. Hosts a page tried
   to load from are listed on the tab and can be allowed one by one, which reloads the page. Removing a host in
   Settings → Browser refuses its next requests.
-- **Leaving the browser.** A link or `window.open` to a host that is not allowed goes to the system browser through
-  `safeExternalWebUrl` (http and https only, at most one a second, so a page cannot open a flood of them); one to an
-  allowed host opens as a tab. MDE never opens a second Electron window for a page.
+- **Leaving the browser.** A page never hands an address to the system browser itself, since the address could carry
+  whatever the page read. A navigation (`will-navigate`) to a host that is not allowed shows "Allow <host>?" in its
+  tab, with the page kept under it so Back returns to it; a `window.open` to one opens a new tab showing the same;
+  one to an allowed host opens as a tab. Only the person's own choice reaches `shell.openExternal`: **Open in system
+  browser** on that page (through the window's validated `openExternal` IPC) or **Open link in system browser** in
+  the page's right-click menu (`safeExternalWebUrl`, http and https only, at most one a second). MDE never opens a
+  second Electron window for a page.
+- **Client certificates.** Each tab answers `select-client-certificate` with no certificate, so a site cannot sign
+  the person in with an identity from the certificate store (Electron would otherwise pick the first match).
 - **Isolation.** Each tab is a `WebContentsView` with `sandbox`, `contextIsolation`, no Node integration, no
   preload, no `<webview>`, and the persistent partition `persist:mde-browser`, so pages share no cookies, storage,
   permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. WebRTC is limited
-  to `disable_non_proxied_udp`, because UDP to other hosts would not pass the request filter. Spell checking is off,
-  so no dictionary is downloaded.
+  to `disable_non_proxied_udp`, so it cannot use UDP directly; this does **not** enforce the host list, because
+  WebRTC over TCP (a TURN relay, or ICE-TCP) does not pass the request filter either. PRIVACY.md says so. Spell
+  checking is off, so no dictionary is downloaded.
+- **Clearing data.** Clear browsing data runs every step (storage, cache, HTTP auth cache) and reports a failure if
+  any step failed; the UI says "Cleared" only after all of them succeeded.
 - **Permissions and downloads.** The browser's session has the same deny-all permission policy as the window
   (camera, microphone, notifications, geolocation, clipboard reading, HID, serial, USB). A download is possible only
   from one of its tabs and always goes through the save dialog.

@@ -38,7 +38,7 @@ export function showInboxBrowser(): void {
 export function openInMdeBrowser(href: string): void {
   const url = externalLinkUrl(href)
   if (!url) return
-  if (!mdeBrowserAvailable()) {
+  if (!mdeBrowserAvailable() || !useInboxBrowser.getState().state.enabled) {
     openInSystemBrowser(url)
     return
   }
@@ -56,7 +56,7 @@ export function openWebLink(href: string): void {
   if (!url) return
   const browser = useInboxBrowser.getState()
   browser.init()
-  if (getTerminalSettings().linkClick === 'mde' && mdeBrowserAvailable() && isBrowserUrlAllowed(url, browser.state.allowedHosts)) {
+  if (getTerminalSettings().linkClick === 'mde' && browser.state.enabled && mdeBrowserAvailable() && isBrowserUrlAllowed(url, browser.state.allowedHosts)) {
     openInMdeBrowser(url)
     return
   }

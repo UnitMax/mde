@@ -627,8 +627,10 @@ the rail keeps its Expand button at the bottom, in a strip of the footer's heigh
 
 ### MDE browser
 
-The Browser tab of the Inbox sidebar (`InboxBrowser.tsx`) opens the web apps being developed next to the
-conversation. It is one browser for the whole Inbox, like the terminal, and is offered on the new-thread page too.
+The MDE browser is off until it is enabled in Settings → Browser (`enabled` in `browser.json`); until then its tab,
+the floating menu's Browser row and "Open in MDE browser" are not shown. The Browser tab of the Inbox sidebar
+(`InboxBrowser.tsx`) opens the web apps being developed next to the conversation. It is one browser for the whole
+Inbox, like the terminal, and is offered on the new-thread page too.
 Its tabs are owned by the main process (`src/main/browser.ts`, `MdeBrowser`): each is a `WebContentsView` in the
 `persist:mde-browser` session, made when the tab first loads something, and the renderer mirrors their state
 (`store/inbox-browser.ts`, pushed as a whole on `browser:changed`, at most once per 16 ms). Up to 12 tabs are open;

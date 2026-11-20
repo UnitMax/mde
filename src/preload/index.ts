@@ -247,6 +247,7 @@ const api: RendererApi = {
   },
   browser: {
     state: () => ipcRenderer.invoke(IpcChannels.browserState),
+    setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.browserSetEnabled, { enabled }),
     open: (url) => ipcRenderer.invoke(IpcChannels.browserOpen, { url }),
     newTab: () => ipcRenderer.invoke(IpcChannels.browserNewTab),
     navigate: (tabId, url) => ipcRenderer.invoke(IpcChannels.browserNavigate, { tabId, url }),

@@ -419,7 +419,7 @@ function StartPage({ allowedHosts, withField = false }: { allowedHosts: string[]
       )}
       <p className="mt-1 text-[12px] text-fg-subtle">
         This browser opens localhost and 127.0.0.1{allowedHosts.length > 0 ? `, and ${allowedHosts.join(', ')}` : ''}.
-        Links to anything else open in your system browser.
+        For other hosts, choose whether to allow the host or open the address in your system browser.
       </p>
     </div>
   )

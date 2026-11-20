@@ -82,14 +82,18 @@ export class MdeBrowser {
   private shown: WebContentsView | null = null
   private lastExternal = 0
   private sendTimer: ReturnType<typeof setTimeout> | null = null
+  private enabled = false
+  private changingEnabled = false
   private installed = false
 
   constructor(private readonly options: MdeBrowserOptions) {}
 
-  /** Reads the allowed hosts. A missing or unreadable file is an empty list. */
+  /** Reads whether the browser is on and the allowed hosts. A missing or unreadable file is off, with no hosts. */
   async load(): Promise<void> {
+    this.enabled = false
     try {
-      const raw = JSON.parse(await fs.readFile(this.options.file, 'utf8')) as { allowedHosts?: unknown }
+      const raw = JSON.parse(await fs.readFile(this.options.file, 'utf8')) as { enabled?: unknown; allowedHosts?: unknown }
+      this.enabled = raw.enabled === true
       const list = Array.isArray(raw.allowedHosts) ? raw.allowedHosts : []
       const hosts: string[] = []
       for (const entry of list) {
@@ -110,6 +114,11 @@ export class MdeBrowser {
     installPermissionPolicy(session)
     session.setSpellCheckerEnabled(false)
     session.webRequest.onBeforeRequest((details, callback) => {
+      // While the browser is off its session sends nothing, whatever asks.
+      if (!this.enabled) {
+        callback({ cancel: true })
+        return
+      }
       // DevTools' own pages, which the page cannot load itself.
       if (details.url.startsWith('devtools://')) {
         callback({})
@@ -135,9 +144,38 @@ export class MdeBrowser {
 
   state(): BrowserState {
     return {
+      enabled: this.enabled,
       tabs: this.tabs.map((tab) => ({ ...tab.state, blockedHosts: [...tab.state.blockedHosts] })),
       activeId: this.activeId,
       allowedHosts: [...this.allowed],
+    }
+  }
+
+  /**
+   * Turns the browser on or off and keeps the choice. Off closes every tab and refuses every request of its session;
+   * the allowed hosts and the browsing data stay.
+   */
+  async setEnabled(enabled: boolean): Promise<BrowserState> {
+    if (this.changingEnabled) throw new Error('The browser setting is being saved.')
+    if (enabled === this.enabled) return this.state()
+    this.changingEnabled = true
+    try {
+      // Set first, so a host saved meanwhile writes the new value too; put back if it could not be kept.
+      this.enabled = enabled
+      try {
+        await this.save()
+      } catch (error) {
+        this.enabled = !enabled
+        throw error
+      }
+      if (!enabled) {
+        this.dispose()
+        this.bounds = null
+      }
+      this.changed()
+      return this.state()
+    } finally {
+      this.changingEnabled = false
     }
   }
 
@@ -191,6 +229,7 @@ export class MdeBrowser {
     const contents = tab.view?.webContents
     switch (action) {
       case 'back':
+        if (tab.state.blocked && this.restore(tab)) return
         if (contents?.navigationHistory.canGoBack()) contents.navigationHistory.goBack()
         return
       case 'forward':
@@ -287,15 +326,21 @@ export class MdeBrowser {
     return this.state()
   }
 
-  /** Forgets the browser's cookies, storage and cache: every login to the apps opened in it. */
+  /**
+   * Forgets the browser's cookies, storage and cache: every login to the apps opened in it. Every step is tried; if
+   * any failed, this throws, so nothing reports the data cleared when part of it is left.
+   */
   async clearData(): Promise<void> {
-    await this.options.session.clearStorageData()
-    await this.options.session.clearCache()
-    await this.options.session.clearAuthCache()
+    const { session } = this.options
+    const results = await Promise.allSettled([session.clearStorageData(), session.clearCache(), session.clearAuthCache()])
+    if (results.some((result) => result.status === 'rejected')) {
+      throw new Error('Some of the MDE browser\'s data could not be cleared. Try again.')
+    }
   }
 
   dispose(): void {
     if (this.sendTimer) clearTimeout(this.sendTimer)
+    this.sendTimer = null
     for (const tab of this.tabs) this.destroy(tab)
     this.tabs = []
     this.activeId = null
@@ -308,6 +353,7 @@ export class MdeBrowser {
   }
 
   private addTab(): Tab {
+    if (!this.enabled) throw new Error('Enable the MDE browser in Settings first.')
     if (this.tabs.length >= BROWSER_TAB_LIMIT) throw new Error(`Close a tab first: the MDE browser keeps up to ${BROWSER_TAB_LIMIT}.`)
     const id = `brt_${randomUUID()}`
     const tab: Tab = { id, view: null, state: emptyTab(id) }
@@ -317,10 +363,13 @@ export class MdeBrowser {
   }
 
   private async save(): Promise<void> {
-    await writeJsonAtomic(this.options.file, { version: 1, allowedHosts: this.allowed })
+    await writeJsonAtomic(this.options.file, { version: 1, enabled: this.enabled, allowedHosts: this.allowed })
   }
 
-  /** Hands an address to the system browser: only http and https, and not more than once a second. */
+  /**
+   * Hands an address to the system browser, only from the person's own choice (the link menu): only http and https,
+   * and not more than once a second.
+   */
   private external(value: string): void {
     const url = safeExternalWebUrl(value)
     const now = Date.now()
@@ -329,11 +378,33 @@ export class MdeBrowser {
     this.options.openExternal(url)
   }
 
+  /** Opens a new tab that shows the "allow this host?" page for an address, contacting nothing. */
+  private openBlocked(url: string): void {
+    if (!browserUrl(url)) return
+    const tab = this.addTab()
+    this.navigate(tab.id, url)
+  }
+
+  /** Takes a refused address off a tab whose page is still loaded under it; false when there is no such page. */
+  private restore(tab: Tab): boolean {
+    const contents = tab.view?.webContents
+    const url = contents && !contents.isDestroyed() ? contents.getURL() : ''
+    if (!contents || !url) return false
+    tab.state = { ...tab.state, url, title: contents.getTitle() || tab.state.title, blocked: null, error: null }
+    tab.state.canGoBack = contents.navigationHistory.canGoBack()
+    tab.state.canGoForward = contents.navigationHistory.canGoForward()
+    this.changed()
+    return true
+  }
+
   private refused(contentsId: number | undefined, url: string, host: string | null, mainFrame: boolean): void {
     const tab = this.tabs.find((item) => item.view && !item.view.webContents.isDestroyed() && item.view.webContents.id === contentsId)
     if (!tab) return
     if (mainFrame) {
-      if (host) tab.state = { ...tab.state, url, title: host, blocked: { url, host }, loading: false }
+      if (host) {
+        const under = Boolean(tab.view && !tab.view.webContents.isDestroyed() && tab.view.webContents.getURL())
+        tab.state = { ...tab.state, url, title: host, blocked: { url, host }, loading: false, canGoBack: under || tab.state.canGoBack }
+      }
       else tab.state = { ...tab.state, loading: false, error: 'The MDE browser opens only http and https addresses.' }
     } else if (host && !tab.state.blockedHosts.includes(host)) {
       tab.state.blockedHosts = [...tab.state.blockedHosts, host].slice(-BROWSER_BLOCKED_HOST_LIMIT)
@@ -372,24 +443,27 @@ export class MdeBrowser {
       tab.state.canGoBack = contents.navigationHistory.canGoBack()
       tab.state.canGoForward = contents.navigationHistory.canGoForward()
     }
-    // A page's new window opens as a tab when its host is allowed, otherwise in the system browser.
+    // A page's new window opens as a tab. A host that is not allowed gets the "allow this host?" page in that tab:
+    // the page itself never hands an address to the system browser, so it cannot send data to a host by navigating.
     contents.setWindowOpenHandler(({ url }) => {
-      if (isBrowserUrlAllowed(url, this.allowed)) {
-        try {
-          this.open(url)
-        } catch {
-          // At the tab limit the page's window is not opened.
-        }
-      } else {
-        this.external(url)
+      try {
+        if (isBrowserUrlAllowed(url, this.allowed)) this.open(url)
+        else this.openBlocked(url)
+      } catch {
+        // At the tab limit the page's window is not opened.
       }
       return { action: 'deny' }
     })
-    // A link to a host that is not allowed leaves for the system browser instead of the tab.
+    // A link to a host that is not allowed shows the "allow this host?" page; Back returns to the page.
     contents.on('will-navigate', (event) => {
       if (isBrowserUrlAllowed(event.url, this.allowed)) return
       event.preventDefault()
-      this.external(event.url)
+      this.refused(contents.id, event.url, browserHost(event.url), true)
+    })
+    // No client certificate is ever offered to a page, so no site can sign the person in with one unasked.
+    contents.on('select-client-certificate', (event, _url, _list, callback) => {
+      event.preventDefault()
+      ;(callback as () => void)()
     })
     contents.on('did-start-loading', () => {
       tab.state.loading = true

@@ -7,6 +7,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   focusInboxTerminalWhenShown: vi.fn(),
 }))
 import { InboxSidebar } from '../src/renderer/components/inbox/InboxChanges'
+import { BrowserSettings } from '../src/renderer/components/BrowserSettings'
 import { FilePreviewMenu } from '../src/renderer/components/FilePreviewMenu'
 import { openWebLink } from '../src/renderer/lib/web-links'
 import { useInboxBrowser } from '../src/renderer/store/inbox-browser'
@@ -24,9 +25,10 @@ function tab(overrides: Partial<BrowserTab> = {}): BrowserTab {
   return { id: TAB_ID, url: 'http://localhost:3000/', title: 'App', loading: false, canGoBack: false, canGoForward: false, blocked: null, blockedHosts: [], error: null, ...overrides }
 }
 
-const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
+const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
 
 let api: {
+  setEnabled: ReturnType<typeof vi.fn>
   state: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   newTab: ReturnType<typeof vi.fn>
@@ -56,6 +58,7 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', undefined)
   const current = state([])
   api = {
+    setEnabled: vi.fn(async (enabled: boolean) => ({ ...current, enabled })),
     state: vi.fn(async () => current),
     open: vi.fn(async (url: string) => state([tab({ url })], useInboxBrowser.getState().state.allowedHosts)),
     newTab: vi.fn(async () => state([tab({ url: '', title: 'New tab' })])),
@@ -158,6 +161,35 @@ describe('Where a clicked web link opens', () => {
     await click(byTestId('file-preview-menu-open-mde'))
     expect(api.open).toHaveBeenCalledWith('http://localhost:5173/docs')
     expect(useInboxChanges.getState().tab).toBe('browser')
+  })
+})
+
+describe('Settings → Browser', () => {
+  it('enables the browser explicitly and routes links to the system browser while off', async () => {
+    useInboxBrowser.setState({ state: { ...state([]), enabled: false } })
+    linkClick('mde')
+    openWebLink('http://localhost:3000/')
+    expect(windowOpen).toHaveBeenCalled()
+    expect(api.open).not.toHaveBeenCalled()
+    await render(createElement(BrowserSettings))
+    const toggle = byTestId('browser-enabled')!
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    await click(toggle)
+    expect(api.setEnabled).toHaveBeenCalledWith(true)
+    expect(useInboxBrowser.getState().state.enabled).toBe(true)
+    expect(byTestId('browser-enabled')!.getAttribute('aria-checked')).toBe('true')
+    expect(byTestId('browser-enabled')!.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('says the browsing data was cleared only when it was', async () => {
+    api.clearData.mockRejectedValueOnce(new Error('Some of the MDE browser\'s data could not be cleared. Try again.'))
+    await render(createElement(BrowserSettings))
+    await click(byTestId('browser-clear-data'))
+    expect(byTestId('browser-clear-data')!.textContent).toBe('Clear browsing data')
+    expect(document.querySelector('[role="alert"]')!.textContent).toContain('could not be cleared')
+    await click(byTestId('browser-clear-data'))
+    expect(byTestId('browser-clear-data')!.textContent).toBe('Cleared')
+    expect(document.querySelector('[role="alert"]')).toBeNull()
   })
 })
 

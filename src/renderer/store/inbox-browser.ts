@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { BrowserAction, BrowserState } from '@shared/browser'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 
-const EMPTY: BrowserState = { tabs: [], activeId: null, allowedHosts: [] }
+const EMPTY: BrowserState = { enabled: false, tabs: [], activeId: null, allowedHosts: [] }
 
 interface Store {
   /** The browser as the main process last reported it. */
@@ -14,6 +14,7 @@ interface Store {
   clearError: () => void
   /** Reads the browser and follows its changes; once per page. */
   init: () => void
+  setEnabled: (enabled: boolean) => Promise<boolean>
   open: (url: string) => Promise<boolean>
   newTab: () => Promise<void>
   navigate: (tabId: string, url: string) => Promise<void>
@@ -22,7 +23,8 @@ interface Store {
   close: (tabId: string) => Promise<void>
   allowHost: (host: string) => Promise<boolean>
   removeHost: (host: string) => Promise<void>
-  clearData: () => Promise<void>
+  /** True only when all of the browsing data was cleared. */
+  clearData: () => Promise<boolean>
 }
 
 let following = false
@@ -51,6 +53,7 @@ export const useInboxBrowser = create<Store>((set, get) => {
       window.api.browser.onChanged((state) => set({ state, loaded: true }))
       void window.api.browser.state().then((state) => set({ state, loaded: true }), () => undefined)
     },
+    setEnabled: (enabled) => run(() => window.api.browser.setEnabled(enabled)),
     open: (url) => {
       get().init()
       return run(() => window.api.browser.open(url))
@@ -62,6 +65,6 @@ export const useInboxBrowser = create<Store>((set, get) => {
     close: async (tabId) => { await run(() => window.api.browser.close(tabId)) },
     allowHost: (host) => run(() => window.api.browser.allowHost(host)),
     removeHost: async (host) => { await run(() => window.api.browser.removeHost(host)) },
-    clearData: async () => { await run(() => window.api.browser.clearData()) },
+    clearData: () => run(() => window.api.browser.clearData()),
   }
 })

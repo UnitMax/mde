@@ -26,8 +26,10 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   distro name). These plain-text records reopen fresh shells in the same folders after restarting
   MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
   in these records.
-- `browser.json` under Electron's user-data directory: the host names you allowed the MDE browser to open
-  besides local addresses. Written when you allow or remove one.
+- `browser.json` under Electron's user-data directory: whether the MDE browser is turned on (it is off until you
+  enable it in Settings → Browser) and the host names you allowed it to open besides local addresses. Written when
+  you turn it on or off and when you allow or remove a host. Turning it off closes its tabs and keeps the allowed
+  hosts and the browsing data.
 - The MDE browser's own Chromium storage (the `persist:mde-browser` partition under Electron's user-data
   directory): cookies, local storage, IndexedDB, cache and similar data of the pages opened in the Browser tab,
   kept so that logins to the apps you develop last. It is separate from MDE's own storage. Settings → Browser →
@@ -397,9 +399,15 @@ The MDE browser in the Inbox sidebar loads the pages you open in it. Its pages c
 addresses (`localhost` and its subdomains, `127.0.0.0/8`, `[::1]`, `0.0.0.0`) and to the hosts you allowed in
 Settings → Browser or from its "Allow this host?" page; every other request a page makes, including scripts,
 fonts, analytics, WebSockets and redirects, is cancelled before it is sent and named on the tab. Allowed hosts
-receive whatever the page sends them, as in any browser. Links to other hosts open in the system browser. WebRTC
-is limited so that it cannot reach other hosts over UDP. Name resolution of allowed hosts uses the operating
-system and its proxy settings.
+receive whatever the page sends them, as in any browser. A link, redirect or new window to another host is not
+contacted: the tab asks whether to allow the host, and the address reaches your system browser only if you choose
+**Open in system browser** there (or **Open link in system browser** when right-clicking a link); a page cannot hand
+an address to the system browser by itself. Pages are never offered a client certificate from your certificate
+store. Name resolution of allowed hosts uses the operating system and its proxy settings.
+
+WebRTC is the exception to the host list: its connections do not pass the request filter. MDE stops WebRTC from
+using UDP directly (`disable_non_proxied_udp`), but a page can still use WebRTC over TCP, for example through a TURN
+relay, to reach a host that is not allowed. Open only pages you trust with what they can read in the MDE browser.
 
 MDE disables Chromium's automatic DNS-over-HTTPS upgrade at startup with
 `app.configureHostResolver({ secureDnsMode: 'off' })`. This does not disable ordinary DNS, Node's

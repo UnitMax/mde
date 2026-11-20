@@ -36,6 +36,7 @@ export interface BrowserTab {
 }
 
 export interface BrowserState {
+  enabled: boolean
   tabs: BrowserTab[]
   activeId: string | null
   /** The hosts allowed besides the local ones, as the person added them. */

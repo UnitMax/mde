@@ -281,6 +281,7 @@ export const IpcChannels = {
   fileViewerOpen: 'file-viewer:open',
 
   browserState: 'browser:state',
+  browserSetEnabled: 'browser:set-enabled',
   browserOpen: 'browser:open',
   browserNewTab: 'browser:new-tab',
   browserNavigate: 'browser:navigate',
@@ -853,6 +854,7 @@ export interface RendererApi {
   /** The MDE browser in the Inbox sidebar; see `src/shared/browser.ts`. */
   browser: {
     state(): Promise<BrowserState>
+    setEnabled(enabled: boolean): Promise<BrowserState>
     /** Opens an address in the tab already showing it, or in a new tab. */
     open(url: string): Promise<BrowserState>
     newTab(): Promise<BrowserState>

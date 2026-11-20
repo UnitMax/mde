@@ -158,6 +158,7 @@ const validPayloads = {
   [IpcChannels.floatingTerminalActive]: { active: true },
   [IpcChannels.fileViewerOpen]: { open: true },
   [IpcChannels.browserState]: undefined,
+  [IpcChannels.browserSetEnabled]: { enabled: true },
   [IpcChannels.browserOpen]: { url: 'http://localhost:5173/' },
   [IpcChannels.browserNewTab]: undefined,
   [IpcChannels.browserNavigate]: { tabId: 'brt_123e4567-e89b-12d3-a456-426614174000', url: 'localhost:3000' },

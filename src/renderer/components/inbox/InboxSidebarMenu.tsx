@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { inboxChangesKey, useInboxChanges } from '@/store/inbox-changes'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
+import { useInboxBrowser } from '@/store/inbox-browser'
 import { showInboxBrowser } from '@/lib/web-links'
 import { useInboxView, type FloatingSection } from '@/store/inbox-view'
 import { useWorkspace } from '@/store/workspace'
@@ -147,6 +148,7 @@ export function InboxSidebarMenu({
   session: DirectoryContext
   threadId?: string
 }): JSX.Element {
+  const browserEnabled = useInboxBrowser((s) => s.state.enabled)
   const thread: InboxThread | undefined = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
   const project = useInboxChat((s) => (thread ? inboxThreadFolder(thread, s.folders) : s.folders.find((folder) => folder.id === session.id)))
   const messages = useInboxChat((s) => (threadId ? s.threads[threadId]?.messages : undefined))
@@ -206,14 +208,16 @@ export function InboxSidebarMenu({
           onClick={() => showInboxTerminal(true)}
           testId="inbox-menu-terminal"
         />
-        <Row
-          icon={Globe}
-          label="Browser"
-          meta={<PanelRight aria-hidden className="h-3.5 w-3.5" />}
-          title="Dock the sidebar and show its browser"
-          onClick={showInboxBrowser}
-          testId="inbox-menu-browser"
-        />
+        {browserEnabled && (
+          <Row
+            icon={Globe}
+            label="Browser"
+            meta={<PanelRight aria-hidden className="h-3.5 w-3.5" />}
+            title="Dock the sidebar and show its browser"
+            onClick={showInboxBrowser}
+            testId="inbox-menu-browser"
+          />
+        )}
         {threadId && (
           <>
             <Divider />

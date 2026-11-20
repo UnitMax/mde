@@ -3,6 +3,7 @@ import { Trash2, X } from 'lucide-react'
 import { isBrowserLinkClick, normalizeAllowedHost, type BrowserLinkClick } from '@shared/browser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SwitchRow } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { mdeBrowserAvailable } from '@/lib/web-links'
 import { useInboxBrowser } from '@/store/inbox-browser'
@@ -21,6 +22,7 @@ export function BrowserSettings(): JSX.Element {
   useEffect(() => useInboxBrowser.getState().init(), [])
   const [host, setHost] = useState('')
   const [cleared, setCleared] = useState(false)
+  const [switching, setSwitching] = useState(false)
   const typed = host.trim() ? normalizeAllowedHost(host) : null
   const add = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
@@ -36,15 +38,28 @@ export function BrowserSettings(): JSX.Element {
         </h3>
         <p className="mt-1 text-xs text-fg-subtle">
           The MDE browser is the Browser tab of the Inbox sidebar, for the web apps you are building. It opens localhost,
-          127.0.0.1 and the hosts listed here, and refuses every other request a page makes before anything is sent.
+          127.0.0.1 and the hosts listed here. The host list covers web requests and WebSockets; WebRTC can still reach
+          other hosts.
         </p>
       </div>
+
+      <SwitchRow
+        checked={store.state.enabled}
+        label="Enable the MDE browser"
+        description="Adds the Browser tab to the Inbox sidebar. Turning it off closes its tabs and keeps the allowed hosts and browsing data."
+        testId="browser-enabled"
+        disabled={!available || !store.loaded || switching}
+        onClick={() => {
+          setSwitching(true)
+          void store.setEnabled(!store.state.enabled).finally(() => setSwitching(false))
+        }}
+      />
 
       <label className="block text-xs font-medium text-fg-muted">
         Clicking a web link opens it in
         <Select
           value={linkClick}
-          disabled={!available}
+          disabled={!available || !store.state.enabled}
           onValueChange={(value) => {
             if (!isBrowserLinkClick(value)) return
             setLinkClick(value)
@@ -63,7 +78,7 @@ export function BrowserSettings(): JSX.Element {
           </SelectContent>
         </Select>
         <span className="mt-1 block font-normal text-fg-subtle">
-          {available
+          {available && !store.state.enabled ? 'Links open in the system browser while the MDE browser is off.' : available
             ? 'With the MDE browser chosen, links to any other host still open in the system browser. Right-click a link to choose either browser.'
             : 'The MDE browser is part of the Inbox, which is not available here, so links open in the system browser.'}
         </span>
@@ -130,7 +145,7 @@ export function BrowserSettings(): JSX.Element {
           size="sm"
           variant="secondary"
           data-testid="browser-clear-data"
-          onClick={() => void store.clearData().then(() => setCleared(true))}
+          onClick={() => void store.clearData().then(setCleared)}
         >
           <Trash2 aria-hidden className="h-3.5 w-3.5" />
           {cleared ? 'Cleared' : 'Clear browsing data'}

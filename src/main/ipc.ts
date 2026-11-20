@@ -827,6 +827,7 @@ export function registerIpcHandlers(
     if (!browser) throw new Error('The MDE browser is not available.')
     return browser
   }
+  handle<{ enabled: boolean }, BrowserState>(IpcChannels.browserSetEnabled, ({ enabled }) => browserOnly().setEnabled(enabled))
   handle<void, BrowserState>(IpcChannels.browserState, () => browserOnly().state())
   handle<{ url: string }, BrowserState>(IpcChannels.browserOpen, ({ url }) => browserOnly().open(url))
   handle<void, BrowserState>(IpcChannels.browserNewTab, () => browserOnly().newTab())
