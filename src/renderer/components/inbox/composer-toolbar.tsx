@@ -18,10 +18,6 @@ export function useComposerSize(): ComposerSize {
   return useContext(ComposerSizeContext).size
 }
 
-export function useComposerWidth(): number {
-  return useContext(ComposerSizeContext).width
-}
-
 /** The size and width of the element, kept up to date as the window or the sidebar is resized. */
 export function useMeasuredComposerSize(ref: RefObject<HTMLElement | null>): ComposerBox {
   const [box, setBox] = useState<ComposerBox>(UNMEASURED)

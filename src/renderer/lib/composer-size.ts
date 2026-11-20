@@ -3,8 +3,7 @@
  * things, instead of each one truncating on its own rules, so a narrow box loses labels in a fixed order and
  * never turns a word into "M…". The model name is the only text that is ever cut short.
  *
- * - wide: everything, the provider in front of the model.
- * - medium: the provider goes.
+ * - wide, medium: everything.
  * - narrow: the MCP count and the agent's name go; their icons and the badge stay.
  * - tight: the effort goes too.
  *
@@ -32,24 +31,4 @@ export function composerSizeFor(width: number): ComposerSize {
 /** Whether `size` is `floor` or roomier. */
 export function atLeast(size: ComposerSize, floor: ComposerSize): boolean {
   return ORDER.indexOf(size) >= ORDER.indexOf(floor)
-}
-
-/** What the model chip's text is estimated to need per character, in pixels, at the toolbar's 12 px type. */
-const CHAR_PX = 6.5
-/** Everything else on the row at the wide size (attach, agent, MCP, context, send, the chip's own padding), with some slack. */
-const ROW_PX = 380
-
-/** The characters of the separators in `Provider / Model · Effort`, as the chip counts them. */
-const PROVIDER_SEPARATOR = 3
-const EFFORT_SEPARATOR = 3
-
-/**
- * Whether the provider's name fits in front of the model name and the effort in a toolbar this wide. The model
- * name matters more than the provider, so when the whole would not fit the provider is left out, instead of
- * squeezing the name. An estimate from the character count, not a measurement; the name still ends in an
- * ellipsis if the estimate is off.
- */
-export function providerFits(name: string, effort: string | null, provider: string, width: number): boolean {
-  const chars = provider.length + PROVIDER_SEPARATOR + name.length + (effort ? effort.length + EFFORT_SEPARATOR : 0)
-  return chars * CHAR_PX <= width - ROW_PX
 }

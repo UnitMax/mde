@@ -10,9 +10,10 @@ import {
   DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { HoverChevron, toolbarChip, useComposerSize, useComposerWidth } from '@/components/inbox/composer-toolbar'
+import { HoverChevron, toolbarChip, useComposerSize } from '@/components/inbox/composer-toolbar'
+import { ProviderMark } from '@/components/inbox/ProviderMark'
 import { findModel, groupModels, modelKey, modelName, modelVariantLabel } from '@/lib/chat'
-import { atLeast, providerFits } from '@/lib/composer-size'
+import { atLeast } from '@/lib/composer-size'
 import { quietCloseFocus } from '@/lib/input-modality'
 import { cn } from '@/lib/utils'
 import { useModelFavorites } from '@/store/model-favorites'
@@ -33,7 +34,6 @@ export function ModelPicker({
   disabled?: boolean
 }): JSX.Element {
   const size = useComposerSize()
-  const width = useComposerWidth()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [browsed, setBrowsed] = useState<string | null>(null)
@@ -66,7 +66,6 @@ export function ModelPicker({
   const effort = value?.variant ? modelVariantLabel(value.variant) : null
   const provider = current?.providerName ?? value?.providerId ?? ''
   const showEffort = Boolean(effort) && atLeast(size, 'narrow')
-  const showProvider = Boolean(value) && size === 'wide' && providerFits(name, effort, provider, width)
   const hasEfforts = models.some((model) => model.variants?.length)
   const previewSelected = preview?.id === value?.id && preview?.providerId === value?.providerId
   const selectedVariant = previewSelected ? JSON.stringify(value?.variant ?? null) : ''
@@ -117,13 +116,13 @@ export function ModelPicker({
           className={cn(toolbarChip, 'shrink', atLeast(size, 'medium') && 'pr-1.5')}
           aria-label="Model"
           data-testid="chat-model-picker"
-          title={value ? `${modelKey(value)}${value.variant ? `#${value.variant}` : ''}` : undefined}
+          title={value ? `${provider} / ${name}${effort ? ` · ${effort}` : ''}` : undefined}
         >
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-          {/* One line in one size. Weight carries the contrast: the name is medium and bright, the provider in
-              front and the effort behind stay regular and quiet, so no separator is needed before the effort. */}
+          {/* The provider is its lettered badge; its full name is in the tooltip. */}
+          {value && provider ? <ProviderMark name={provider} /> : <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />}
+          {/* One line in one size. Weight carries the contrast: the name is medium and bright, the effort behind
+              it stays regular and quiet, so no separator is needed between them. */}
           <span className="flex min-w-0 items-baseline gap-1">
-            {showProvider && <span className="shrink-0 text-fg-subtle" data-testid="chat-model-provider">{provider} /</span>}
             {/* Short names keep their own width; a long one gives way, but not below a few letters. */}
             <span className="max-w-[16rem] truncate font-medium text-fg" style={{ minWidth: `${Math.min(name.length, 5)}ch` }}>{name}</span>
             {showEffort && <span className="max-w-28 shrink-0 truncate text-fg-subtle" data-testid="chat-model-effort">{effort}</span>}
@@ -251,7 +250,7 @@ export function ModelPicker({
             {groups.map((group) => (
               <div key={group.key} role="group" aria-label={group.label} className={cn(group.favorite && 'mb-1 border-b border-line pb-1')}>
                 <p className="flex items-center gap-1.5 px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
-                  {group.favorite && <Star className="h-2.5 w-2.5 fill-current text-accent" aria-hidden="true" />}
+                  {group.favorite ? <Star className="h-2.5 w-2.5 fill-current text-accent" aria-hidden="true" /> : <ProviderMark name={group.label} />}
                   {group.label}
                 </p>
                 {group.models.map((model) => {

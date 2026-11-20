@@ -1006,7 +1006,8 @@ newest first; Down moves forward and returns to the empty box after the newest r
 Editing a recalled message ends history navigation. Recall uses this thread's visible conversation
 and pending messages, loads older pages when needed, and restores only text, leaving attachments
 as they are. Recalled text uses the normal draft saving path; there is no separate stored history.
-The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
+The model picker shows the selected model behind its provider's lettered badge (see **Composer toolbar**);
+the menu's provider groups carry the same badge.
 Each model row has a star control. Starred models appear once in a Favorites section above the
 provider groups, sorted by model name and labeled with their provider. Favorites follow the search
 and show only models available in the current project; unavailable favorites are remembered for
@@ -1842,14 +1843,15 @@ new-thread composer, where nothing has been measured yet.
 **Composer toolbar.** The row under the prompt box keeps what runs the message on the left (attach,
 model, agent) and what it knows plus the way out on the right (MCP, context, Send or Stop). The controls
 are quiet text and icons that take a background only on hover, with no dividers and no borders; a
-chevron shows only while a chip is hovered, focused or open. The model chip is one line in one type size,
-`OpenCode / Beam Free · Medium`: the provider in front and the effort behind in the quiet tone, the name
-in the normal one. The provider is shown only at the wide size and only when the whole line would fit
-(`providerFits` in `lib/composer-size.ts`, an estimate from the character count and the toolbar's width);
-otherwise it is left out and the name leads. The full `provider/model#effort` is always the tooltip. The toolbar measures its own width
+chevron shows only while a chip is hovered, focused or open. The model chip is one line in one type size:
+the provider's lettered badge, the model name in medium weight and the effort behind it in the regular,
+quiet tone. The badge (`ProviderMark`, `lib/provider-mark.ts`) is made from the provider's name alone, so
+providers someone configured themselves get one too: a camel-cased first word gives two letters
+(`OpenRouter` → `OR`), any other name its first letter (`Anthropic` → `A`); the hue is picked from a fixed
+set by a hash of the name. The tooltip spells out `Provider / Model · Effort`. The toolbar measures its own width
 (`useMeasuredComposerSize`) and every control reads the same size from `ComposerSizeContext`, so a
 narrow box drops labels in one fixed order instead of each control truncating on its own. The context
-meter is always its small ring, so it never takes room from the others. Below 680 px the provider goes; below 540 px the
+meter is always its small ring, so it never takes room from the others. Below 540 px the
 MCP count and the agent's name (its coloured icon stays, the name is the tooltip) go (the badge stays);
 below 410 px the effort goes too. Only the model's
 name is ever cut short, with an ellipsis, as a last resort. Send never hides; its Steer / Queue word
