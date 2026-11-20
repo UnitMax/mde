@@ -248,6 +248,7 @@ const api: RendererApi = {
   browser: {
     state: () => ipcRenderer.invoke(IpcChannels.browserState),
     setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.browserSetEnabled, { enabled }),
+    setWebRTC: (allowed) => ipcRenderer.invoke(IpcChannels.browserSetWebRTC, { allowed }),
     open: (url) => ipcRenderer.invoke(IpcChannels.browserOpen, { url }),
     newTab: () => ipcRenderer.invoke(IpcChannels.browserNewTab),
     navigate: (tabId, url) => ipcRenderer.invoke(IpcChannels.browserNavigate, { tabId, url }),
@@ -255,7 +256,6 @@ const api: RendererApi = {
     select: (tabId) => ipcRenderer.invoke(IpcChannels.browserSelect, { tabId }),
     close: (tabId) => ipcRenderer.invoke(IpcChannels.browserClose, { tabId }),
     setBounds: (bounds) => ipcRenderer.invoke(IpcChannels.browserBounds, { bounds }),
-    capture: () => ipcRenderer.invoke(IpcChannels.browserCapture),
     allowHost: (host) => ipcRenderer.invoke(IpcChannels.browserAllowHost, { host }),
     removeHost: (host) => ipcRenderer.invoke(IpcChannels.browserRemoveHost, { host }),
     clearData: () => ipcRenderer.invoke(IpcChannels.browserClearData),

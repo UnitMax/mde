@@ -828,6 +828,7 @@ export function registerIpcHandlers(
     return browser
   }
   handle<{ enabled: boolean }, BrowserState>(IpcChannels.browserSetEnabled, ({ enabled }) => browserOnly().setEnabled(enabled))
+  handle<{ allowed: boolean }, BrowserState>(IpcChannels.browserSetWebRTC, ({ allowed }) => browserOnly().setWebRTC(allowed))
   handle<void, BrowserState>(IpcChannels.browserState, () => browserOnly().state())
   handle<{ url: string }, BrowserState>(IpcChannels.browserOpen, ({ url }) => browserOnly().open(url))
   handle<void, BrowserState>(IpcChannels.browserNewTab, () => browserOnly().newTab())
@@ -836,7 +837,6 @@ export function registerIpcHandlers(
   handle<{ tabId: string }, BrowserState>(IpcChannels.browserSelect, ({ tabId }) => browserOnly().select(tabId))
   handle<{ tabId: string }, BrowserState>(IpcChannels.browserClose, ({ tabId }) => browserOnly().close(tabId))
   handle<{ bounds: BrowserBounds | null }, void>(IpcChannels.browserBounds, ({ bounds }) => browserOnly().setBounds(bounds))
-  handle<void, string | null>(IpcChannels.browserCapture, () => browserOnly().capture())
   handle<{ host: string }, BrowserState>(IpcChannels.browserAllowHost, ({ host }) => browserOnly().allowHost(host))
   handle<{ host: string }, BrowserState>(IpcChannels.browserRemoveHost, ({ host }) => browserOnly().removeHost(host))
   handle<void, void>(IpcChannels.browserClearData, () => browserOnly().clearData())

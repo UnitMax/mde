@@ -564,7 +564,7 @@ which can be older than a current browser, so the boundary is what it loads rath
   turning it off closes all tabs and keeps the allowed hosts and browsing data.
 
 - **Only local and allowed hosts.** Every request of every page (documents, frames, scripts, styles, fonts,
-  images, `fetch`, WebSockets, redirects, service workers) passes `session.webRequest.onBeforeRequest` on the
+  images, `fetch`, WebSockets, redirects, service worker scripts) passes `session.webRequest.onBeforeRequest` on the
   browser's own session before it is sent. `classifyBrowserRequest` (`src/shared/browser.ts`) lets through
   `http`, `https`, `ws` and `wss` to loopback (`localhost` and `*.localhost`, `127.0.0.0/8`, `[::1]`, `0.0.0.0`)
   and to the hosts in `<userData>/browser.json`, plus inline `data:`, `blob:` and `about:` content; everything else,
@@ -587,10 +587,37 @@ which can be older than a current browser, so the boundary is what it loads rath
   the person in with an identity from the certificate store (Electron would otherwise pick the first match).
 - **Isolation.** Each tab is a `WebContentsView` with `sandbox`, `contextIsolation`, no Node integration, no
   preload, no `<webview>`, and the persistent partition `persist:mde-browser`, so pages share no cookies, storage,
-  permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. WebRTC is limited
-  to `disable_non_proxied_udp`, so it cannot use UDP directly; this does **not** enforce the host list, because
-  WebRTC over TCP (a TURN relay, or ICE-TCP) does not pass the request filter either. PRIVACY.md says so. Spell
+  permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. Spell
   checking is off, so no dictionary is downloaded.
+- **WebRTC off by default.** WebRTC connections never pass the request filter, so unless the person allows WebRTC in
+  Settings → Browser (`webrtc` in `browser.json`), `onHeadersReceived` puts Chromium's connection allowlist on every
+  response (`withoutWebRTC`). Without one from the server it is `("*://*:*/*"); redirects=allow`
+  (`BLOCK_WEBRTC_HEADER`): every address and redirects allowed, leaving hosts to the request filter, and all WebRTC
+  blocked, which is its default. A server's own allowlist is kept, so its address and redirect rules still apply,
+  with `;webrtc=block` put last: a later parameter replaces an earlier one, so it overrides a `webrtc=allow`.
+  Chromium applies only the first member of the list (and only the first of several headers), so the parameter goes
+  on that member and the rest is passed on untouched: Chromium parses the whole list first, so a list with a malformed
+  later member stays one it refuses, blocking every connection of the page, rather than becoming a valid permissive
+  one (checked live).
+  Frames and popups without a response of their own (`about:blank`, `srcdoc`, `blob:`) inherit it; a page built by a
+  service worker would not, so the session refuses service worker scripts (`Service-Worker: script` in
+  `onBeforeSendHeaders`) and removes registered ones at startup and when WebRTC is turned off. Until that removal has
+  succeeded, the request filter cancels every request and no tab opens a page; each attempt to open one tries the
+  removal again, and clearing the browsing data also counts. Verified under Electron 45.4.1 (Chromium 156) against local STUN and TURN servers: with the header
+  no packet reached either from a top-level page, an `about:blank`, `srcdoc` or `blob:` frame, an `about:blank`
+  popup or a page from the HTTP cache, while fetches, WebSockets and redirects worked; Chromium ends the page's
+  process when a frame without its own response tries. A server's `(response-origin); webrtc=allow` kept its
+  restriction to its own origin and still had WebRTC blocked. The allowlist needs Chromium 152 or later; keep this in mind
+  before ever moving Electron back. When WebRTC is allowed, `disable_non_proxied_udp` still keeps it off plain UDP,
+  but WebRTC over TCP (a TURN relay, or ICE-TCP) reaches any host; Settings warns about this beside the switch and
+  PRIVACY.md says so. Allowing WebRTC is saved first and only then put in force, so a failed save changes nothing;
+  taking it away is in force at once, and stays so for the session even if the choice could not be saved (Settings
+  then says MDE will start with it on, with **Save again**; any later successful write of `browser.json` also saves
+  it). Writes of `browser.json` run one at a time, each from the values in force when its turn comes, so a host saved
+  alongside cannot put back an earlier WebRTC choice; allowing WebRTC takes effect inside its own write. A page keeps the rule it was loaded with, so changing the switch closes every tab's page,
+  including one kept alive under an "Allow <host>?" page, and opens it again from its address under the new rule
+  (Go back on such a page loads the page under it again); a reload would leave the old page running until the new
+  one committed.
 - **Clearing data.** Clear browsing data runs every step (storage, cache, HTTP auth cache) and reports a failure if
   any step failed; the UI says "Cleared" only after all of them succeeded.
 - **Permissions and downloads.** The browser's session has the same deny-all permission policy as the window
@@ -598,8 +625,7 @@ which can be older than a current browser, so the boundary is what it loads rath
   from one of its tabs and always goes through the save dialog.
 - **Where the page is drawn.** The renderer reports the panel's rectangle (`browser:bounds`, finite numbers only)
   and the main process lays the active tab over it, scaled by the window's zoom. While a menu, dialog, toast or the
-  floating terminal covers the panel, the renderer asks for a picture of the page (`browser:capture`), shows it, and
-  the page is taken off the window, so the native view cannot hide MDE's own UI or take clicks meant for it.
+  floating terminal covers the panel, the page is taken off the window (no picture of it is taken), so the native view cannot hide MDE's own UI or take clicks meant for it.
 - **IPC.** `browser:*` channels take a `brt_<uuid>` tab ID, an address of at most 8192 characters, one of five
   actions (back, forward, reload, stop, devtools) or a host; the main process parses every address again. Developer
   tools open in a window of their own.

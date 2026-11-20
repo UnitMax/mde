@@ -25,10 +25,11 @@ function tab(overrides: Partial<BrowserTab> = {}): BrowserTab {
   return { id: TAB_ID, url: 'http://localhost:3000/', title: 'App', loading: false, canGoBack: false, canGoForward: false, blocked: null, blockedHosts: [], error: null, ...overrides }
 }
 
-const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
+const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, webrtc: false, webrtcUnsaved: false, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
 
 let api: {
   setEnabled: ReturnType<typeof vi.fn>
+  setWebRTC: ReturnType<typeof vi.fn>
   state: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   newTab: ReturnType<typeof vi.fn>
@@ -37,7 +38,6 @@ let api: {
   select: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   setBounds: ReturnType<typeof vi.fn>
-  capture: ReturnType<typeof vi.fn>
   allowHost: ReturnType<typeof vi.fn>
   removeHost: ReturnType<typeof vi.fn>
   clearData: ReturnType<typeof vi.fn>
@@ -59,6 +59,7 @@ beforeEach(() => {
   const current = state([])
   api = {
     setEnabled: vi.fn(async (enabled: boolean) => ({ ...current, enabled })),
+    setWebRTC: vi.fn(async (webrtc: boolean) => ({ ...current, webrtc })),
     state: vi.fn(async () => current),
     open: vi.fn(async (url: string) => state([tab({ url })], useInboxBrowser.getState().state.allowedHosts)),
     newTab: vi.fn(async () => state([tab({ url: '', title: 'New tab' })])),
@@ -67,7 +68,6 @@ beforeEach(() => {
     select: vi.fn(async () => current),
     close: vi.fn(async () => state([])),
     setBounds: vi.fn(async () => undefined),
-    capture: vi.fn(async () => 'data:image/png;base64,AAAA'),
     allowHost: vi.fn(async (host: string) => state([tab()], [host])),
     removeHost: vi.fn(async () => current),
     clearData: vi.fn(async () => undefined),
@@ -181,6 +181,39 @@ describe('Settings → Browser', () => {
     expect(byTestId('browser-enabled')!.hasAttribute('disabled')).toBe(false)
   })
 
+  it('keeps WebRTC off unless turned on, and warns about it while on', async () => {
+    await render(createElement(BrowserSettings))
+    const toggle = byTestId('browser-webrtc')!
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(byTestId('browser-webrtc-warning')).toBeNull()
+    await click(toggle)
+    expect(api.setWebRTC).toHaveBeenCalledWith(true)
+    expect(byTestId('browser-webrtc')!.getAttribute('aria-checked')).toBe('true')
+    expect(byTestId('browser-webrtc-warning')!.textContent).toMatch(/don't go through the host list/)
+  })
+
+  it('cannot allow WebRTC while the browser is off, and shows why turning it off failed beside it', async () => {
+    useInboxBrowser.setState({ state: { ...state([]), enabled: false } })
+    await render(createElement(BrowserSettings))
+    expect(byTestId('browser-webrtc')!.hasAttribute('disabled')).toBe(true)
+    await act(async () => useInboxBrowser.setState({ state: { ...state([]), webrtc: true } }))
+    api.setWebRTC.mockRejectedValueOnce(new Error('WebRTC is off, but the service workers of earlier pages could not be removed.'))
+    await click(byTestId('browser-webrtc'))
+    const alerts = Array.from(document.querySelectorAll('[role="alert"]'))
+    expect(alerts.map((alert) => alert.textContent)).toEqual(['WebRTC is off, but the service workers of earlier pages could not be removed.'])
+  })
+
+  it('warns when turning WebRTC off could not be saved, and saves it again on request', async () => {
+    useInboxBrowser.setState({ state: { ...state([]), webrtcUnsaved: true } })
+    api.setWebRTC.mockImplementationOnce(async () => ({ ...state([]), webrtcUnsaved: false }))
+    await render(createElement(BrowserSettings))
+    expect(byTestId('browser-webrtc')!.getAttribute('aria-checked')).toBe('false')
+    expect(byTestId('browser-webrtc-unsaved')!.textContent).toMatch(/start with it on next time/)
+    await click(byTestId('browser-webrtc-save-again'))
+    expect(api.setWebRTC).toHaveBeenCalledWith(false)
+    expect(byTestId('browser-webrtc-unsaved')).toBeNull()
+  })
+
   it('says the browsing data was cleared only when it was', async () => {
     api.clearData.mockRejectedValueOnce(new Error('Some of the MDE browser\'s data could not be cleared. Try again.'))
     await render(createElement(BrowserSettings))
@@ -238,7 +271,7 @@ describe('Inbox Browser tab', () => {
     expect(byTestId('inbox-browser-refused')!.textContent).toContain('Refused 2 hosts: cdn.example.com, fonts.example.com')
   })
 
-  it('lays the page over the panel, and swaps in a picture of it while something covers the panel', async () => {
+  it('lays the page over the panel, and takes it off, with no picture in its place, while something covers the panel', async () => {
     const rect = { x: 900, y: 80, left: 900, top: 80, right: 1260, bottom: 680, width: 360, height: 600, toJSON: () => ({}) }
     const original = HTMLElement.prototype.getBoundingClientRect
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -261,25 +294,88 @@ describe('Inbox Browser tab', () => {
       document.body.append(cover)
       await new Promise((resolve) => setTimeout(resolve, 20))
     })
-    expect(api.capture).toHaveBeenCalled()
-    // The page stays until its picture is painted in its place, so nothing blank shows in between.
-    await vi.waitFor(() => expect(api.setBounds).toHaveBeenLastCalledWith(null))
-    const picture = byTestId('inbox-browser-viewport')!.querySelector('img')
-    expect(picture?.getAttribute('src')).toBe('data:image/png;base64,AAAA')
-    expect(api.setBounds.mock.invocationCallOrder.at(-1)).toBeGreaterThan(api.capture.mock.invocationCallOrder.at(-1)!)
+    expect(api.setBounds).toHaveBeenLastCalledWith(null)
+    expect(byTestId('inbox-browser-viewport')!.querySelector('img')).toBeNull()
+    // A menu goes by itself, so the panel says nothing about it.
+    expect(byTestId('inbox-browser-covered')).toBeNull()
 
     await act(async () => {
       cover.remove()
       await new Promise((resolve) => setTimeout(resolve, 50))
     })
     expect(api.setBounds).toHaveBeenLastCalledWith({ x: 900, y: 80, width: 360, height: 600 })
-    // The picture stays under the page for a moment while the page draws again.
-    expect(byTestId('inbox-browser-viewport')!.querySelector('img')).not.toBeNull()
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
-    expect(byTestId('inbox-browser-viewport')!.querySelector('img')).toBeNull()
 
     // Leaving the tab takes the page off the window.
     await click(byTestId('inbox-sidebar-tab-files'))
     expect(api.setBounds).toHaveBeenLastCalledWith(null)
+  })
+
+  it('keeps the page on screen while a modal menu elsewhere turns off pointer events for the whole window', async () => {
+    const rect = { x: 900, y: 80, left: 900, top: 80, right: 1260, bottom: 680, width: 360, height: 600, toJSON: () => ({}) }
+    const away = { x: 100, y: 500, left: 100, top: 500, right: 400, bottom: 700, width: 300, height: 200, toJSON: () => ({}) }
+    const original = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === 'inbox-browser-viewport') return rect as DOMRect
+      if (this.dataset.testid === 'menu') return away as DOMRect
+      return original.call(this)
+    })
+    let viewport: HTMLElement | null = null
+    // With pointer events off on <body>, the hit test finds the page's background instead of the panel.
+    vi.spyOn(document, 'elementFromPoint').mockImplementation(() => (document.body.style.pointerEvents === 'none' ? document.documentElement : viewport))
+    useInboxChanges.setState({ tab: 'browser' })
+    useInboxBrowser.setState({ state: state([tab()]) })
+    await sidebar()
+    viewport = byTestId('inbox-browser-viewport')
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(api.setBounds).toHaveBeenLastCalledWith({ x: 900, y: 80, width: 360, height: 600 })
+    const menu = document.createElement('div')
+    menu.dataset.testid = 'menu'
+    await act(async () => {
+      document.body.append(menu)
+      document.body.style.pointerEvents = 'none'
+      await new Promise((resolve) => setTimeout(resolve, 450))
+    })
+    expect(api.setBounds).toHaveBeenLastCalledWith({ x: 900, y: 80, width: 360, height: 600 })
+    expect(api.setBounds).not.toHaveBeenCalledWith(null)
+    menu.remove()
+    document.body.style.pointerEvents = ''
+  })
+
+  it('says the page is hidden while the floating terminal covers it, and how to show it', async () => {
+    const rect = { x: 900, y: 80, left: 900, top: 80, right: 1260, bottom: 680, width: 360, height: 600, toJSON: () => ({}) }
+    const original = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === 'inbox-browser-viewport' || this.dataset.testid === 'floating-terminal') return rect as DOMRect
+      return original.call(this)
+    })
+    let viewport: HTMLElement | null = null
+    vi.spyOn(document, 'elementFromPoint').mockImplementation(() => viewport)
+    // The terminal is already over the panel when the page opens, so there is no picture of the page yet.
+    const terminal = document.createElement('div')
+    terminal.dataset.testid = 'floating-terminal'
+    document.body.append(terminal)
+    useInboxChanges.setState({ tab: 'browser' })
+    useInboxBrowser.setState({ state: state([tab()]) })
+    await sidebar()
+    viewport = byTestId('inbox-browser-viewport')
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(api.setBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 360 }))
+    expect(byTestId('inbox-browser-covered')!.textContent).toMatch(/hidden while the floating terminal covers it.*F11/)
+
+    // Moved away, the page shows; moved back, it is hidden again.
+    await act(async () => {
+      terminal.remove()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(api.setBounds).toHaveBeenLastCalledWith({ x: 900, y: 80, width: 360, height: 600 })
+    expect(byTestId('inbox-browser-covered')).toBeNull()
+    await act(async () => {
+      document.body.append(terminal)
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    })
+    expect(api.setBounds).toHaveBeenLastCalledWith(null)
+    expect(byTestId('inbox-browser-viewport')!.querySelector('img')).toBeNull()
+    expect(byTestId('inbox-browser-covered')!.textContent).toMatch(/hidden while the floating terminal covers it.*F11/)
+    terminal.remove()
   })
 })

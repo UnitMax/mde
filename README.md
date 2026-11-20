@@ -60,7 +60,7 @@ Restart MDE and OpenCode afterward.
 
 - Node 22.22.2+, or Node 24.15+ (the locked test dependencies require these versions)
 - Windows 11, or Windows 10 version 1903 (build 18362) or newer, or Linux (X11 or Wayland)
-  or macOS on Apple Silicon
+  or macOS 13 or newer on Apple Silicon
   - Packaged Windows builds ship only `node-pty`'s ConPTY backend; the winpty fallback
     older releases would need is deliberately excluded.
 - A C/C++ toolchain, because `node-pty` is a native module and is rebuilt against the

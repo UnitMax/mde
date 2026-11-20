@@ -642,13 +642,18 @@ active tab there. It reports `null` when the panel is not on screen (another tab
 the view switched, the window hidden). A native view is drawn above every element of the page, so the viewport also
 watches for anything over it: children of `<body>` other than the app (Radix menus, dialogs and popovers), toasts,
 the floating terminal, and, by sampling `elementFromPoint` on a 6 × 8 grid, overlays inside the app such as the file
-viewer. While covered it shows a picture of the page (`browser:capture`) and the page is taken off the window. It
+viewer. While covered the page is taken off the window and the panel stays empty. No picture of the page stands in:
+one goes stale, a resize under it stretches it, and Electron 45's `capturePage` on a scaled Windows display returned
+only part of the page, enlarged. The floating terminal stays until moved, so while it covers the panel the panel says
+the page is hidden and that moving the terminal or F11 shows it. It
 measures once per animation frame after a mutation, a resize, a scroll or a visibility change, and every 400 ms for
 animations that change nothing it observes.
 
 What a page may load is in [Security → MDE browser boundary](security.md#mde-browser-boundary). A tab whose host
 is not allowed shows "Allow <host>?" instead of the page, with Go back (to the page under it, or the start page),
-Allow and open, and Open in system browser; hosts a page was refused are listed under the toolbar, each
+Allow and open, and Open in system browser; WebRTC is off unless Settings → Browser → Allow WebRTC is on
+(`webrtc` in `browser.json`; see the security notes for how), and turning it on or off closes every tab's page and opens it again under the new rule. Hosts
+a page was refused are listed under the toolbar, each
 allowable from there (which reloads the page). A page that does not load (a dev server that is not running) or
 crashes shows the error with **Try again**. The toolbar has Back, Forward, Reload (Stop while loading) and the
 address field, which takes `localhost:3000` without a scheme; the ⋯ menu has Developer tools (a separate window),
@@ -2574,6 +2579,14 @@ home directory unless a terminal launch supplies its current folder. Linux shell
 their existing target-shell behavior.
 
 ## Upgrade notes
+
+### Electron 45
+
+MDE moved from Electron 43 (Chromium 150) to Electron 45.4.1 (Chromium 156), which brings Chromium's connection
+allowlist that the MDE browser uses to block WebRTC. Electron 44 dropped macOS 12, so MDE now needs macOS 13 or
+later. `node-abi` is pinned through `overrides` to a release that knows Electron 45, so `@electron/rebuild` can build
+`node-pty`. Under `--ozone-platform=headless` (used only for headless checks), Electron 45 crashes when a window is
+made with `titleBarOverlay`; real X11 and Wayland do not, so headless checks have to leave the overlay out.
 
 ### Removed terminal launcher
 

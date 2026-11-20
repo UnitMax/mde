@@ -282,6 +282,7 @@ export const IpcChannels = {
 
   browserState: 'browser:state',
   browserSetEnabled: 'browser:set-enabled',
+  browserSetWebRTC: 'browser:set-webrtc',
   browserOpen: 'browser:open',
   browserNewTab: 'browser:new-tab',
   browserNavigate: 'browser:navigate',
@@ -289,7 +290,6 @@ export const IpcChannels = {
   browserSelect: 'browser:select',
   browserClose: 'browser:close',
   browserBounds: 'browser:bounds',
-  browserCapture: 'browser:capture',
   browserAllowHost: 'browser:allow-host',
   browserRemoveHost: 'browser:remove-host',
   browserClearData: 'browser:clear-data',
@@ -855,6 +855,8 @@ export interface RendererApi {
   browser: {
     state(): Promise<BrowserState>
     setEnabled(enabled: boolean): Promise<BrowserState>
+    /** Allows or blocks WebRTC in the browser's pages; open pages are closed and opened again. */
+    setWebRTC(allowed: boolean): Promise<BrowserState>
     /** Opens an address in the tab already showing it, or in a new tab. */
     open(url: string): Promise<BrowserState>
     newTab(): Promise<BrowserState>
@@ -864,8 +866,6 @@ export interface RendererApi {
     close(tabId: string): Promise<BrowserState>
     /** Where the sidebar panel is, so the active page is drawn there; null takes it off the window. */
     setBounds(bounds: BrowserBounds | null): Promise<void>
-    /** A picture of the page on screen, as a data URL, or null. */
-    capture(): Promise<string | null>
     allowHost(host: string): Promise<BrowserState>
     removeHost(host: string): Promise<BrowserState>
     /** Forgets the browser's cookies, storage and cache. */
