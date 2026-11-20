@@ -39,10 +39,13 @@ export const BROWSER_FILE = 'browser.json'
 /** Chromium's net error codes the browser does not report: a load it cancelled itself, or one it refused. */
 const QUIET_LOAD_ERRORS = new Set([-3, -20])
 
+const WORKERS_FAILED =
+  'The MDE browser could not remove the service workers of earlier pages, so no page opens while WebRTC is off. ' +
+  'Try again, or clear the browsing data in Settings → Browser.'
+
 /**
  * Chromium's connection allowlist (Chromium 152 and later) with every address allowed and redirects followed, so all
- * it changes is its default of blocking every WebRTC connection. A header that does not parse would block every
- * connection of the page, so it is kept to this fixed text.
+ * it changes is its default of blocking every WebRTC connection. Used when the server sent no allowlist of its own.
  */
 export const BLOCK_WEBRTC_HEADER = '("*://*:*/*"); redirects=allow'
 
@@ -52,17 +55,38 @@ export function isServiceWorkerScript(headers: Record<string, string> | undefine
 }
 
 /**
- * A response's headers with the WebRTC-blocking allowlist in place of any the server sent. Chromium reads only the
- * first allowlist of a response, so one from the server, which might allow WebRTC, cannot be kept beside ours.
+ * The first member of a structured-field list: everything before the first comma outside a quoted string. Chromium
+ * applies only that member of a `Connection-Allowlist`.
+ */
+function firstListMember(value: string): string {
+  let quoted = false
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index]
+    if (quoted && char === '\\') index++
+    else if (char === '"') quoted = !quoted
+    else if (char === ',' && !quoted) return value.slice(0, index)
+  }
+  return value
+}
+
+/**
+ * A response's headers with WebRTC blocked. A server's own allowlist is kept, with its addresses and redirect rule,
+ * and `webrtc=block` is put last on it, where it overrides any `webrtc=allow` (a later parameter replaces an earlier
+ * one); only its first member is kept, since Chromium reads no other. A server that sent none gets one that blocks
+ * WebRTC and nothing else. A server value that does not parse stays unparsable, and Chromium then blocks every
+ * connection of the page, WebRTC included.
  */
 export function withoutWebRTC(headers: Record<string, string[]> | undefined): Record<string, string[]> {
   const result: Record<string, string[]> = {}
+  let server: string | null = null
   for (const [name, values] of Object.entries(headers ?? {})) {
     if (name.toLowerCase() !== 'connection-allowlist') result[name] = values
+    else if (server === null) server = firstListMember(values.join(', ')).trim()
   }
-  result['Connection-Allowlist'] = [BLOCK_WEBRTC_HEADER]
+  result['Connection-Allowlist'] = [server ? `${server};webrtc=block` : BLOCK_WEBRTC_HEADER]
   return result
 }
+
 /** The least time between two pages handed to the system browser, so a page cannot open a flood of them. */
 const EXTERNAL_INTERVAL_MS = 1000
 
@@ -88,6 +112,11 @@ interface Tab {
   /** Made when the tab first loads something: a new tab is only its address field. */
   view: WebContentsView | null
   state: BrowserTab
+  /**
+   * The page under the "allow this host?" page after its view was rebuilt under a new WebRTC rule; Go back loads it
+   * again.
+   */
+  returnUrl?: string
 }
 
 function emptyTab(id: string): BrowserTab {
@@ -111,6 +140,12 @@ export class MdeBrowser {
   private changingEnabled = false
   private webrtc = false
   private changingWebRTC = false
+  /**
+   * Whether the service workers of earlier pages are gone. While WebRTC is off no page loads until they are: one
+   * could serve a page without the allowlist.
+   */
+  private workers: 'removing' | 'removed' | 'failed' = 'removing'
+  private workerAttempt = 0
   private installed = false
 
   constructor(private readonly options: MdeBrowserOptions) {}
@@ -147,8 +182,9 @@ export class MdeBrowser {
     installPermissionPolicy(session)
     session.setSpellCheckerEnabled(false)
     session.webRequest.onBeforeRequest((details, callback) => {
-      // While the browser is off its session sends nothing, whatever asks.
-      if (!this.enabled) {
+      // While the browser is off its session sends nothing, whatever asks; nor while WebRTC is off and service
+      // workers of earlier pages may still be there.
+      if (!this.enabled || !this.workersGone()) {
         callback({ cancel: true })
         return
       }
@@ -180,7 +216,7 @@ export class MdeBrowser {
     session.webRequest.onBeforeSendHeaders((details, callback) => {
       callback(!this.webrtc && isServiceWorkerScript(details.requestHeaders) ? { cancel: true } : {})
     })
-    if (!this.webrtc) void this.removeServiceWorkers().catch(() => undefined)
+    void this.removeServiceWorkers()
     session.on('will-download', (_event, item, contents) => {
       // Only a tab of the browser downloads; Electron then asks where to save, so nothing is saved unasked.
       if (!this.tabs.some((tab) => tab.view?.webContents === contents)) {
@@ -231,7 +267,8 @@ export class MdeBrowser {
 
   /**
    * Allows or blocks WebRTC in the browser's pages and keeps the choice. A page keeps the rule it was loaded with, so
-   * the open pages are loaded again.
+   * every page is closed and its tab opened again under the new rule, including a page kept under an "allow this
+   * host?" page. Turning it off first removes the service workers; if that fails no page loads until it succeeds.
    */
   async setWebRTC(allowed: boolean): Promise<BrowserState> {
     if (this.changingWebRTC) throw new Error('The browser setting is being saved.')
@@ -239,39 +276,78 @@ export class MdeBrowser {
     this.changingWebRTC = true
     try {
       this.webrtc = allowed
+      // Workers registered while WebRTC was allowed are there now, so nothing loads until they are removed.
+      if (!allowed) this.workers = 'removing'
+      // Closed before anything is awaited, so no page goes on under the old rule.
+      const pages = this.closePages()
       try {
         await this.save()
       } catch (error) {
+        // Not kept, so the pages open again under the rule they had.
         this.webrtc = !allowed
+        this.reopenPages(pages)
+        this.changed()
         throw error
       }
-      if (!allowed) {
-        try {
-          await this.removeServiceWorkers()
-        } catch {
-          // Off it stays: the open pages and the Settings switch learn so before the error.
-          this.reloadOpenPages()
-          this.changed()
-          throw new Error('WebRTC is off, but the service workers of earlier pages could not be removed. Clear the browser\'s data below.')
-        }
-      }
-      this.reloadOpenPages()
+      if (!allowed) await this.removeServiceWorkers()
+      this.reopenPages(pages)
       this.changed()
+      if (!this.workersGone()) throw new Error(WORKERS_FAILED)
       return this.state()
     } finally {
       this.changingWebRTC = false
     }
   }
 
-  /** Loads the open pages again, so each takes the WebRTC rule now in force. */
-  private reloadOpenPages(): void {
-    for (const tab of this.tabs) {
-      if (tab.view && !tab.state.blocked && tab.state.url) this.act(tab.id, 'reload')
-    }
+  /** Whether pages may load as far as service workers go: WebRTC is allowed, or the earlier ones are gone. */
+  private workersGone(): boolean {
+    return this.webrtc || this.workers === 'removed'
   }
 
+  /** Closes every tab's page, and says which address each tab showed (or kept under its "allow this host?" page). */
+  private closePages(): Map<string, string> {
+    const pages = new Map<string, string>()
+    for (const tab of this.tabs) {
+      const contents = tab.view?.webContents
+      const under = contents && !contents.isDestroyed() ? contents.getURL() : ''
+      if (tab.state.blocked) {
+        if (under) tab.returnUrl = under
+      } else if (tab.state.url) {
+        pages.set(tab.id, tab.state.url)
+      }
+      this.destroy(tab)
+    }
+    return pages
+  }
+
+  /** Opens the closed pages again in their tabs, which stay in their order with the same tab active. */
+  private reopenPages(pages: Map<string, string>): void {
+    const active = this.activeId
+    for (const [id, url] of pages) {
+      try {
+        this.navigate(id, url)
+      } catch (error) {
+        const tab = this.tabs.find((item) => item.id === id)
+        if (tab) tab.state = { ...tab.state, loading: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
+    this.activeId = active
+  }
+
+  /** Removes every service worker of the browser's session, unless WebRTC is allowed, and notes how that went. */
   private async removeServiceWorkers(): Promise<void> {
-    await this.options.session.clearStorageData({ storages: ['serviceworkers'] })
+    if (this.webrtc) return
+    const attempt = ++this.workerAttempt
+    this.workers = 'removing'
+    let removed = false
+    try {
+      await this.options.session.clearStorageData({ storages: ['serviceworkers'] })
+      removed = true
+    } catch {
+      // Reported by the next page that tries to open.
+    }
+    // A later attempt, or a clearing of all data, has the last word.
+    if (attempt === this.workerAttempt) this.workers = removed ? 'removed' : 'failed'
   }
 
   /** Opens an address in the browser: in the tab already showing it, or in a new one. */
@@ -304,7 +380,14 @@ export class MdeBrowser {
     const url = browserUrl(input)
     if (!url) throw new Error('The MDE browser opens only http and https addresses.')
     const host = browserHost(url)!
+    if (!this.workersGone()) {
+      if (this.workers !== 'failed') throw new Error('The MDE browser is still getting ready. Try again.')
+      // Tried again on each attempt, so a passing failure clears itself.
+      void this.removeServiceWorkers()
+      throw new Error(WORKERS_FAILED)
+    }
     this.activeId = tab.id
+    tab.returnUrl = undefined
     tab.state = { ...tab.state, url, title: host, error: null, blocked: null, blockedHosts: [] }
     if (!isHostAllowed(host, this.allowed)) {
       tab.state.blocked = { url, host }
@@ -432,6 +515,11 @@ export class MdeBrowser {
   async clearData(): Promise<void> {
     const { session } = this.options
     const results = await Promise.allSettled([session.clearStorageData(), session.clearCache(), session.clearAuthCache()])
+    // Clearing all storage removes the service workers too.
+    if (results[0]?.status === 'fulfilled') {
+      this.workerAttempt++
+      this.workers = 'removed'
+    }
     if (results.some((result) => result.status === 'rejected')) {
       throw new Error('Some of the MDE browser\'s data could not be cleared. Try again.')
     }
@@ -500,6 +588,11 @@ export class MdeBrowser {
       tab.state = { ...tab.state, url, title: contents.getTitle() || tab.state.title, blocked: null, error: null }
       tab.state.canGoBack = contents.navigationHistory.canGoBack()
       tab.state.canGoForward = contents.navigationHistory.canGoForward()
+    } else if (tab.returnUrl) {
+      // The page under it was closed when the WebRTC rule changed: it loads again, under the rule now in force.
+      const returnUrl = tab.returnUrl
+      this.navigate(tab.id, returnUrl)
+      return
     } else {
       this.destroy(tab)
       tab.state = emptyTab(tab.id)

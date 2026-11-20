@@ -591,19 +591,27 @@ which can be older than a current browser, so the boundary is what it loads rath
   checking is off, so no dictionary is downloaded.
 - **WebRTC off by default.** WebRTC connections never pass the request filter, so unless the person allows WebRTC in
   Settings → Browser (`webrtc` in `browser.json`), `onHeadersReceived` puts Chromium's connection allowlist on every
-  response, `Connection-Allowlist: ("*://*:*/*"); redirects=allow` (`BLOCK_WEBRTC_HEADER`). It allows every address
-  and redirects, leaving hosts to the request filter, and blocks all WebRTC, which is its default. Chromium reads
-  only the first allowlist of a response, so a server's own is replaced, never kept beside it (a server sending
-  `webrtc=allow` would otherwise win). Frames and popups without a response of their own (`about:blank`, `srcdoc`,
-  `blob:`) inherit it; a page built by a service worker would not, so the session also refuses service worker
-  scripts (`Service-Worker: script` in `onBeforeSendHeaders`) and removes registered ones at startup and when WebRTC
-  is turned off. Verified under Electron 45.4.1 (Chromium 156) against local STUN and TURN servers: with the header
+  response (`withoutWebRTC`). Without one from the server it is `("*://*:*/*"); redirects=allow`
+  (`BLOCK_WEBRTC_HEADER`): every address and redirects allowed, leaving hosts to the request filter, and all WebRTC
+  blocked, which is its default. A server's own allowlist is kept, so its address and redirect rules still apply,
+  with `;webrtc=block` put last: a later parameter replaces an earlier one, so it overrides a `webrtc=allow`.
+  Chromium applies only the first member of the list (and only the first of several headers), so only that member
+  is kept. A server value that does not parse stays unparsable, and Chromium then blocks every connection of the page.
+  Frames and popups without a response of their own (`about:blank`, `srcdoc`, `blob:`) inherit it; a page built by a
+  service worker would not, so the session refuses service worker scripts (`Service-Worker: script` in
+  `onBeforeSendHeaders`) and removes registered ones at startup and when WebRTC is turned off. Until that removal has
+  succeeded, the request filter cancels every request and no tab opens a page; each attempt to open one tries the
+  removal again, and clearing the browsing data also counts. Verified under Electron 45.4.1 (Chromium 156) against local STUN and TURN servers: with the header
   no packet reached either from a top-level page, an `about:blank`, `srcdoc` or `blob:` frame, an `about:blank`
   popup or a page from the HTTP cache, while fetches, WebSockets and redirects worked; Chromium ends the page's
-  process when a frame without its own response tries. The allowlist needs Chromium 152 or later; keep this in mind
+  process when a frame without its own response tries. A server's `(response-origin); webrtc=allow` kept its
+  restriction to its own origin and still had WebRTC blocked. The allowlist needs Chromium 152 or later; keep this in mind
   before ever moving Electron back. When WebRTC is allowed, `disable_non_proxied_udp` still keeps it off plain UDP,
   but WebRTC over TCP (a TURN relay, or ICE-TCP) reaches any host; Settings warns about this beside the switch and
-  PRIVACY.md says so. Changing the switch reloads the open pages, since each keeps the rule it was loaded with.
+  PRIVACY.md says so. A page keeps the rule it was loaded with, so changing the switch closes every tab's page,
+  including one kept alive under an "Allow <host>?" page, and opens it again from its address under the new rule
+  (Go back on such a page loads the page under it again); a reload would leave the old page running until the new
+  one committed.
 - **Clearing data.** Clear browsing data runs every step (storage, cache, HTTP auth cache) and reports a failure if
   any step failed; the UI says "Cleared" only after all of them succeeded.
 - **Permissions and downloads.** The browser's session has the same deny-all permission policy as the window

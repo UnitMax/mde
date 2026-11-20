@@ -126,6 +126,9 @@ function sends(headers: Record<string, string>): boolean {
   return cancelled === false
 }
 
+/** Lets pending promises (a removal of service workers) finish. */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
 /** The calls that removed the service workers only. */
 function serviceWorkerClears(): number {
   return session.clearStorageData.mock.calls.filter(([options]) => options?.storages?.join() === 'serviceworkers').length
@@ -246,7 +249,7 @@ describe('MDE browser (main process)', () => {
     expect(browser.state()).toMatchObject({ enabled: true, webrtc: true })
   })
 
-  it('blocks WebRTC by default: every response carries the allowlist, in place of the server\'s own', async () => {
+  it('blocks WebRTC by default: every response carries an allowlist, keeping the server\'s own rules', async () => {
     const browser = make()
     await browser.load()
     expect(browser.state().webrtc).toBe(false)
@@ -254,9 +257,16 @@ describe('MDE browser (main process)', () => {
       'Content-Type': ['text/html'],
       'Connection-Allowlist': ['("*://*:*/*"); redirects=allow'],
     })
-    // Chromium reads only the first allowlist, so a server's, which could allow WebRTC, is replaced.
-    expect(responseHeaders({ 'connection-allowlist': ['("*://*:*/*"); webrtc=allow'] })).toEqual({
-      'Connection-Allowlist': ['("*://*:*/*"); redirects=allow'],
+    // The server's addresses and redirect rule stay; the last webrtc parameter wins, so its webrtc=allow does not.
+    expect(responseHeaders({ 'connection-allowlist': ['(response-origin "https://api.test"); webrtc=allow '] })).toEqual({
+      'Connection-Allowlist': ['(response-origin "https://api.test"); webrtc=allow;webrtc=block'],
+    })
+    // Chromium reads only the first member of the list; a comma inside a quoted pattern does not end it.
+    expect(responseHeaders({ 'Connection-Allowlist': ['("https://a.test/x,y"); redirects=allow, ("*://*:*/*"); webrtc=allow'] })).toEqual({
+      'Connection-Allowlist': ['("https://a.test/x,y"); redirects=allow;webrtc=block'],
+    })
+    expect(responseHeaders({ 'Connection-Allowlist': ['(response-origin)', '("*://*:*/*"); webrtc=allow'] })).toEqual({
+      'Connection-Allowlist': ['(response-origin);webrtc=block'],
     })
   })
 
@@ -269,30 +279,103 @@ describe('MDE browser (main process)', () => {
     expect(sends({ Accept: 'text/html' })).toBe(true)
   })
 
-  it('allows WebRTC and service workers when turned on, keeps the choice and loads open pages again', async () => {
+  it('opens no page while the service workers of earlier pages could not be removed, and tries again', async () => {
+    session.clearStorageData.mockRejectedValueOnce(new Error('busy'))
     const browser = await enabledBrowser()
-    browser.open('http://localhost:3000/')
-    const contents = electron.views[0]!.webContents
+    await settle()
+    expect(() => browser.open('http://localhost:3000/')).toThrow(/could not remove the service workers/)
+    expect(request('http://localhost:3000/', undefined)).toBe(false)
+    // The failed attempt started another, which worked.
+    await settle()
+    expect(browser.state().tabs).toHaveLength(1)
+    browser.navigate(browser.state().tabs[0]!.id, 'http://localhost:3000/')
+    expect(electron.views[0]!.webContents.loadURL).toHaveBeenCalledWith('http://localhost:3000/')
+    expect(request('http://localhost:3000/', undefined)).toBe(true)
+  })
+
+  it('lets pages load again once clearing the browsing data removed the service workers', async () => {
+    session.clearStorageData.mockRejectedValueOnce(new Error('busy')).mockRejectedValueOnce(new Error('busy'))
+    const browser = await enabledBrowser()
+    await settle()
+    expect(() => browser.open('http://localhost:3000/')).toThrow(/could not remove/)
+    await settle()
+    await browser.clearData()
+    expect(request('http://localhost:3000/', undefined)).toBe(true)
+  })
+
+  it('opens every page again under the new rule when WebRTC is turned on or off, and keeps the choice', async () => {
+    const browser = await enabledBrowser()
+    const first = browser.open('http://localhost:3000/').tabs[0]!
+    browser.open('http://localhost:5173/')
+    browser.select(first.id)
+    const before = electron.views.map((view) => view.webContents)
     expect((await browser.setWebRTC(true)).webrtc).toBe(true)
-    expect(contents.reload).toHaveBeenCalledTimes(1)
+    // A page keeps the rule it was loaded with, so the old pages are closed, not reloaded.
+    for (const contents of before) expect(contents.close).toHaveBeenCalled()
+    expect(electron.views).toHaveLength(4)
+    expect(electron.views[2]!.webContents.loadURL).toHaveBeenCalledWith('http://localhost:3000/')
+    expect(electron.views[3]!.webContents.loadURL).toHaveBeenCalledWith('http://localhost:5173/')
+    expect(browser.state().activeId).toBe(first.id)
     expect(responseHeaders({ 'Content-Type': ['text/html'] })).toEqual({ 'Content-Type': ['text/html'] })
     expect(sends({ 'Service-Worker': 'script' })).toBe(true)
     expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ webrtc: true })
     const clears = serviceWorkerClears()
     await browser.setWebRTC(false)
     expect(serviceWorkerClears()).toBe(clears + 1)
-    expect(contents.reload).toHaveBeenCalledTimes(2)
+    expect(electron.views[2]!.webContents.close).toHaveBeenCalled()
+    expect(electron.views).toHaveLength(6)
     expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
     expect(sends({ 'service-worker': 'script' })).toBe(false)
     expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ webrtc: false })
   })
 
-  it('says so when service workers could not be removed on turning WebRTC off, which stays off', async () => {
+  it('closes a page kept under the "allow this host?" page when WebRTC is turned off, and Go back opens it anew', async () => {
     const browser = await enabledBrowser()
     await browser.setWebRTC(true)
-    session.clearStorageData.mockRejectedValueOnce(new Error('busy'))
-    await expect(browser.setWebRTC(false)).rejects.toThrow(/service workers .* could not be removed/)
+    const tab = browser.open('http://localhost:3000/').tabs[0]!
+    const old = electron.views.at(-1)!.webContents
+    old.getURL.mockReturnValue('http://localhost:3000/')
+    // The page navigates to a host that is not allowed: the page stays alive under the "allow this host?" page.
+    const event = { url: 'https://other.test/', preventDefault: vi.fn() }
+    old.emit('will-navigate', event)
+    expect(browser.state().tabs[0]!.blocked).toMatchObject({ host: 'other.test' })
+    await browser.setWebRTC(false)
+    expect(old.close).toHaveBeenCalled()
+    expect(browser.state().tabs[0]!.blocked).toMatchObject({ host: 'other.test' })
+    const views = electron.views.length
+    browser.act(tab.id, 'back')
+    expect(electron.views).toHaveLength(views + 1)
+    expect(electron.views.at(-1)!.webContents.loadURL).toHaveBeenCalledWith('http://localhost:3000/')
+    expect(browser.state().tabs[0]).toMatchObject({ blocked: null, url: 'http://localhost:3000/' })
+  })
+
+  it('opens the pages again under the old rule when the WebRTC choice could not be saved', async () => {
+    const browser = await enabledBrowser()
+    browser.open('http://localhost:3000/')
+    const old = electron.views.at(-1)!.webContents
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await expect(browser.setWebRTC(true)).rejects.toThrow()
+    await rm(dir, { force: true })
     expect(browser.state().webrtc).toBe(false)
+    expect(old.close).toHaveBeenCalled()
+    expect(electron.views.at(-1)!.webContents.loadURL).toHaveBeenCalledWith('http://localhost:3000/')
+    expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
+  })
+
+  it('opens no page when the service workers could not be removed on turning WebRTC off, which stays off', async () => {
+    const browser = await enabledBrowser()
+    await browser.setWebRTC(true)
+    browser.open('http://localhost:3000/')
+    const old = electron.views.at(-1)!.webContents
+    // Fails when turned off, and again when the reopened tab tries.
+    session.clearStorageData.mockRejectedValueOnce(new Error('busy')).mockRejectedValueOnce(new Error('busy'))
+    await expect(browser.setWebRTC(false)).rejects.toThrow(/could not remove the service workers/)
+    await settle()
+    expect(browser.state().webrtc).toBe(false)
+    expect(old.close).toHaveBeenCalled()
+    expect(browser.state().tabs[0]!.error).toMatch(/could not remove/)
+    expect(request('http://localhost:3000/', undefined)).toBe(false)
   })
 
   it('names WebRTC as the likely cause when Chromium ends a page while it is off', async () => {

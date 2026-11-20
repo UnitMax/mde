@@ -137,7 +137,7 @@ export function BrowserSettings(): JSX.Element {
         <SwitchRow
           checked={store.state.webrtc}
           label="Allow WebRTC"
-          description="For pages that make video or voice calls or connect peer to peer. Most apps don't need it; leave it off unless yours does. Open pages load again."
+          description="For pages that make video or voice calls or connect peer to peer. Most apps don't need it; leave it off unless yours does. Open pages are closed and opened again."
           testId="browser-webrtc"
           disabled={!available || !store.loaded || !store.state.enabled || switchingWebRTC}
           onClick={() => {

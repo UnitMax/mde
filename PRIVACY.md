@@ -408,7 +408,8 @@ store. Name resolution of allowed hosts uses the operating system and its proxy 
 
 WebRTC connections do not pass the request filter, so the MDE browser blocks WebRTC unless you allow it in Settings →
 Browser: no page can open a WebRTC connection to any host, local or not, and pages cannot register service workers
-(which could otherwise serve a page without that block). If you allow WebRTC, it becomes the exception to the host
+(which could otherwise serve a page without that block). Service workers registered earlier are removed first, and no
+page opens until that has succeeded. If you allow WebRTC, it becomes the exception to the host
 list: MDE still stops it from using UDP directly (`disable_non_proxied_udp`), but a page can use WebRTC over TCP, for
 example through a TURN relay, to reach a host that is not allowed. Allow it only for pages you trust with what they
 can read in the MDE browser.

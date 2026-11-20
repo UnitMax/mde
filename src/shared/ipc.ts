@@ -856,7 +856,7 @@ export interface RendererApi {
   browser: {
     state(): Promise<BrowserState>
     setEnabled(enabled: boolean): Promise<BrowserState>
-    /** Allows or blocks WebRTC in the browser's pages; open pages load again. */
+    /** Allows or blocks WebRTC in the browser's pages; open pages are closed and opened again. */
     setWebRTC(allowed: boolean): Promise<BrowserState>
     /** Opens an address in the tab already showing it, or in a new tab. */
     open(url: string): Promise<BrowserState>
