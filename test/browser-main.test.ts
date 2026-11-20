@@ -42,12 +42,23 @@ import { MdeBrowser } from '../src/main/browser'
 import type { BrowserState } from '../src/shared/browser'
 
 type RequestHandler = (details: { url: string; webContentsId?: number; resourceType: string }, callback: (response: { cancel?: boolean }) => void) => void
+type HeadersHandler = (
+  details: { responseHeaders?: Record<string, string[]> },
+  callback: (response: { responseHeaders?: Record<string, string[]> }) => void,
+) => void
+type SendHeadersHandler = (details: { requestHeaders: Record<string, string> }, callback: (response: { cancel?: boolean }) => void) => void
 
 function fakeSession() {
   const session = {
     requestHandler: null as RequestHandler | null,
     downloadHandler: null as ((event: unknown, item: unknown, contents: unknown) => void) | null,
-    webRequest: { onBeforeRequest: vi.fn((handler: RequestHandler) => { session.requestHandler = handler }) },
+    headersHandler: null as HeadersHandler | null,
+    sendHeadersHandler: null as SendHeadersHandler | null,
+    webRequest: {
+      onBeforeRequest: vi.fn((handler: RequestHandler) => { session.requestHandler = handler }),
+      onHeadersReceived: vi.fn((handler: HeadersHandler) => { session.headersHandler = handler }),
+      onBeforeSendHeaders: vi.fn((handler: SendHeadersHandler) => { session.sendHeadersHandler = handler }),
+    },
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
     setDevicePermissionHandler: vi.fn(),
@@ -55,7 +66,7 @@ function fakeSession() {
     on: vi.fn((name: string, handler: (event: unknown, item: unknown, contents: unknown) => void) => {
       if (name === 'will-download') session.downloadHandler = handler
     }),
-    clearStorageData: vi.fn(async () => undefined),
+    clearStorageData: vi.fn(async (_options?: { storages?: string[] }) => undefined),
     clearCache: vi.fn(async () => undefined),
     clearAuthCache: vi.fn(async () => undefined),
   }
@@ -101,6 +112,25 @@ function request(url: string, contentsId: number | undefined, resourceType = 'sc
   return cancelled === false
 }
 
+/** The headers a page's response arrives with after the session's own changes. */
+function responseHeaders(headers: Record<string, string[]>): Record<string, string[]> {
+  let result: Record<string, string[]> | undefined
+  session.headersHandler!({ responseHeaders: headers }, (response) => { result = response.responseHeaders ?? headers })
+  return result!
+}
+
+/** Whether the session sends a request with these headers, rather than cancelling it. */
+function sends(headers: Record<string, string>): boolean {
+  let cancelled: boolean | undefined
+  session.sendHeadersHandler!({ requestHeaders: headers }, (response) => { cancelled = response.cancel === true })
+  return cancelled === false
+}
+
+/** The calls that removed the service workers only. */
+function serviceWorkerClears(): number {
+  return session.clearStorageData.mock.calls.filter(([options]) => options?.storages?.join() === 'serviceworkers').length
+}
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mde-browser-'))
   session = fakeSession()
@@ -134,7 +164,7 @@ describe('MDE browser (main process)', () => {
     await browser.load()
     expect(browser.state().enabled).toBe(false)
     // The choice is kept in browser.json, with the allowed hosts, which turning it off leaves alone.
-    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toEqual({ version: 1, enabled: false, allowedHosts: ['staging.test'] })
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toEqual({ version: 1, enabled: false, webrtc: false, allowedHosts: ['staging.test'] })
   })
 
   it('puts its own policy on its session: no permissions, no spell check, every request filtered', () => {
@@ -196,7 +226,7 @@ describe('MDE browser (main process)', () => {
     expect(state.tabs.find((tab) => tab.id === blocked.id)!.blocked).toBeNull()
     expect(electron.views[1]!.webContents.loadURL).toHaveBeenCalledWith('https://staging.test/app')
     expect(local.reload).toHaveBeenCalled()
-    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toEqual({ version: 1, enabled: true, allowedHosts: ['staging.test'] })
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toEqual({ version: 1, enabled: true, webrtc: false, allowedHosts: ['staging.test'] })
     expect(request('https://staging.test/api', local.id)).toBe(true)
     await browser.removeHost('staging.test')
     expect(request('https://staging.test/api', local.id)).toBe(false)
@@ -208,9 +238,71 @@ describe('MDE browser (main process)', () => {
     await browser.load()
     expect(browser.state()).toMatchObject({ enabled: true, allowedHosts: ['a.test', 'b.test'] })
     // Only a literal true turns it on.
-    await writeFile(join(dir, 'browser.json'), JSON.stringify({ enabled: 'true', allowedHosts: [] }))
+    await writeFile(join(dir, 'browser.json'), JSON.stringify({ enabled: 'true', webrtc: 'true', allowedHosts: [] }))
     await browser.load()
-    expect(browser.state().enabled).toBe(false)
+    expect(browser.state()).toMatchObject({ enabled: false, webrtc: false })
+    await writeFile(join(dir, 'browser.json'), JSON.stringify({ enabled: true, webrtc: true, allowedHosts: [] }))
+    await browser.load()
+    expect(browser.state()).toMatchObject({ enabled: true, webrtc: true })
+  })
+
+  it('blocks WebRTC by default: every response carries the allowlist, in place of the server\'s own', async () => {
+    const browser = make()
+    await browser.load()
+    expect(browser.state().webrtc).toBe(false)
+    expect(responseHeaders({ 'Content-Type': ['text/html'] })).toEqual({
+      'Content-Type': ['text/html'],
+      'Connection-Allowlist': ['("*://*:*/*"); redirects=allow'],
+    })
+    // Chromium reads only the first allowlist, so a server's, which could allow WebRTC, is replaced.
+    expect(responseHeaders({ 'connection-allowlist': ['("*://*:*/*"); webrtc=allow'] })).toEqual({
+      'Connection-Allowlist': ['("*://*:*/*"); redirects=allow'],
+    })
+  })
+
+  it('registers no service worker while WebRTC is off and removes those registered before', async () => {
+    const browser = make()
+    await browser.load()
+    // A service worker could answer a page load itself, without the allowlist.
+    expect(serviceWorkerClears()).toBe(1)
+    expect(sends({ 'Service-Worker': 'script' })).toBe(false)
+    expect(sends({ Accept: 'text/html' })).toBe(true)
+  })
+
+  it('allows WebRTC and service workers when turned on, keeps the choice and loads open pages again', async () => {
+    const browser = await enabledBrowser()
+    browser.open('http://localhost:3000/')
+    const contents = electron.views[0]!.webContents
+    expect((await browser.setWebRTC(true)).webrtc).toBe(true)
+    expect(contents.reload).toHaveBeenCalledTimes(1)
+    expect(responseHeaders({ 'Content-Type': ['text/html'] })).toEqual({ 'Content-Type': ['text/html'] })
+    expect(sends({ 'Service-Worker': 'script' })).toBe(true)
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ webrtc: true })
+    const clears = serviceWorkerClears()
+    await browser.setWebRTC(false)
+    expect(serviceWorkerClears()).toBe(clears + 1)
+    expect(contents.reload).toHaveBeenCalledTimes(2)
+    expect(responseHeaders({})).toHaveProperty('Connection-Allowlist')
+    expect(sends({ 'service-worker': 'script' })).toBe(false)
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ webrtc: false })
+  })
+
+  it('says so when service workers could not be removed on turning WebRTC off, which stays off', async () => {
+    const browser = await enabledBrowser()
+    await browser.setWebRTC(true)
+    session.clearStorageData.mockRejectedValueOnce(new Error('busy'))
+    await expect(browser.setWebRTC(false)).rejects.toThrow(/service workers .* could not be removed/)
+    expect(browser.state().webrtc).toBe(false)
+  })
+
+  it('names WebRTC as the likely cause when Chromium ends a page while it is off', async () => {
+    const browser = await enabledBrowser()
+    browser.open('http://localhost:3000/')
+    const contents = electron.views[0]!.webContents
+    contents.emit('render-process-gone', {}, { reason: 'killed', exitCode: 3 })
+    expect(browser.state().tabs[0]!.error).toMatch(/WebRTC, which is off/)
+    contents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 })
+    expect(browser.state().tabs[0]!.error).not.toMatch(/WebRTC/)
   })
 
   it('opens a page\'s new windows as tabs, and never hands one to the system browser itself', async () => {
@@ -295,7 +387,8 @@ describe('MDE browser (main process)', () => {
     await browser.clearData()
     session.clearCache.mockRejectedValueOnce(new Error('busy'))
     await expect(browser.clearData()).rejects.toThrow(/could not be cleared/)
-    expect(session.clearStorageData).toHaveBeenCalledTimes(2)
+    // Once more than the service workers' removal when the browser started.
+    expect(session.clearStorageData).toHaveBeenCalledTimes(3)
     expect(session.clearAuthCache).toHaveBeenCalledTimes(2)
   })
 

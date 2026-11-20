@@ -828,6 +828,7 @@ export function registerIpcHandlers(
     return browser
   }
   handle<{ enabled: boolean }, BrowserState>(IpcChannels.browserSetEnabled, ({ enabled }) => browserOnly().setEnabled(enabled))
+  handle<{ allowed: boolean }, BrowserState>(IpcChannels.browserSetWebRTC, ({ allowed }) => browserOnly().setWebRTC(allowed))
   handle<void, BrowserState>(IpcChannels.browserState, () => browserOnly().state())
   handle<{ url: string }, BrowserState>(IpcChannels.browserOpen, ({ url }) => browserOnly().open(url))
   handle<void, BrowserState>(IpcChannels.browserNewTab, () => browserOnly().newTab())

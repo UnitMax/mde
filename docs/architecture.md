@@ -648,7 +648,9 @@ animations that change nothing it observes.
 
 What a page may load is in [Security → MDE browser boundary](security.md#mde-browser-boundary). A tab whose host
 is not allowed shows "Allow <host>?" instead of the page, with Go back (to the page under it, or the start page),
-Allow and open, and Open in system browser; hosts a page was refused are listed under the toolbar, each
+Allow and open, and Open in system browser; WebRTC is off unless Settings → Browser → Allow WebRTC is on
+(`webrtc` in `browser.json`; see the security notes for how), and turning it on or off reloads the open pages. Hosts
+a page was refused are listed under the toolbar, each
 allowable from there (which reloads the page). A page that does not load (a dev server that is not running) or
 crashes shows the error with **Try again**. The toolbar has Back, Forward, Reload (Stop while loading) and the
 address field, which takes `localhost:3000` without a scheme; the ⋯ menu has Developer tools (a separate window),
@@ -2574,6 +2576,14 @@ home directory unless a terminal launch supplies its current folder. Linux shell
 their existing target-shell behavior.
 
 ## Upgrade notes
+
+### Electron 45
+
+MDE moved from Electron 43 (Chromium 150) to Electron 45.4.1 (Chromium 156), which brings Chromium's connection
+allowlist that the MDE browser uses to block WebRTC. Electron 44 dropped macOS 12, so MDE now needs macOS 13 or
+later. `node-abi` is pinned through `overrides` to a release that knows Electron 45, so `@electron/rebuild` can build
+`node-pty`. Under `--ozone-platform=headless` (used only for headless checks), Electron 45 crashes when a window is
+made with `titleBarOverlay`; real X11 and Wayland do not, so headless checks have to leave the overlay out.
 
 ### Removed terminal launcher
 

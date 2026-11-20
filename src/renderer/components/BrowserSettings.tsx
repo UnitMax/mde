@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Trash2, X } from 'lucide-react'
+import { AlertTriangle, Trash2, X } from 'lucide-react'
 import { isBrowserLinkClick, normalizeAllowedHost, type BrowserLinkClick } from '@shared/browser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +23,8 @@ export function BrowserSettings(): JSX.Element {
   const [host, setHost] = useState('')
   const [cleared, setCleared] = useState(false)
   const [switching, setSwitching] = useState(false)
+  const [switchingWebRTC, setSwitchingWebRTC] = useState(false)
+  const [webrtcError, setWebRTCError] = useState<string | null>(null)
   const typed = host.trim() ? normalizeAllowedHost(host) : null
   const add = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
@@ -38,8 +40,7 @@ export function BrowserSettings(): JSX.Element {
         </h3>
         <p className="mt-1 text-xs text-fg-subtle">
           The MDE browser is the Browser tab of the Inbox sidebar, for the web apps you are building. It opens localhost,
-          127.0.0.1 and the hosts listed here. The host list covers web requests and WebSockets; WebRTC can still reach
-          other hosts.
+          127.0.0.1 and the hosts listed here. The host list covers web requests and WebSockets, and WebRTC is off.
         </p>
       </div>
 
@@ -129,7 +130,34 @@ export function BrowserSettings(): JSX.Element {
           </Button>
         </form>
         {host.trim() && !typed && <p className="text-[11px] text-danger">Enter a host name or an IP address, without wildcards.</p>}
-        {store.error && <p role="alert" className="text-[11px] text-danger">{store.error}</p>}
+        {store.error && store.error !== webrtcError && <p role="alert" className="text-[11px] text-danger">{store.error}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <SwitchRow
+          checked={store.state.webrtc}
+          label="Allow WebRTC"
+          description="For pages that make video or voice calls or connect peer to peer. Most apps don't need it; leave it off unless yours does. Open pages load again."
+          testId="browser-webrtc"
+          disabled={!available || !store.loaded || !store.state.enabled || switchingWebRTC}
+          onClick={() => {
+            setSwitchingWebRTC(true)
+            setWebRTCError(null)
+            void store.setWebRTC(!store.state.webrtc).then((done) => {
+              if (!done) setWebRTCError(useInboxBrowser.getState().error)
+              setSwitchingWebRTC(false)
+            })
+          }}
+        />
+        {store.state.webrtc && (
+          <p data-testid="browser-webrtc-warning" className="flex items-start gap-1.5 px-1 text-[11px] text-warn">
+            <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            WebRTC connections don't go through the host list. A page can use them to reach hosts you haven't allowed,
+            over TCP or through a TURN relay, and so send data out without asking. Only plain UDP to other hosts is
+            stopped. Pages can also use service workers again.
+          </p>
+        )}
+        {webrtcError && <p role="alert" className="px-1 text-[11px] text-danger">{webrtcError}</p>}
       </div>
 
       <div className="space-y-2 rounded border border-line bg-panel p-3">

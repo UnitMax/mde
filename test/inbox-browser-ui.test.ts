@@ -25,10 +25,11 @@ function tab(overrides: Partial<BrowserTab> = {}): BrowserTab {
   return { id: TAB_ID, url: 'http://localhost:3000/', title: 'App', loading: false, canGoBack: false, canGoForward: false, blocked: null, blockedHosts: [], error: null, ...overrides }
 }
 
-const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
+const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, webrtc: false, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
 
 let api: {
   setEnabled: ReturnType<typeof vi.fn>
+  setWebRTC: ReturnType<typeof vi.fn>
   state: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   newTab: ReturnType<typeof vi.fn>
@@ -59,6 +60,7 @@ beforeEach(() => {
   const current = state([])
   api = {
     setEnabled: vi.fn(async (enabled: boolean) => ({ ...current, enabled })),
+    setWebRTC: vi.fn(async (webrtc: boolean) => ({ ...current, webrtc })),
     state: vi.fn(async () => current),
     open: vi.fn(async (url: string) => state([tab({ url })], useInboxBrowser.getState().state.allowedHosts)),
     newTab: vi.fn(async () => state([tab({ url: '', title: 'New tab' })])),
@@ -179,6 +181,28 @@ describe('Settings → Browser', () => {
     expect(useInboxBrowser.getState().state.enabled).toBe(true)
     expect(byTestId('browser-enabled')!.getAttribute('aria-checked')).toBe('true')
     expect(byTestId('browser-enabled')!.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('keeps WebRTC off unless turned on, and warns about it while on', async () => {
+    await render(createElement(BrowserSettings))
+    const toggle = byTestId('browser-webrtc')!
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(byTestId('browser-webrtc-warning')).toBeNull()
+    await click(toggle)
+    expect(api.setWebRTC).toHaveBeenCalledWith(true)
+    expect(byTestId('browser-webrtc')!.getAttribute('aria-checked')).toBe('true')
+    expect(byTestId('browser-webrtc-warning')!.textContent).toMatch(/don't go through the host list/)
+  })
+
+  it('cannot allow WebRTC while the browser is off, and shows why turning it off failed beside it', async () => {
+    useInboxBrowser.setState({ state: { ...state([]), enabled: false } })
+    await render(createElement(BrowserSettings))
+    expect(byTestId('browser-webrtc')!.hasAttribute('disabled')).toBe(true)
+    await act(async () => useInboxBrowser.setState({ state: { ...state([]), webrtc: true } }))
+    api.setWebRTC.mockRejectedValueOnce(new Error('WebRTC is off, but the service workers of earlier pages could not be removed.'))
+    await click(byTestId('browser-webrtc'))
+    const alerts = Array.from(document.querySelectorAll('[role="alert"]'))
+    expect(alerts.map((alert) => alert.textContent)).toEqual(['WebRTC is off, but the service workers of earlier pages could not be removed.'])
   })
 
   it('says the browsing data was cleared only when it was', async () => {

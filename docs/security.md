@@ -564,7 +564,7 @@ which can be older than a current browser, so the boundary is what it loads rath
   turning it off closes all tabs and keeps the allowed hosts and browsing data.
 
 - **Only local and allowed hosts.** Every request of every page (documents, frames, scripts, styles, fonts,
-  images, `fetch`, WebSockets, redirects, service workers) passes `session.webRequest.onBeforeRequest` on the
+  images, `fetch`, WebSockets, redirects, service worker scripts) passes `session.webRequest.onBeforeRequest` on the
   browser's own session before it is sent. `classifyBrowserRequest` (`src/shared/browser.ts`) lets through
   `http`, `https`, `ws` and `wss` to loopback (`localhost` and `*.localhost`, `127.0.0.0/8`, `[::1]`, `0.0.0.0`)
   and to the hosts in `<userData>/browser.json`, plus inline `data:`, `blob:` and `about:` content; everything else,
@@ -587,10 +587,23 @@ which can be older than a current browser, so the boundary is what it loads rath
   the person in with an identity from the certificate store (Electron would otherwise pick the first match).
 - **Isolation.** Each tab is a `WebContentsView` with `sandbox`, `contextIsolation`, no Node integration, no
   preload, no `<webview>`, and the persistent partition `persist:mde-browser`, so pages share no cookies, storage,
-  permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. WebRTC is limited
-  to `disable_non_proxied_udp`, so it cannot use UDP directly; this does **not** enforce the host list, because
-  WebRTC over TCP (a TURN relay, or ICE-TCP) does not pass the request filter either. PRIVACY.md says so. Spell
+  permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. Spell
   checking is off, so no dictionary is downloaded.
+- **WebRTC off by default.** WebRTC connections never pass the request filter, so unless the person allows WebRTC in
+  Settings → Browser (`webrtc` in `browser.json`), `onHeadersReceived` puts Chromium's connection allowlist on every
+  response, `Connection-Allowlist: ("*://*:*/*"); redirects=allow` (`BLOCK_WEBRTC_HEADER`). It allows every address
+  and redirects, leaving hosts to the request filter, and blocks all WebRTC, which is its default. Chromium reads
+  only the first allowlist of a response, so a server's own is replaced, never kept beside it (a server sending
+  `webrtc=allow` would otherwise win). Frames and popups without a response of their own (`about:blank`, `srcdoc`,
+  `blob:`) inherit it; a page built by a service worker would not, so the session also refuses service worker
+  scripts (`Service-Worker: script` in `onBeforeSendHeaders`) and removes registered ones at startup and when WebRTC
+  is turned off. Verified under Electron 45.4.1 (Chromium 156) against local STUN and TURN servers: with the header
+  no packet reached either from a top-level page, an `about:blank`, `srcdoc` or `blob:` frame, an `about:blank`
+  popup or a page from the HTTP cache, while fetches, WebSockets and redirects worked; Chromium ends the page's
+  process when a frame without its own response tries. The allowlist needs Chromium 152 or later; keep this in mind
+  before ever moving Electron back. When WebRTC is allowed, `disable_non_proxied_udp` still keeps it off plain UDP,
+  but WebRTC over TCP (a TURN relay, or ICE-TCP) reaches any host; Settings warns about this beside the switch and
+  PRIVACY.md says so. Changing the switch reloads the open pages, since each keeps the rule it was loaded with.
 - **Clearing data.** Clear browsing data runs every step (storage, cache, HTTP auth cache) and reports a failure if
   any step failed; the UI says "Cleared" only after all of them succeeded.
 - **Permissions and downloads.** The browser's session has the same deny-all permission policy as the window

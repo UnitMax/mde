@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { BrowserAction, BrowserState } from '@shared/browser'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 
-const EMPTY: BrowserState = { enabled: false, tabs: [], activeId: null, allowedHosts: [] }
+const EMPTY: BrowserState = { enabled: false, webrtc: false, tabs: [], activeId: null, allowedHosts: [] }
 
 interface Store {
   /** The browser as the main process last reported it. */
@@ -15,6 +15,7 @@ interface Store {
   /** Reads the browser and follows its changes; once per page. */
   init: () => void
   setEnabled: (enabled: boolean) => Promise<boolean>
+  setWebRTC: (allowed: boolean) => Promise<boolean>
   open: (url: string) => Promise<boolean>
   newTab: () => Promise<void>
   navigate: (tabId: string, url: string) => Promise<void>
@@ -54,6 +55,7 @@ export const useInboxBrowser = create<Store>((set, get) => {
       void window.api.browser.state().then((state) => set({ state, loaded: true }), () => undefined)
     },
     setEnabled: (enabled) => run(() => window.api.browser.setEnabled(enabled)),
+    setWebRTC: (allowed) => run(() => window.api.browser.setWebRTC(allowed)),
     open: (url) => {
       get().init()
       return run(() => window.api.browser.open(url))

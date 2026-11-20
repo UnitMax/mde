@@ -282,6 +282,7 @@ export const IpcChannels = {
 
   browserState: 'browser:state',
   browserSetEnabled: 'browser:set-enabled',
+  browserSetWebRTC: 'browser:set-webrtc',
   browserOpen: 'browser:open',
   browserNewTab: 'browser:new-tab',
   browserNavigate: 'browser:navigate',
@@ -855,6 +856,8 @@ export interface RendererApi {
   browser: {
     state(): Promise<BrowserState>
     setEnabled(enabled: boolean): Promise<BrowserState>
+    /** Allows or blocks WebRTC in the browser's pages; open pages load again. */
+    setWebRTC(allowed: boolean): Promise<BrowserState>
     /** Opens an address in the tab already showing it, or in a new tab. */
     open(url: string): Promise<BrowserState>
     newTab(): Promise<BrowserState>

@@ -382,6 +382,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.fileViewerOpen]: object({ open: boolean }),
   [IpcChannels.browserState]: noPayload,
   [IpcChannels.browserSetEnabled]: object({ enabled: boolean }),
+  [IpcChannels.browserSetWebRTC]: object({ allowed: boolean }),
   [IpcChannels.browserOpen]: object({ url: browserAddress }),
   [IpcChannels.browserNewTab]: noPayload,
   [IpcChannels.browserNavigate]: object({ tabId: browserTabId, url: browserAddress }),
