@@ -223,17 +223,23 @@ describe('Inbox Browser tab', () => {
     cover.dataset.testid = 'cover'
     await act(async () => {
       document.body.append(cover)
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 20))
     })
     expect(api.capture).toHaveBeenCalled()
-    expect(api.setBounds).toHaveBeenLastCalledWith(null)
-    expect(byTestId('inbox-browser-viewport')!.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA')
+    // The page stays until its picture is painted in its place, so nothing blank shows in between.
+    await vi.waitFor(() => expect(api.setBounds).toHaveBeenLastCalledWith(null))
+    const picture = byTestId('inbox-browser-viewport')!.querySelector('img')
+    expect(picture?.getAttribute('src')).toBe('data:image/png;base64,AAAA')
+    expect(api.setBounds.mock.invocationCallOrder.at(-1)).toBeGreaterThan(api.capture.mock.invocationCallOrder.at(-1)!)
 
     await act(async () => {
       cover.remove()
       await new Promise((resolve) => setTimeout(resolve, 50))
     })
     expect(api.setBounds).toHaveBeenLastCalledWith({ x: 900, y: 80, width: 360, height: 600 })
+    // The picture stays under the page for a moment while the page draws again.
+    expect(byTestId('inbox-browser-viewport')!.querySelector('img')).not.toBeNull()
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
     expect(byTestId('inbox-browser-viewport')!.querySelector('img')).toBeNull()
 
     // Leaving the tab takes the page off the window.

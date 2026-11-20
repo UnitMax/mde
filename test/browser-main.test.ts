@@ -208,7 +208,8 @@ describe('MDE browser (main process)', () => {
   it('lays the active page over the panel in window units, and takes it off for null, a refused page or a closed tab', () => {
     const browser = make()
     const first = browser.open('http://localhost:3000/').tabs[0]!
-    browser.setBounds({ x: 100, y: 40, width: 300, height: 500.4 })
+    // 540.2 × 1.25 = 675.25: the view reaches 676, so the panel's last pixel row is not left showing under it.
+    browser.setBounds({ x: 100, y: 40, width: 300, height: 500.2 })
     const view = electron.views[0]!
     expect(window.contentView.addChildView).toHaveBeenCalledWith(view)
     expect(view.setBounds).toHaveBeenLastCalledWith({ x: 125, y: 50, width: 375, height: 626 })

@@ -31,6 +31,9 @@ import { writeJsonAtomic } from './store/atomic-json'
 
 /** The browser's own session, kept on disk so logins to the apps being developed last; never the window's. */
 export const BROWSER_PARTITION = 'persist:mde-browser'
+/** Float noise below this is not a pixel: 125.0000001 stays 125 rather than growing to 126. */
+const EDGE_SLACK = 0.001
+
 export const BROWSER_FILE = 'browser.json'
 
 /** Chromium's net error codes the browser does not report: a load it cancelled itself, or one it refused. */
@@ -492,15 +495,16 @@ export class MdeBrowser {
       usable.contentView.addChildView(want)
       this.shown = want
     }
-    // The page's CSS pixels are scaled by the window's zoom; the view is placed in the window's own units.
+    // The page's CSS pixels are scaled by the window's zoom; the view is placed in the window's own whole units.
+    // Rounding outwards keeps the view over every pixel of the panel, so no sliver of the panel shows at an edge.
     const zoom = usable.webContents.getZoomFactor()
-    const x = Math.round(this.bounds.x * zoom)
-    const y = Math.round(this.bounds.y * zoom)
+    const x = Math.floor(this.bounds.x * zoom + EDGE_SLACK)
+    const y = Math.floor(this.bounds.y * zoom + EDGE_SLACK)
     want.setBounds({
       x,
       y,
-      width: Math.max(0, Math.round((this.bounds.x + this.bounds.width) * zoom) - x),
-      height: Math.max(0, Math.round((this.bounds.y + this.bounds.height) * zoom) - y),
+      width: Math.max(0, Math.ceil((this.bounds.x + this.bounds.width) * zoom - EDGE_SLACK) - x),
+      height: Math.max(0, Math.ceil((this.bounds.y + this.bounds.height) * zoom - EDGE_SLACK) - y),
     })
   }
 

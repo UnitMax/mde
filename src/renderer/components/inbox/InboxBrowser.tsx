@@ -63,6 +63,29 @@ function coveredPanel(panel: HTMLElement, rect: DOMRect): boolean {
   return false
 }
 
+const SNAPSHOT_LINGER_MS = 300
+
+/** Resolves once a picture is ready to paint, or soon anyway if it never says so. */
+function decoded(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    const timer = window.setTimeout(() => resolve(), 150)
+    const done = (): void => {
+      window.clearTimeout(timer)
+      resolve()
+    }
+    image.onload = done
+    image.onerror = done
+    image.src = url
+    if (typeof image.decode === 'function') image.decode().then(done, done)
+  })
+}
+
+/** Resolves after the next frame has been painted. */
+function painted(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+}
+
 /**
  * Where the page is drawn. The page itself is a native view the main process lays over this box; while a menu,
  * dialog or toast is over the box, a picture of the page stands in and the page steps aside.
@@ -77,6 +100,7 @@ function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
     let last = ''
     let captures = 0
     let stopped = false
+    let clearing = 0
     const measure = (): void => {
       frame = 0
       if (stopped) return
@@ -95,11 +119,17 @@ function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
       }
       if (key === 'covered') {
         if (!wasShown) return
-        // The picture is taken while the page is still there, then the page steps aside.
+        // The picture is taken while the page is still there, decoded and painted under it, and only then does the
+        // page step aside, so nothing blank shows in between.
         const generation = ++captures
+        window.clearTimeout(clearing)
         void window.api.browser.capture().then(
-          (url) => {
-            if (generation === captures) setSnapshot(url)
+          async (url) => {
+            if (generation !== captures) return
+            if (url) await decoded(url)
+            if (generation !== captures) return
+            setSnapshot(url)
+            await painted()
           },
           () => undefined,
         ).finally(() => {
@@ -109,7 +139,11 @@ function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
       }
       captures += 1
       void window.api.browser.setBounds({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
-      setSnapshot(null)
+      // The page needs a moment to draw again where it was taken off; the picture stays under it until then.
+      window.clearTimeout(clearing)
+      clearing = window.setTimeout(() => {
+        if (!stopped) setSnapshot(null)
+      }, SNAPSHOT_LINGER_MS)
     }
     const schedule = (): void => {
       if (!frame && !stopped) frame = requestAnimationFrame(measure)
@@ -133,11 +167,12 @@ function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
       window.removeEventListener('scroll', schedule, true)
       document.removeEventListener('visibilitychange', schedule)
       window.clearInterval(timer)
+      window.clearTimeout(clearing)
       void window.api.browser.setBounds(null)
     }
   }, [tabId])
   return (
-    <div ref={ref} data-testid="inbox-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden bg-white">
+    <div ref={ref} data-testid="inbox-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden bg-bg">
       {snapshot && <img src={snapshot} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-fill" />}
     </div>
   )
