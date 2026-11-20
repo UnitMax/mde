@@ -120,17 +120,13 @@ export function ModelPicker({
           title={value ? `${modelKey(value)}${value.variant ? `#${value.variant}` : ''}` : undefined}
         >
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-          {/* One line in one size: the provider in front and the effort behind are the same quiet tone, the name is the one that reads. */}
+          {/* One line in one size. Weight carries the contrast: the name is medium and bright, the provider in
+              front and the effort behind stay regular and quiet, so no separator is needed before the effort. */}
           <span className="flex min-w-0 items-baseline gap-1">
             {showProvider && <span className="shrink-0 text-fg-subtle" data-testid="chat-model-provider">{provider} /</span>}
             {/* Short names keep their own width; a long one gives way, but not below a few letters. */}
-            <span className="max-w-[16rem] truncate" style={{ minWidth: `${Math.min(name.length, 5)}ch` }}>{name}</span>
-            {showEffort && (
-              <>
-                <span aria-hidden="true" className="shrink-0 text-fg-subtle">·</span>
-                <span className="max-w-28 shrink-0 truncate text-fg-subtle" data-testid="chat-model-effort">{effort}</span>
-              </>
-            )}
+            <span className="max-w-[16rem] truncate font-medium text-fg" style={{ minWidth: `${Math.min(name.length, 5)}ch` }}>{name}</span>
+            {showEffort && <span className="max-w-28 shrink-0 truncate text-fg-subtle" data-testid="chat-model-effort">{effort}</span>}
           </span>
           {atLeast(size, 'medium') && <HoverChevron />}
         </button>

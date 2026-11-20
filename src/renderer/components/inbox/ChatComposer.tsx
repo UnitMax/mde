@@ -83,7 +83,7 @@ export function AgentPicker({
           style={{ color: agentColor(current) }}
         >
           <AgentIcon id={value ?? ''} className="h-3.5 w-3.5 shrink-0" />
-          {named && <span className="truncate">{name}</span>}
+          {named && <span className="truncate font-medium">{name}</span>}
           {named && <HoverChevron />}
         </button>
       </DropdownMenuTrigger>

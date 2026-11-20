@@ -56,13 +56,13 @@ describe('the model chip', () => {
 
   it('reads provider, name and effort as one line, and drops the provider and then the effort as the box narrows', async () => {
     await at('wide', chip())
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('OpenCode /Beam Free·Medium')
+    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('OpenCode /Beam FreeMedium')
     expect(q('[data-testid="chat-model-provider"]')?.textContent).toBe('OpenCode /')
     expect(chevron(q('[data-testid="chat-model-picker"]'))).not.toBeNull()
 
     await at('medium', chip())
     expect(q('[data-testid="chat-model-provider"]')).toBeNull()
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Beam Free·Medium')
+    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Beam FreeMedium')
     expect(chevron(q('[data-testid="chat-model-picker"]'))).not.toBeNull()
 
     await at('narrow', chip())
@@ -89,7 +89,7 @@ describe('the model chip', () => {
     const value = { id: 'long', providerId: 'opencode', variant: 'medium' }
     await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 680)
     expect(q('[data-testid="chat-model-provider"]')).toBeNull()
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Claude Sonnet 4.5 (extended thinking)·Medium')
+    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Claude Sonnet 4.5 (extended thinking)Medium')
     await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 1200)
     expect(q('[data-testid="chat-model-provider"]')?.textContent).toBe('OpenCode /')
   })
