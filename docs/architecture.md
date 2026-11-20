@@ -647,7 +647,8 @@ measures once per animation frame after a mutation, a resize, a scroll or a visi
 animations that change nothing it observes.
 
 What a page may load is in [Security → MDE browser boundary](security.md#mde-browser-boundary). A tab whose host
-is not allowed shows "Allow <host>?" instead of the page; hosts a page was refused are listed under the toolbar, each
+is not allowed shows "Allow <host>?" instead of the page, with Go back (to the page under it, or the start page),
+Allow and open, and Open in system browser; hosts a page was refused are listed under the toolbar, each
 allowable from there (which reloads the page). A page that does not load (a dev server that is not running) or
 crashes shows the error with **Try again**. The toolbar has Back, Forward, Reload (Stop while loading) and the
 address field, which takes `localhost:3000` without a scheme; the ⋯ menu has Developer tools (a separate window),

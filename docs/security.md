@@ -571,12 +571,14 @@ which can be older than a current browser, so the boundary is what it loads rath
   including `file:` and URLs with a user name or password, is cancelled. A host is allowed by its exact name, on
   every port, never by wildcard; at most 100 are kept, and the file is checked again when read.
 - **Asking first.** An address typed, opened from a link or reached by a redirect whose host is not allowed is not
-  contacted: the tab shows "Allow <host>?" with **Allow and open** and **Open in system browser**. Hosts a page tried
+  contacted: the tab shows "Allow <host>?" with **Go back** (the main button), **Allow and open** and **Open in
+  system browser**. Hosts a page tried
   to load from are listed on the tab and can be allowed one by one, which reloads the page. Removing a host in
   Settings → Browser refuses its next requests.
 - **Leaving the browser.** A page never hands an address to the system browser itself, since the address could carry
   whatever the page read. A navigation (`will-navigate`) to a host that is not allowed shows "Allow <host>?" in its
-  tab, with the page kept under it so Back returns to it; a `window.open` to one opens a new tab showing the same;
+  tab, with the page kept under it so Back or **Go back** returns to it (a tab with no page under it goes back
+  to its start page); a `window.open` to one opens a new tab showing the same;
   one to an allowed host opens as a tab. Only the person's own choice reaches `shell.openExternal`: **Open in system
   browser** on that page (through the window's validated `openExternal` IPC) or **Open link in system browser** in
   the page's right-click menu (`safeExternalWebUrl`, http and https only, at most one a second). MDE never opens a

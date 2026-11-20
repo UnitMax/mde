@@ -241,12 +241,31 @@ describe('MDE browser (main process)', () => {
     expect(openExternal).not.toHaveBeenCalled()
     const blocked = browser.state().tabs[0]!
     expect(blocked).toMatchObject({ blocked: { url: 'https://evil.example/?leak=secret', host: 'evil.example' }, canGoBack: true })
+    // The page's own events after the refusal do not take Back away, though its history has nothing before it.
+    contents.emit('did-stop-loading')
+    expect(browser.state().tabs[0]!.canGoBack).toBe(true)
     browser.act(blocked.id, 'back')
     expect(browser.state().tabs[0]).toMatchObject({ url: 'http://localhost:3000/', title: 'App', blocked: null })
     expect(contents.navigationHistory.goBack).not.toHaveBeenCalled()
     const local = { url: 'http://localhost:3000/next', preventDefault: vi.fn() }
     contents.emit('will-navigate', local)
     expect(local.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('leaves the "allow this host?" page for the start page when no page is under it', async () => {
+    const browser = await enabledBrowser()
+    const typed = browser.open('https://staging.test/app').tabs[0]!
+    expect(typed).toMatchObject({ blocked: { host: 'staging.test' }, canGoBack: true })
+    browser.act(typed.id, 'back')
+    expect(browser.state().tabs[0]).toMatchObject({ id: typed.id, url: '', title: 'New tab', blocked: null, canGoBack: false })
+    // A page's new window to a host that is not allowed: its tab has nothing under it either.
+    browser.open('http://localhost:3000/')
+    electron.views[0]!.webContents.openHandler!({ url: 'https://evil.example/' })
+    const opened = browser.state().tabs.at(-1)!
+    expect(opened.blocked?.host).toBe('evil.example')
+    browser.act(opened.id, 'back')
+    expect(browser.state().tabs.at(-1)).toMatchObject({ url: '', blocked: null })
+    expect(openExternal).not.toHaveBeenCalled()
   })
 
   it('opens a link in the system browser only from the link menu, at most once a second', async () => {

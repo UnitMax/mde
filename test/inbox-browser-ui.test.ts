@@ -223,6 +223,10 @@ describe('Inbox Browser tab', () => {
     await sidebar()
     expect(byTestId('inbox-browser-blocked')!.textContent).toContain('staging.test')
     expect(byTestId('inbox-browser-viewport')).toBeNull()
+    // Going back is the main button, so leaving is as easy as allowing.
+    expect(byTestId('inbox-browser-blocked')!.querySelector('button')).toBe(byTestId('inbox-browser-go-back'))
+    await click(byTestId('inbox-browser-go-back'))
+    expect(api.act).toHaveBeenCalledWith(TAB_ID, 'back')
     await click(byTestId('inbox-browser-allow'))
     expect(api.allowHost).toHaveBeenCalledWith('staging.test')
   })

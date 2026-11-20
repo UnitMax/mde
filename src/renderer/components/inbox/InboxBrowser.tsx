@@ -341,7 +341,11 @@ function BlockedPage({ tab }: { tab: BrowserTab }): JSX.Element {
         <p className="break-all font-mono text-[11px] text-fg-subtle">{blocked.url}</p>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
-        <Button size="sm" data-testid="inbox-browser-allow" onClick={() => void store.allowHost(blocked.host)}>
+        <Button size="sm" data-testid="inbox-browser-go-back" onClick={() => void store.act(tab.id, 'back')}>
+          <ArrowLeft aria-hidden className={ICON} />
+          Go back
+        </Button>
+        <Button size="sm" variant="secondary" data-testid="inbox-browser-allow" onClick={() => void store.allowHost(blocked.host)}>
           Allow and open
         </Button>
         <Button size="sm" variant="secondary" onClick={() => openInSystemBrowser(blocked.url)}>

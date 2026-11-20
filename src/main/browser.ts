@@ -214,6 +214,7 @@ export class MdeBrowser {
     if (!isHostAllowed(host, this.allowed)) {
       tab.state.blocked = { url, host }
       tab.state.loading = false
+      tab.state.canGoBack = true
       this.changed()
       return this.state()
     }
@@ -229,7 +230,10 @@ export class MdeBrowser {
     const contents = tab.view?.webContents
     switch (action) {
       case 'back':
-        if (tab.state.blocked && this.restore(tab)) return
+        if (tab.state.blocked) {
+          this.leaveBlocked(tab)
+          return
+        }
         if (contents?.navigationHistory.canGoBack()) contents.navigationHistory.goBack()
         return
       case 'forward':
@@ -385,16 +389,22 @@ export class MdeBrowser {
     this.navigate(tab.id, url)
   }
 
-  /** Takes a refused address off a tab whose page is still loaded under it; false when there is no such page. */
-  private restore(tab: Tab): boolean {
+  /**
+   * Leaves the "allow this host?" page without contacting the host: back to the page still loaded under it, or, when
+   * there is none (a typed address, a page's new window), to the tab's start page.
+   */
+  private leaveBlocked(tab: Tab): void {
     const contents = tab.view?.webContents
     const url = contents && !contents.isDestroyed() ? contents.getURL() : ''
-    if (!contents || !url) return false
-    tab.state = { ...tab.state, url, title: contents.getTitle() || tab.state.title, blocked: null, error: null }
-    tab.state.canGoBack = contents.navigationHistory.canGoBack()
-    tab.state.canGoForward = contents.navigationHistory.canGoForward()
+    if (contents && url) {
+      tab.state = { ...tab.state, url, title: contents.getTitle() || tab.state.title, blocked: null, error: null }
+      tab.state.canGoBack = contents.navigationHistory.canGoBack()
+      tab.state.canGoForward = contents.navigationHistory.canGoForward()
+    } else {
+      this.destroy(tab)
+      tab.state = emptyTab(tab.id)
+    }
     this.changed()
-    return true
   }
 
   private refused(contentsId: number | undefined, url: string, host: string | null, mainFrame: boolean): void {
@@ -402,8 +412,7 @@ export class MdeBrowser {
     if (!tab) return
     if (mainFrame) {
       if (host) {
-        const under = Boolean(tab.view && !tab.view.webContents.isDestroyed() && tab.view.webContents.getURL())
-        tab.state = { ...tab.state, url, title: host, blocked: { url, host }, loading: false, canGoBack: under || tab.state.canGoBack }
+        tab.state = { ...tab.state, url, title: host, blocked: { url, host }, loading: false, canGoBack: true }
       }
       else tab.state = { ...tab.state, loading: false, error: 'The MDE browser opens only http and https addresses.' }
     } else if (host && !tab.state.blockedHosts.includes(host)) {
@@ -440,7 +449,8 @@ export class MdeBrowser {
     // Without this WebRTC can reach any host over UDP, which the request filter does not see.
     contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
     const history = (): void => {
-      tab.state.canGoBack = contents.navigationHistory.canGoBack()
+      // The "allow this host?" page can always be left with Back, whatever the page's own history says.
+      tab.state.canGoBack = Boolean(tab.state.blocked) || contents.navigationHistory.canGoBack()
       tab.state.canGoForward = contents.navigationHistory.canGoForward()
     }
     // A page's new window opens as a tab. A host that is not allowed gets the "allow this host?" page in that tab:
