@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  TERMINAL_REF_LENGTH,
   cleanTerminalTitle,
   isTerminalRef,
   splitTerminalReferences,
@@ -16,6 +17,7 @@ import {
   TERMINAL_READ_TIMEOUT_MS,
   TERMINAL_REFERENCE_LIMIT,
   TERMINAL_REFERENCES_FILE,
+  TERMINAL_REFERENCES_VERSION,
   TerminalReferences,
 } from '../src/main/mcp/terminal-references'
 
@@ -106,10 +108,25 @@ describe('TerminalReferences', () => {
   })
 
   it('keeps the newest refs only', async () => {
-    const references = new TerminalReferences(folder, counter())
-    const first = await references.create(`${PANE}-0`, 'first')
-    for (let index = 1; index <= TERMINAL_REFERENCE_LIMIT; index += 1) await references.create(`${PANE}-${index}`, 'pane')
-    expect(await references.resolve(first.ref)).toBeUndefined()
+    const random = counter()
+    const entries = Array.from({ length: TERMINAL_REFERENCE_LIMIT }, (_, index) => ({
+      ref: terminalRefFrom(random(TERMINAL_REF_LENGTH)),
+      terminalId: `${PANE}-${index}`,
+      title: 'pane',
+      createdAt: index,
+    }))
+    const file = join(folder, TERMINAL_REFERENCES_FILE)
+    await fs.writeFile(file, JSON.stringify({ version: TERMINAL_REFERENCES_VERSION, references: entries }))
+
+    const references = new TerminalReferences(folder, random)
+    const newest = await references.create(PANE, 'newest')
+    expect(await references.resolve(entries[0]!.ref)).toBeUndefined()
+    expect(JSON.parse(await fs.readFile(file, 'utf8')).references).toHaveLength(TERMINAL_REFERENCE_LIMIT)
+
+    const reopened = new TerminalReferences(folder)
+    expect(await reopened.resolve(entries[0]!.ref)).toBeUndefined()
+    expect(await reopened.resolve(entries[1]!.ref)).toEqual({ terminalId: entries[1]!.terminalId, title: 'pane' })
+    expect(await reopened.resolve(newest.ref)).toEqual({ terminalId: PANE, title: 'newest' })
   })
 
   it('ignores a damaged file', async () => {
