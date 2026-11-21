@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatComposer, type ChatComposerProps } from '../src/renderer/components/inbox/ChatComposer'
 import type { ChatDraft, ChatDraftRequest } from '../src/shared/types'
+import { requestInboxComposerFocus } from '../src/renderer/lib/inbox-composer-focus'
 import { messageInput, pressMessageKey, setMessageText } from './helpers/chat-input'
 
 const model = { id: 'm', providerId: 'p' }
@@ -71,5 +72,33 @@ describe('Ctrl+C in the message box', () => {
     expect((await pressMessageKey(box, 'c', { metaKey: true })).defaultPrevented).toBe(false)
     expect((await pressMessageKey(box, 'C', { ctrlKey: true, shiftKey: true })).defaultPrevented).toBe(false)
     expect(box.state.doc.toString()).toBe('keep me')
+  })
+})
+
+describe('F9 from elsewhere in the Inbox', () => {
+  let dispose: (() => void) | undefined
+  beforeEach(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
+  afterEach(async () => { await act(async () => dispose?.()); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+  it('gives the message box the keyboard, with the caret where it was left', async () => {
+    const draft = { text: 'half a thought', revision: 0, attachments: [] } as unknown as ChatDraft
+    Object.defineProperty(window, 'api', { configurable: true, value: { chat: { draft: vi.fn(async () => draft) } } })
+    const outside = document.createElement('button')
+    const container = document.createElement('div')
+    document.body.append(outside, container)
+    const root = createRoot(container)
+    dispose = () => root.unmount()
+    await act(async () => root.render(createElement(ChatComposer, {
+      draftKey: 'thread:ses_one', agent: 'build', model,
+      options: { status: 'ready' as const, value: { agents: [], models: [], defaultModel: null, defaultAgent: null, skills: [] } },
+      onAgentChange: () => {}, onModelChange: () => {}, onSend: vi.fn(async () => {}),
+    })))
+    const box = messageInput(container)
+    await act(async () => { box.dispatch({ selection: { anchor: 4 } }) })
+    outside.focus()
+    expect(box.hasFocus).toBe(false)
+    await act(async () => requestInboxComposerFocus())
+    expect(box.hasFocus).toBe(true)
+    expect(box.state.selection.main.head).toBe(4)
   })
 })

@@ -98,6 +98,11 @@ interface Store {
   closePane: (terminalId: string) => void
   /** Which pane has the keyboard, so closing it can hand the keyboard on. */
   paneFocused: (terminalId: string) => void
+  /**
+   * Gives the keyboard to the pane last used (or the first) while the terminal is on screen: in the sidebar's open
+   * Terminal tab, the bottom panel or the shown floating window. False, doing nothing, when no pane can be seen.
+   */
+  focusShown: () => boolean
   paneExited: (info: PtyExitInfo) => void
   /** Answers main, which reads a pane for an agent: what the pane shows (see `@shared/terminal-references`). */
   answerRead: (request: TerminalReadRequest) => void
@@ -341,6 +346,20 @@ export const useInboxTerminal = create<Store>((set, get) => {
     },
 
     paneFocused: (terminalId) => { focused = terminalId },
+
+    focusShown: () => {
+      // A pane's screen is on the page only while its terminal is mounted, and has boxes only while it is not hidden.
+      const shown = get().layout.panes
+        .map((pane) => pane.terminalId)
+        .filter((terminalId) => {
+          const container = getSession(terminalId)?.container
+          return container !== undefined && container.isConnected && container.getClientRects().length > 0
+        })
+      const target = shown.find((terminalId) => terminalId === focused) ?? shown[0]
+      if (!target) return false
+      getSession(target)!.term.focus()
+      return true
+    },
 
     paneExited: (info) => {
       if (info.sessionId !== INBOX_TERMINAL_SESSION_ID) return

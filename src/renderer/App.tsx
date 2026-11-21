@@ -69,6 +69,9 @@ import type { FilesListRequest, TerminalDirectoryRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxTerminal } from '@/store/inbox-terminal'
+import { useInboxChanges } from '@/store/inbox-changes'
+import { useSessionGitGraph } from '@/store/session-git-graph'
+import { requestInboxComposerFocus } from '@/lib/inbox-composer-focus'
 
 type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
@@ -670,6 +673,35 @@ export function App(): JSX.Element {
     return { folderId: inboxRoot.id }
   }, [inboxRoot, inboxThreads])
   const filePickerAvailable = inboxFilePlace !== null
+
+  // F9 puts the keyboard in the message box from anywhere in the Inbox: a terminal or a browser page included, so
+  // the main process catches the key. Pressed in the box, it goes to the terminal instead, while one is on screen. What lies over the conversation (a file, a diff, a Git graph) is closed so the
+  // box can be seen; an open dialog keeps the keyboard.
+  const inboxRootId = inboxRoot?.id ?? null
+  const composerKeyActive = ready && activeWorkspaceView === 'inbox' && windowMode !== 'mini' && !inboxLock
+  useEffect(() => {
+    if (!composerKeyActive) return
+    const api = window.api.inboxComposerKey
+    void api.setActive(true)
+    const stop = api.onFocus(() => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      // From the message box, F9 goes over to the terminal while one is on screen; from anywhere else, to the box.
+      if (document.activeElement?.closest('[data-testid="chat-input"]') && useInboxTerminal.getState().focusShown()) return
+      if (inboxRootId && useWorkspace.getState().openFiles[inboxRootId] !== undefined) useWorkspace.getState().closeFile(inboxRootId)
+      const changes = useInboxChanges.getState()
+      if (changes.selectedPath) changes.closeFile()
+      if (changes.graphThreadId) changes.closeGraph()
+      // The Sessions view has its own graphs; only one opened from an Inbox pane lies over the conversation.
+      const graph = useSessionGitGraph.getState().terminalId
+      if (graph && useInboxTerminal.getState().layout.panes.some((pane) => pane.terminalId === graph)) useSessionGitGraph.getState().close()
+      // After the covers are gone, so nothing hands the keyboard elsewhere as it closes.
+      requestAnimationFrame(requestInboxComposerFocus)
+    })
+    return () => {
+      stop()
+      void api.setActive(false)
+    }
+  }, [composerKeyActive, inboxRootId])
   useEffect(() => {
     if (!filePickerAvailable) return
     const onKeyDown = (event: KeyboardEvent): void => {

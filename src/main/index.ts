@@ -7,6 +7,7 @@ import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { TaskbarAttention } from './taskbar-attention'
 import { FloatingTerminalKey } from './floating-terminal-key'
+import { ComposerKey } from './composer-key'
 import { FileViewerKey } from './file-viewer-key'
 import { WslResourceMonitor } from './wsl/resources'
 import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
@@ -76,6 +77,7 @@ const titleBar = new TitleBarController({
 
 /** Whether F11 belongs to the Inbox's floating terminal; the renderer says so while it has one. */
 const floatingTerminalKey = new FloatingTerminalKey()
+const composerKey = new ComposerKey()
 const fileViewerKey = new FileViewerKey()
 /** Reads WSL's CPU and memory while the renderer shows the title bar meter. */
 const wslResources = new WslResourceMonitor((sample) => {
@@ -111,8 +113,8 @@ const ptyManager = new PtyManager({
   }
 }, terminalDirectories, () => app.getLocale())
 /**
- * The mini window's key (F12) and the floating terminal's (F11), which work whichever page has the keyboard: the
- * window's, or a page of the MDE browser. True when the key was taken.
+ * The mini window's key (F12), the floating terminal's (F11) and the Inbox message box's (F9), which work whichever
+ * page has the keyboard: the window's, or a page of the MDE browser. True when the key was taken.
  */
 function windowKey(input: Electron.Input): boolean {
   const miniWindowAction = getMiniWindowAction(input)
@@ -123,6 +125,15 @@ function windowKey(input: Electron.Input): boolean {
   const floatingTerminalAction = floatingTerminalKey.action(input)
   if (floatingTerminalAction) {
     if (floatingTerminalAction === 'toggle') mainWindow?.webContents.send(IpcEvents.floatingTerminalToggle)
+    return true
+  }
+  const composerAction = composerKey.action(input)
+  if (composerAction) {
+    if (composerAction === 'focus') {
+      // From a page of the MDE browser, the keyboard has to come back to the window before the box can have it.
+      mainWindow?.webContents.focus()
+      mainWindow?.webContents.send(IpcEvents.inboxComposerFocus)
+    }
     return true
   }
   return false
@@ -174,6 +185,7 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   // A reloaded page has no floating terminal until it says so again.
   mainWindow.webContents.on('did-start-loading', () => floatingTerminalKey.setActive(false))
+  mainWindow.webContents.on('did-start-loading', () => composerKey.setActive(false))
   // Nor a file viewer.
   mainWindow.webContents.on('did-start-loading', () => fileViewerKey.setOpen(false))
   // Nor a meter: the page asks for the readings again when it shows one.
@@ -401,7 +413,8 @@ if (bridgeLaunch) {
       floatingTerminalKey,
       wslResources,
       fileViewerKey,
-      browser
+      browser,
+      composerKey
     )
     createWindow()
 

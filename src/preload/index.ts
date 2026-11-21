@@ -245,6 +245,10 @@ const api: RendererApi = {
     setActive: (active) => ipcRenderer.invoke(IpcChannels.floatingTerminalActive, { active }),
     onToggle: (listener) => subscribe<void>(IpcEvents.floatingTerminalToggle, () => listener())
   },
+  inboxComposerKey: {
+    setActive: (active) => ipcRenderer.invoke(IpcChannels.inboxComposerKeyActive, { active }),
+    onFocus: (listener) => subscribe<void>(IpcEvents.inboxComposerFocus, () => listener())
+  },
   browser: {
     state: () => ipcRenderer.invoke(IpcChannels.browserState),
     setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.browserSetEnabled, { enabled }),

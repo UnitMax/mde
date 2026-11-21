@@ -447,6 +447,16 @@ drafts. The choice is kept in `localStorage` (`mde.inbox-thread-list-hidden`), o
 Inbox. Ctrl+O still switches threads while the list is hidden. The hidden-terminal reminder sits in that sidebar's
 foot, so it is out of sight too; F11 still brings the terminal back.
 
+F9 puts the keyboard in the message box from anywhere in the
+Inbox, with the caret where it was left. Like F11 and F12 it is caught in the main process (`src/main/composer-key.ts`,
+`before-input-event` of the window and of MDE browser pages), so terminals and browser pages never see it, and only
+while the renderer says the Inbox is on screen (`inbox-composer-key:active`); elsewhere F9 reaches the page as usual.
+Before the box gets the keyboard, a file, diff or Git graph lying over the conversation is closed; an open dialog keeps
+the keyboard. Pressed in the message box, F9 goes to the terminal instead while it is on screen (the sidebar's open
+Terminal tab, the bottom panel or the shown floating window), to the pane last used (`useInboxTerminal.focusShown`,
+which checks that a pane's screen is on the page and not hidden); with no terminal to be seen it stays in the box. So
+F9 switches between the box and a visible terminal. The box on screen listens through `lib/inbox-composer-focus.ts`.
+
 Ctrl-click (or Command-click on macOS) selects threads across the list and the Working and Snoozed sections without opening them.
 The open thread joins the selection when visible. The context menu of a selected thread applies its pin,
 read, snooze and park actions to all selected threads, using the clicked thread's current state to choose the action.

@@ -278,6 +278,8 @@ export const IpcChannels = {
   attentionUpdate: 'attention:update',
   attentionBeep: 'attention:beep',
   floatingTerminalActive: 'floating-terminal:active',
+  /** The Inbox is on screen (or no longer is), so F9 should put the keyboard in its message box. */
+  inboxComposerKeyActive: 'inbox-composer-key:active',
   fileViewerOpen: 'file-viewer:open',
 
   browserState: 'browser:state',
@@ -311,6 +313,8 @@ export const IpcEvents = {
   automationsChanged: 'automations:changed',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
+  /** F9 was pressed while the Inbox is on screen: put the keyboard in the message box. */
+  inboxComposerFocus: 'inbox-composer:focus',
   /** Ctrl+W (Cmd+W) was pressed while a file viewer is open: close it. */
   fileViewerClose: 'file-viewer:close',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
@@ -850,6 +854,12 @@ export interface RendererApi {
     setActive(active: boolean): Promise<void>
     /** F11 was pressed while there is one: show it, or hide it. */
     onToggle(listener: () => void): () => void
+  }
+  inboxComposerKey: {
+    /** Says whether the Inbox is on screen, so the main process hands F9 to it instead of letting it through. */
+    setActive(active: boolean): Promise<void>
+    /** F9 was pressed while it is: put the keyboard in the message box. */
+    onFocus(listener: () => void): () => void
   }
   /** The MDE browser in the Inbox sidebar; see `src/shared/browser.ts`. */
   browser: {

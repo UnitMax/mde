@@ -73,6 +73,7 @@ export function getKeyboardShortcutGroups(
       where: 'Works in the Inbox view.',
       shortcuts: [
         { id: 'inbox-new-thread', keys: ['Ctrl+N'], description: 'Start a new thread, setting aside any current draft.' },
+        { id: 'inbox-focus-message-box', keys: ['F9'], description: 'Put the keyboard in the message box from anywhere in the Inbox, a terminal or a browser page included, closing a file, diff or Git graph that covers the conversation. From the message box, go to the terminal while it is on screen.' },
         { id: 'inbox-find', keys: [`${primaryModifier}+F`], description: 'Find in the open thread. Enter and Shift+Enter step through the matches.' },
         { id: 'inbox-search-all', keys: [`${primaryModifier}+Shift+F`], description: 'Search the text of every thread.' },
         { id: 'inbox-go-to-file', keys: [`${primaryModifier}+P`], description: 'Go to a file of the thread\'s project by typing part of its name, and open it in the file viewer. Not in a terminal, where Ctrl+P is the previous command.' },

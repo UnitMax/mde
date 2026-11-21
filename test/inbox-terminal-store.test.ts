@@ -487,3 +487,40 @@ describe('the Inbox terminal store', () => {
     })
   })
 })
+
+describe('giving the keyboard to the terminal on screen (F9 from the message box)', () => {
+  /** A pane's screen: on the page and drawn, on the page but hidden (another sidebar tab), or not mounted. */
+  function screen(id: string, state: 'shown' | 'hidden' | 'detached') {
+    const container = document.createElement('div')
+    if (state !== 'detached') document.body.append(container)
+    vi.spyOn(container, 'getClientRects').mockReturnValue((state === 'shown' ? [{}] : []) as unknown as DOMRectList)
+    const term = { focus: vi.fn(), buffer: { active: { length: 0, getLine: () => undefined } } }
+    screens.set(id, { container, term } as never)
+    return term
+  }
+  afterEach(() => { screens.clear(); document.body.innerHTML = '' })
+
+  it('does nothing while no pane can be seen', async () => {
+    const store = await load()
+    expect(store.getState().focusShown()).toBe(false)
+    const hidden = screen(ID(1), 'hidden')
+    expect(store.getState().focusShown()).toBe(false)
+    screen(ID(1), 'detached')
+    expect(store.getState().focusShown()).toBe(false)
+    expect(hidden.focus).not.toHaveBeenCalled()
+  })
+
+  it('goes to the pane last used, or else the first one shown', async () => {
+    const store = await load()
+    store.getState().splitPane(ID(1), 'right')
+    const first = screen(ID(1), 'shown')
+    const second = screen(ID(2), 'shown')
+    store.getState().paneFocused(ID(2))
+    expect(store.getState().focusShown()).toBe(true)
+    expect(second.focus).toHaveBeenCalledTimes(1)
+    expect(first.focus).not.toHaveBeenCalled()
+    screen(ID(2), 'detached')
+    expect(store.getState().focusShown()).toBe(true)
+    expect(first.focus).toHaveBeenCalledTimes(1)
+  })
+})

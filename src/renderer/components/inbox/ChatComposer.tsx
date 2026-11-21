@@ -20,6 +20,7 @@ import {
 import { CompletionPicker, type CompletionItem } from '@/components/inbox/CompletionPicker'
 import { ContextMeter, type ContextCompact } from '@/components/inbox/ContextMeter'
 import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
+import { onInboxComposerFocusRequest } from '@/lib/inbox-composer-focus'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { ModelPicker } from '@/components/inbox/ModelPicker'
 import { ChatSendButton } from '@/components/inbox/ChatSendButton'
@@ -345,6 +346,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const [delivery, setDelivery] = useState<ChatDelivery>('steer')
   useEffect(() => { if (!running) setDelivery('steer') }, [running])
   const messageRef = useRef<ChatInputHandle>(null)
+  // F9, from anywhere in the Inbox: the caret comes back where it was left.
+  useEffect(() => onInboxComposerFocusRequest(() => messageRef.current?.focus()), [])
   // An Inbox terminal pane dropped on the box (Ctrl+Shift+drag): it goes into the text as a terminal the agent can read.
   const composerRef = useRef<HTMLDivElement>(null)
   // The agent reads a terminal through the MDE MCP; without it the reference is only words. Asked on each drop,
