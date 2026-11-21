@@ -394,6 +394,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.browserAllowHost]: object({ host: string(2048) }),
   [IpcChannels.browserRemoveHost]: object({ host: string(2048) }),
   [IpcChannels.browserClearData]: noPayload,
+  [IpcChannels.browserHistory]: noPayload,
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {

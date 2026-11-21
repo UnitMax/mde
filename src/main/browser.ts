@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
+import { dirname, join } from 'node:path'
 import {
   Menu,
   WebContentsView,
@@ -22,9 +23,11 @@ import {
   normalizeAllowedHost,
   type BrowserAction,
   type BrowserBounds,
+  type BrowserHistoryEntry,
   type BrowserState,
   type BrowserTab,
 } from '@shared/browser'
+import { BROWSER_HISTORY_FILE, BrowserHistory } from './browser-history'
 import { safeExternalWebUrl } from './external-links'
 import { installPermissionPolicy } from './permissions'
 import { writeJsonAtomic } from './store/atomic-json'
@@ -102,6 +105,8 @@ export interface MdeBrowserOptions {
   window: () => BrowserWindow | null
   /** Where the allowed hosts are kept. */
   file: string
+  /** Where the pages opened are kept; `browser-history.json` beside `file` unless given. */
+  historyFile?: string
   /** Opens an address in the system browser. */
   openExternal: (url: string) => void
   /** The browser changed; carries all of it. */
@@ -157,13 +162,17 @@ export class MdeBrowser {
   private workers: 'removing' | 'removed' | 'failed' = 'removing'
   private workerAttempt = 0
   private installed = false
+  private readonly visited: BrowserHistory
 
-  constructor(private readonly options: MdeBrowserOptions) {}
+  constructor(private readonly options: MdeBrowserOptions) {
+    this.visited = new BrowserHistory(options.historyFile ?? join(dirname(options.file), BROWSER_HISTORY_FILE))
+  }
 
   /** Reads whether the browser is on and the allowed hosts. A missing or unreadable file is off, with no hosts. */
   async load(): Promise<void> {
     this.enabled = false
     this.webrtc = false
+    await this.visited.load()
     try {
       const raw = JSON.parse(await fs.readFile(this.options.file, 'utf8')) as {
         enabled?: unknown
@@ -247,6 +256,11 @@ export class MdeBrowser {
       activeId: this.activeId,
       allowedHosts: [...this.allowed],
     }
+  }
+
+  /** The pages opened in the browser, newest first, for the address field to offer. */
+  history(): BrowserHistoryEntry[] {
+    return this.visited.list()
   }
 
   /**
@@ -526,12 +540,18 @@ export class MdeBrowser {
   }
 
   /**
-   * Forgets the browser's cookies, storage and cache: every login to the apps opened in it. Every step is tried; if
-   * any failed, this throws, so nothing reports the data cleared when part of it is left.
+   * Forgets the browser's cookies, storage, cache and history: every login to the apps opened in it and every page
+   * opened. Every step is tried; if any failed, this throws, so nothing reports the data cleared when part of it is
+   * left.
    */
   async clearData(): Promise<void> {
     const { session } = this.options
-    const results = await Promise.allSettled([session.clearStorageData(), session.clearCache(), session.clearAuthCache()])
+    const results = await Promise.allSettled([
+      session.clearStorageData(),
+      session.clearCache(),
+      session.clearAuthCache(),
+      this.visited.clear(),
+    ])
     // Clearing all storage removes the service workers too.
     if (results[0]?.status === 'fulfilled') {
       this.workerAttempt++
@@ -540,6 +560,11 @@ export class MdeBrowser {
     if (results.some((result) => result.status === 'rejected')) {
       throw new Error('Some of the MDE browser\'s data could not be cleared. Try again.')
     }
+  }
+
+  /** Writes the history's last change, if it is still waiting; for quitting. */
+  flush(): Promise<void> {
+    return this.visited.flush()
   }
 
   dispose(): void {
@@ -710,16 +735,21 @@ export class MdeBrowser {
     contents.on('did-navigate', (_event, url) => {
       tab.state = { ...tab.state, url, blocked: null, error: null, blockedHosts: [] }
       history()
+      // The title so far is the host the tab was sent to; the page's own arrives with page-title-updated.
+      this.visited.visit(url, contents.getTitle())
       this.changed()
     })
     contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (!isMainFrame) return
       tab.state.url = url
       history()
+      // A route of a single-page app is a page of its own in the history.
+      this.visited.visit(url, contents.getTitle())
       this.changed()
     })
     contents.on('page-title-updated', (_event, title) => {
       tab.state.title = title
+      this.visited.retitle(tab.state.url, title)
       this.changed()
     })
     contents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {

@@ -439,7 +439,7 @@ if (bridgeLaunch) {
     void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()
-    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush(), inboxAutomations?.flush(), bridgeStandby?.pause()])
+    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush(), inboxAutomations?.flush(), browser?.flush(), bridgeStandby?.pause()])
       .catch(() => console.warn('[app] Could not finish saving local state.'))
       .finally(() => app.quit())
   })

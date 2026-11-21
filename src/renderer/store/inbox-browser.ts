@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { BrowserAction, BrowserState } from '@shared/browser'
+import type { BrowserAction, BrowserHistoryEntry, BrowserState } from '@shared/browser'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 
 const EMPTY: BrowserState = { enabled: false, webrtc: false, webrtcUnsaved: false, tabs: [], activeId: null, allowedHosts: [] }
@@ -11,6 +11,10 @@ interface Store {
   loaded: boolean
   /** The last call that failed (the tab limit, an address that is not a web address), or null. */
   error: string | null
+  /** The pages opened in the browser, newest first, as last read for the address field. */
+  history: BrowserHistoryEntry[]
+  /** Reads the history again; the address field does when it offers it. */
+  loadHistory: () => Promise<void>
   clearError: () => void
   /** Reads the browser and follows its changes; once per page. */
   init: () => void
@@ -47,6 +51,14 @@ export const useInboxBrowser = create<Store>((set, get) => {
     state: EMPTY,
     loaded: false,
     error: null,
+    history: [],
+    loadHistory: async () => {
+      try {
+        set({ history: await window.api.browser.history() })
+      } catch {
+        // The history is only a convenience; the field works without it.
+      }
+    },
     clearError: () => set({ error: null }),
     init: () => {
       if (following || typeof window === 'undefined' || !window.api?.browser) return
@@ -67,6 +79,11 @@ export const useInboxBrowser = create<Store>((set, get) => {
     close: async (tabId) => { await run(() => window.api.browser.close(tabId)) },
     allowHost: (host) => run(() => window.api.browser.allowHost(host)),
     removeHost: async (host) => { await run(() => window.api.browser.removeHost(host)) },
-    clearData: () => run(() => window.api.browser.clearData()),
+    clearData: async () => {
+      const cleared = await run(() => window.api.browser.clearData())
+      // Even when a part failed, the history may be gone; what is left is read again next time.
+      set({ history: [] })
+      return cleared
+    },
   }
 })

@@ -16,7 +16,7 @@ import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { getTerminalSettings, saveTerminalSettings } from '../src/renderer/terminal/terminal-settings'
-import type { BrowserState, BrowserTab } from '../src/shared/browser'
+import type { BrowserHistoryEntry, BrowserState, BrowserTab } from '../src/shared/browser'
 import type { DirectoryContext } from '../src/shared/types'
 
 const TAB_ID = 'brt_123e4567-e89b-12d3-a456-426614174000'
@@ -41,9 +41,15 @@ let api: {
   allowHost: ReturnType<typeof vi.fn>
   removeHost: ReturnType<typeof vi.fn>
   clearData: ReturnType<typeof vi.fn>
+  history: ReturnType<typeof vi.fn>
   onChanged: ReturnType<typeof vi.fn>
 }
 const windowOpen = vi.fn()
+const pages: BrowserHistoryEntry[] = [
+  { url: 'http://localhost:5173/login', title: 'Sign in', visitedAt: 3 },
+  { url: 'http://localhost:3000/', title: 'Dashboard', visitedAt: 2 },
+  { url: 'http://localhost:3000/settings', title: '', visitedAt: 1 },
+]
 
 let root: Root
 let container: HTMLDivElement
@@ -71,6 +77,7 @@ beforeEach(() => {
     allowHost: vi.fn(async (host: string) => state([tab()], [host])),
     removeHost: vi.fn(async () => current),
     clearData: vi.fn(async () => undefined),
+    history: vi.fn(async () => pages),
     onChanged: vi.fn(() => () => undefined),
   }
   vi.stubGlobal('api', {
@@ -81,7 +88,7 @@ beforeEach(() => {
   vi.spyOn(window, 'open').mockImplementation(windowOpen as never)
   windowOpen.mockClear()
   localStorage.clear()
-  useInboxBrowser.setState({ state: state([]), loaded: true, error: null })
+  useInboxBrowser.setState({ state: state([]), loaded: true, error: null, history: [] })
   useInboxChat.setState({ threads: {}, recent: [], draftReloads: {} })
   useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files' })
   useInboxView.setState({ sidebarFloating: false })
@@ -377,5 +384,84 @@ describe('Inbox Browser tab', () => {
     expect(byTestId('inbox-browser-viewport')!.querySelector('img')).toBeNull()
     expect(byTestId('inbox-browser-covered')!.textContent).toMatch(/hidden while the floating terminal covers it.*F11/)
     terminal.remove()
+  })
+
+  describe('history in the address field', () => {
+    const key = (field: HTMLElement, name: string): Promise<void> =>
+      act(async () => { field.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })) })
+    const type = (field: HTMLInputElement, text: string): Promise<void> => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, text)
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const shown = (): string[] =>
+      Array.from(document.querySelectorAll('[data-testid="inbox-browser-history-entry"]')).map((entry) => entry.getAttribute('title')!)
+
+    it('shows the history on a click, and opens the page picked with the arrow keys and Enter', async () => {
+      useInboxChanges.setState({ tab: 'browser' })
+      useInboxBrowser.setState({ state: state([tab()]) })
+      await sidebar()
+      const field = byTestId('inbox-browser-address') as HTMLInputElement
+      expect(byTestId('inbox-browser-history')).toBeNull()
+      await act(async () => { field.focus(); field.click() })
+      expect(api.history).toHaveBeenCalled()
+      expect(shown()).toEqual(pages.map((page) => page.url))
+      expect(byTestId('inbox-browser-history')!.textContent).toContain('Dashboard')
+      // The page steps aside while the list is over it, like for a menu.
+      expect(document.querySelector('[data-browser-history]')).not.toBeNull()
+      await key(field, 'ArrowDown')
+      await key(field, 'ArrowDown')
+      await key(field, 'ArrowDown')
+      await key(field, 'ArrowUp')
+      expect(field.getAttribute('aria-activedescendant')).toBe(document.querySelectorAll('[role="option"]')[1]!.id)
+      expect(document.querySelectorAll('[role="option"][aria-selected="true"]')).toHaveLength(1)
+      await key(field, 'Enter')
+      expect(api.navigate).toHaveBeenCalledWith(TAB_ID, 'http://localhost:3000/')
+      expect(byTestId('inbox-browser-history')).toBeNull()
+    })
+
+    it('opens with Arrow Down, narrows to what is typed, and Escape closes it before it resets the address', async () => {
+      useInboxChanges.setState({ tab: 'browser' })
+      useInboxBrowser.setState({ state: state([tab()]) })
+      await sidebar()
+      const field = byTestId('inbox-browser-address') as HTMLInputElement
+      await act(async () => field.focus())
+      await key(field, 'ArrowDown')
+      expect(shown()).toHaveLength(3)
+      // Arrow Down that opened the list already picked its first page.
+      expect(document.querySelector('[role="option"][aria-selected="true"]')!.getAttribute('title')).toBe(pages[0]!.url)
+      await type(field, '3000 sett')
+      expect(shown()).toEqual(['http://localhost:3000/settings'])
+      // An address never opened matches nothing, so no list stands in the way.
+      await type(field, 'localhost:4000')
+      expect(shown()).toEqual([])
+      await type(field, 'local')
+      await key(field, 'Escape')
+      expect(byTestId('inbox-browser-history')).toBeNull()
+      expect(field.value).toBe('local')
+      await key(field, 'Escape')
+      expect(field.value).toBe('http://localhost:3000/')
+    })
+
+    it('opens a page clicked in the list, also from the start page field', async () => {
+      useInboxChanges.setState({ tab: 'browser' })
+      await sidebar()
+      const field = byTestId('inbox-browser-start-address') as HTMLInputElement
+      await act(async () => { field.focus(); field.click() })
+      const entry = document.querySelectorAll<HTMLElement>('[data-testid="inbox-browser-history-entry"]')[2]!
+      const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      entry.dispatchEvent(down)
+      // The field keeps the keyboard, so the list is not closed before the click lands.
+      expect(down.defaultPrevented).toBe(true)
+      await click(entry)
+      expect(api.open).toHaveBeenCalledWith('http://localhost:3000/settings')
+    })
+
+    it('forgets the history when the browsing data is cleared', async () => {
+      useInboxBrowser.setState({ history: pages })
+      await render(createElement(BrowserSettings))
+      await click(byTestId('browser-clear-data'))
+      expect(api.clearData).toHaveBeenCalled()
+      expect(useInboxBrowser.getState().history).toEqual([])
+    })
   })
 })

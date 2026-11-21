@@ -12,6 +12,33 @@ export const BROWSER_ALLOWED_HOST_LIMIT = 100
 export const BROWSER_BLOCKED_HOST_LIMIT = 20
 /** The longest address the browser takes. */
 export const BROWSER_URL_LIMIT = 8192
+/** How many pages the browser's history keeps, the newest first. */
+export const BROWSER_HISTORY_LIMIT = 500
+/** The longest page title the history keeps. */
+export const BROWSER_HISTORY_TITLE_LIMIT = 300
+
+/** A page opened in the browser, as its history keeps it: once per address, at the last time it was opened. */
+export interface BrowserHistoryEntry {
+  url: string
+  title: string
+  /** When it was last opened, in milliseconds since the epoch. */
+  visitedAt: number
+}
+
+/**
+ * The history entries that match what was typed into the address field, newest first: every word must occur in the
+ * address or the title, ignoring case. Nothing typed matches every entry.
+ */
+export function matchBrowserHistory(entries: readonly BrowserHistoryEntry[], query: string, limit: number): BrowserHistoryEntry[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const result: BrowserHistoryEntry[] = []
+  for (const entry of entries) {
+    if (result.length >= limit) break
+    const text = `${entry.url} ${entry.title}`.toLowerCase()
+    if (words.every((word) => text.includes(word))) result.push(entry)
+  }
+  return result
+}
 
 /** A page load the browser refused because its host is not allowed; nothing was sent to that host. */
 export interface BrowserBlockedPage {

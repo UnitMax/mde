@@ -1,6 +1,6 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
-import type { BrowserAction, BrowserBounds, BrowserState } from './browser'
+import type { BrowserAction, BrowserBounds, BrowserHistoryEntry, BrowserState } from './browser'
 import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from './automations'
 import type {
   AgentTerminalClaim,
@@ -295,6 +295,7 @@ export const IpcChannels = {
   browserAllowHost: 'browser:allow-host',
   browserRemoveHost: 'browser:remove-host',
   browserClearData: 'browser:clear-data',
+  browserHistory: 'browser:history',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -878,8 +879,10 @@ export interface RendererApi {
     setBounds(bounds: BrowserBounds | null): Promise<void>
     allowHost(host: string): Promise<BrowserState>
     removeHost(host: string): Promise<BrowserState>
-    /** Forgets the browser's cookies, storage and cache. */
+    /** Forgets the browser's cookies, storage, cache and history. */
     clearData(): Promise<void>
+    /** The pages opened in the browser, newest first. */
+    history(): Promise<BrowserHistoryEntry[]>
     onChanged(listener: (state: BrowserState) => void): () => void
   }
 }

@@ -189,8 +189,8 @@ export function BrowserSettings(): JSX.Element {
         <div>
           <h4 className="text-xs font-medium text-fg">Browsing data</h4>
           <p className="mt-0.5 text-[11px] text-fg-subtle">
-            Cookies, storage and the cache of the MDE browser, kept apart from MDE itself. Clearing them signs you out of
-            the apps opened in it.
+            Cookies, storage, the cache and the history of the MDE browser, kept apart from MDE itself. Clearing them signs
+            you out of the apps opened in it and forgets the pages opened.
           </p>
         </div>
         <Button

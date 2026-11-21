@@ -263,6 +263,7 @@ const api: RendererApi = {
     allowHost: (host) => ipcRenderer.invoke(IpcChannels.browserAllowHost, { host }),
     removeHost: (host) => ipcRenderer.invoke(IpcChannels.browserRemoveHost, { host }),
     clearData: () => ipcRenderer.invoke(IpcChannels.browserClearData),
+    history: () => ipcRenderer.invoke(IpcChannels.browserHistory),
     onChanged: (listener) => subscribe<BrowserState>(IpcEvents.browserChanged, listener)
   }
 }

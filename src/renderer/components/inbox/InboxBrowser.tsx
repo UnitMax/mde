@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
@@ -6,6 +6,7 @@ import {
   Bug,
   ExternalLink,
   Globe,
+  History,
   MoreHorizontal,
   Plus,
   RotateCw,
@@ -13,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { BrowserTab } from '@shared/browser'
+import { matchBrowserHistory, type BrowserTab } from '@shared/browser'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -30,7 +31,9 @@ import { useWorkspace } from '@/store/workspace'
 const ICON = 'h-3.5 w-3.5'
 
 /** Layers the app draws over everything that are not children of `<body>` besides the app itself. */
-const LAYERS = '.mde-toasts > *, [data-testid="floating-terminal"]'
+const LAYERS = '.mde-toasts > *, [data-testid="floating-terminal"], [data-browser-history]'
+/** How many pages of the history the address field offers at once. */
+const HISTORY_SHOWN = 8
 const FLOATING_TERMINAL = '[data-testid="floating-terminal"]'
 
 /** What covers the panel: the floating terminal, which stays until moved, or anything else, which goes by itself. */
@@ -141,6 +144,125 @@ function BrowserViewport({ tabId }: { tabId: string }): JSX.Element {
   )
 }
 
+/**
+ * The browser's history under an address field: shown when the field is clicked, on Arrow Down, and while typing,
+ * where it narrows to the pages that match. Arrow keys pick a page and Enter opens it.
+ */
+function useAddressHistory(go: (url: string) => void) {
+  const history = useInboxBrowser((state) => state.history)
+  const loadHistory = useInboxBrowser((state) => state.loadHistory)
+  const listId = useId()
+  const [open, setOpen] = useState(false)
+  // What was typed since the field was entered; nothing typed offers the whole history.
+  const [query, setQuery] = useState('')
+  const [index, setIndex] = useState(-1)
+  const items = open ? matchBrowserHistory(history, query, HISTORY_SHOWN) : []
+  const show = (): void => {
+    if (!open) void loadHistory()
+    setOpen(true)
+  }
+  const hide = (): void => {
+    setOpen(false)
+    setIndex(-1)
+  }
+  const pick = (url: string): void => {
+    hide()
+    setQuery('')
+    go(url)
+  }
+  return {
+    items,
+    index,
+    listId,
+    pick,
+    /** Props for the input. */
+    props: {
+      role: 'combobox' as const,
+      'aria-expanded': items.length > 0,
+      'aria-controls': listId,
+      'aria-autocomplete': 'list' as const,
+      'aria-activedescendant': index >= 0 && items[index] ? `${listId}-${index}` : undefined,
+      onClick: show,
+      onBlur: () => {
+        hide()
+        setQuery('')
+      },
+    },
+    /** The text changed: the list narrows to it. */
+    typed: (text: string) => {
+      setQuery(text)
+      setIndex(-1)
+      show()
+    },
+    /** True when the key was the list's. */
+    key: (event: KeyboardEvent<HTMLInputElement>): boolean => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        if (!open) {
+          show()
+          setIndex(event.key === 'ArrowDown' ? 0 : -1)
+          return true
+        }
+        const count = items.length
+        if (count === 0) return true
+        // Up from the first page goes back to what was typed.
+        setIndex((current) => (event.key === 'ArrowDown' ? Math.min(current + 1, count - 1) : Math.max(current - 1, -1)))
+        return true
+      }
+      if (event.key === 'Enter' && open && index >= 0 && items[index]) {
+        event.preventDefault()
+        pick(items[index].url)
+        return true
+      }
+      if (event.key === 'Escape' && open) {
+        event.preventDefault()
+        hide()
+        return true
+      }
+      return false
+    },
+  }
+}
+
+/** The pages of the history that the address field offers, under the field. */
+function AddressHistoryList({ list }: { list: ReturnType<typeof useAddressHistory> }): JSX.Element | null {
+  if (list.items.length === 0) return null
+  return (
+    <ul
+      id={list.listId}
+      role="listbox"
+      aria-label="History"
+      data-browser-history=""
+      data-testid="inbox-browser-history"
+      className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-line bg-elevated py-1 text-left shadow-lg"
+    >
+      {list.items.map((entry, at) => (
+        <li
+          key={entry.url}
+          id={`${list.listId}-${at}`}
+          role="option"
+          aria-selected={at === list.index}
+          data-testid="inbox-browser-history-entry"
+          title={entry.url}
+          className={cn(
+            'flex cursor-default items-center gap-2 px-2 py-1',
+            at === list.index ? 'bg-hover text-fg' : 'text-fg-muted hover:bg-hover',
+          )}
+          // The field keeps the keyboard, so the list stays until the page is picked.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => list.pick(entry.url)}
+        >
+          <History aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            {entry.title && <span className="truncate text-[12px] text-fg">{entry.title}</span>}
+            <span className="truncate font-mono text-[11px] text-fg-subtle">{entry.url}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /** The tabs of the browser along the top of the panel, and the button for a new one. */
 function BrowserTabStrip({ tabs, activeId }: { tabs: BrowserTab[]; activeId: string | null }): JSX.Element {
   const store = useInboxBrowser()
@@ -200,12 +322,16 @@ function BrowserToolbar({ tab }: { tab: BrowserTab }): JSX.Element {
   useEffect(() => {
     if (!editing) setAddress(tab.url)
   }, [tab.url, editing])
+  const go = (url: string): void => {
+    setEditing(false)
+    setAddress(url)
+    void store.navigate(tab.id, url)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+  }
+  const list = useAddressHistory(go)
   const submit = (event: FormEvent): void => {
     event.preventDefault()
-    if (!address.trim()) return
-    setEditing(false)
-    void store.navigate(tab.id, address)
-    ;(document.activeElement as HTMLElement | null)?.blur()
+    if (address.trim()) go(address)
   }
   const live = Boolean(tab.url) && !tab.blocked
   return (
@@ -229,32 +355,40 @@ function BrowserToolbar({ tab }: { tab: BrowserTab }): JSX.Element {
       >
         {tab.loading ? <X className={ICON} /> : <RotateCw className={ICON} />}
       </Button>
-      <input
-        value={address}
-        onChange={(event) => {
-          setEditing(true)
-          setAddress(event.target.value)
-        }}
-        onFocus={(event) => {
-          setEditing(true)
-          event.target.select()
-        }}
-        onBlur={() => setEditing(false)}
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape') return
-          setEditing(false)
-          setAddress(tab.url)
-          event.currentTarget.blur()
-        }}
-        placeholder="localhost:3000"
-        // A new tab is only its address field, so it starts there.
-        autoFocus={!tab.url}
-        spellCheck={false}
-        autoComplete="off"
-        aria-label="Address"
-        data-testid="inbox-browser-address"
-        className="h-6 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 font-mono text-[11.5px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
-      />
+      <div className="relative min-w-0 flex-1">
+        <input
+          {...list.props}
+          value={address}
+          onChange={(event) => {
+            setEditing(true)
+            setAddress(event.target.value)
+            list.typed(event.target.value)
+          }}
+          onFocus={(event) => {
+            setEditing(true)
+            event.target.select()
+          }}
+          onBlur={() => {
+            setEditing(false)
+            list.props.onBlur()
+          }}
+          onKeyDown={(event) => {
+            if (list.key(event) || event.key !== 'Escape') return
+            setEditing(false)
+            setAddress(tab.url)
+            event.currentTarget.blur()
+          }}
+          placeholder="localhost:3000"
+          // A new tab is only its address field, so it starts there.
+          autoFocus={!tab.url}
+          spellCheck={false}
+          autoComplete="off"
+          aria-label="Address"
+          data-testid="inbox-browser-address"
+          className="h-6 w-full rounded-md border border-line bg-bg px-2 font-mono text-[11.5px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+        />
+        <AddressHistoryList list={list} />
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" title="More" aria-label="More browser actions" data-testid="inbox-browser-more">
@@ -359,6 +493,10 @@ function RefusedHosts({ tab }: { tab: BrowserTab }): JSX.Element | null {
 function StartPage({ allowedHosts, withField = false }: { allowedHosts: string[]; withField?: boolean }): JSX.Element {
   const store = useInboxBrowser()
   const [address, setAddress] = useState('')
+  const list = useAddressHistory((url) => {
+    setAddress(url)
+    void store.open(url)
+  })
   const submit = (event: FormEvent): void => {
     event.preventDefault()
     if (address.trim()) void store.open(address)
@@ -369,16 +507,24 @@ function StartPage({ allowedHosts, withField = false }: { allowedHosts: string[]
       <p className="text-[13px] text-fg-muted">Open the app you are working on, such as localhost:5173.</p>
       {withField && (
         <form className="mt-1 flex w-full max-w-[18rem] items-center gap-1.5" onSubmit={submit}>
-          <input
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            placeholder="localhost:5173"
-            spellCheck={false}
-            autoComplete="off"
-            aria-label="Address"
-            data-testid="inbox-browser-start-address"
-            className="h-7 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
-          />
+          <div className="relative min-w-0 flex-1">
+            <input
+              {...list.props}
+              value={address}
+              onChange={(event) => {
+                setAddress(event.target.value)
+                list.typed(event.target.value)
+              }}
+              onKeyDown={(event) => void list.key(event)}
+              placeholder="localhost:5173"
+              spellCheck={false}
+              autoComplete="off"
+              aria-label="Address"
+              data-testid="inbox-browser-start-address"
+              className="h-7 w-full rounded-md border border-line bg-bg px-2 font-mono text-[12px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+            />
+            <AddressHistoryList list={list} />
+          </div>
           <Button type="submit" size="sm" variant="secondary" disabled={!address.trim()} data-testid="inbox-browser-start-open">
             Open
           </Button>

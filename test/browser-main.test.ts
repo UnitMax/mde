@@ -550,6 +550,27 @@ describe('MDE browser (main process)', () => {
     expect(session.clearAuthCache).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps the pages a tab opens in the history, with their titles, and clears it with the browsing data', async () => {
+    const browser = await enabledBrowser()
+    browser.open('http://localhost:3000/')
+    const contents = electron.views[0]!.webContents
+    contents.getTitle.mockReturnValue('http://localhost:3000/')
+    contents.emit('did-navigate', {}, 'http://localhost:3000/')
+    contents.emit('page-title-updated', {}, 'App')
+    contents.getTitle.mockReturnValue('App')
+    contents.emit('did-navigate-in-page', {}, 'http://localhost:3000/#/settings', true)
+    contents.emit('did-navigate-in-page', {}, 'http://localhost:3000/frame', false)
+    expect(browser.history().map(({ url, title }) => ({ url, title }))).toEqual([
+      { url: 'http://localhost:3000/#/settings', title: 'App' },
+      { url: 'http://localhost:3000/', title: 'App' },
+    ])
+    await browser.flush()
+    expect(JSON.parse(await readFile(join(dir, 'browser-history.json'), 'utf8')).entries).toHaveLength(2)
+    await browser.clearData()
+    expect(browser.history()).toEqual([])
+    await expect(readFile(join(dir, 'browser-history.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('lays the active page over the panel in window units, and takes it off for null, a refused page or a closed tab', async () => {
     const browser = await enabledBrowser()
     const first = browser.open('http://localhost:3000/').tabs[0]!

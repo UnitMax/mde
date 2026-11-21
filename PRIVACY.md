@@ -35,6 +35,11 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   directory): cookies, local storage, IndexedDB, cache and similar data of the pages opened in the Browser tab,
   kept so that logins to the apps you develop last. It is separate from MDE's own storage. Settings → Browser →
   Clear browsing data deletes it. Which tabs are open is not saved.
+- `browser-history.json` under Electron's user-data directory: the history of the MDE browser, the addresses of the
+  pages opened in it (each once, the newest 500) with their titles and when each was last opened, so the address
+  field can offer them again. Written at most once a second while pages are opened, and on quit. Clear browsing data
+  (Settings → Browser, or the ⋯ menu of the Browser tab) deletes it with the rest of the browsing data; turning the
+  browser off keeps it.
 - `inbox-asides.json` under Electron's user-data directory: the answered `/btw` side questions of each
   Inbox thread (the question, the answer and when it arrived, the newest 20 per thread), so they can
   be read again after their card is closed and after a restart. Written when a side question is

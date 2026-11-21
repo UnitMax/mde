@@ -171,6 +171,7 @@ const validPayloads = {
   [IpcChannels.browserAllowHost]: { host: 'staging.example.test' },
   [IpcChannels.browserRemoveHost]: { host: 'staging.example.test' },
   [IpcChannels.browserClearData]: undefined,
+  [IpcChannels.browserHistory]: undefined,
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)

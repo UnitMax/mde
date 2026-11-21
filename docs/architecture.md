@@ -679,6 +679,18 @@ Back, Forward, Reload, copy and paste, Inspect element, and for a link Open link
 address. F5 or Ctrl+R reloads, Alt+Left and Alt+Right go back and forward, Ctrl+Shift+I toggles the developer tools,
 and F11 and F12 keep working while a page has the keyboard.
 
+**History.** The browser keeps the pages its tabs opened (`src/main/browser-history.ts`, `BrowserHistory`): each
+http(s) address once, newest first, with its last title and time, up to 500, in `<userData>/browser-history.json`.
+A page load (`did-navigate`) and a main-frame in-page navigation (a single-page app's route) move the address to
+the top; `page-title-updated` updates its title (Chromium's stand-in title, the address itself, is not kept). Changes
+are written at most once a second and on quit. The renderer reads it over `browser:history` when an address field
+(the toolbar's or the start page's) offers it: a click in the field or Arrow Down shows the newest 8, typing narrows
+them to the pages whose address or title contains every typed word (`matchBrowserHistory` in `src/shared/browser.ts`),
+Arrow Up/Down pick one (Arrow Down that opens the list picks the first), Enter or a click opens it, and Escape closes
+the list before it resets the address. The list is marked `data-browser-history`, one of the layers the viewport
+checks, so the page steps aside while the list is over it. Clear browsing data clears the history too and removes
+its file.
+
 Web links elsewhere in MDE (chat replies, tool rows, the transcript's right-click menu, the Markdown file viewer) go
 through `lib/web-links.ts`. A left click follows Settings → Browser → "Clicking a web link opens it in"
 (`linkClick` in the app settings, `system` by default): with **MDE browser** chosen, a link to a local address or an
@@ -686,7 +698,8 @@ allowed host opens there (in the tab already showing it, or a new one) and bring
 view, docking a floating sidebar; every other link still opens in the system browser, so a click never asks to allow a
 host. Right-clicking a link offers **Open in MDE browser** and **Open in system browser**; the first opens even a host
 that is not allowed, which then asks. Where the Inbox is not available there is no MDE browser and links open in the
-system browser. Settings → Browser also lists the allowed hosts (add, remove) and clears the browsing data.
+system browser. Settings → Browser also lists the allowed hosts (add, remove) and clears the browsing data (with the
+history).
 
 ### Floating sidebar menu
 

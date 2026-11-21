@@ -627,7 +627,10 @@ which can be older than a current browser, so the boundary is what it loads rath
   and the main process lays the active tab over it, scaled by the window's zoom. While a menu, dialog, toast or the
   floating terminal covers the panel, the page is taken off the window (no picture of it is taken), so the native view cannot hide MDE's own UI or take clicks meant for it.
 - **IPC.** `browser:*` channels take a `brt_<uuid>` tab ID, an address of at most 8192 characters, one of five
-  actions (back, forward, reload, stop, devtools) or a host; the main process parses every address again. Developer
+  actions (back, forward, reload, stop, devtools) or a host; the main process parses every address again.
+  `browser:history` takes nothing and returns the pages opened; only http(s) addresses are kept or read back from
+  `browser-history.json`, and opening one from the list goes through the same navigation and host check as a typed
+  address. Developer
   tools open in a window of their own.
 
 ### MDE MCP boundary

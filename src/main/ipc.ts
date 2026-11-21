@@ -183,7 +183,7 @@ import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import type { MdeBrowser } from './browser'
-import type { BrowserAction, BrowserBounds, BrowserState } from '@shared/browser'
+import type { BrowserAction, BrowserBounds, BrowserHistoryEntry, BrowserState } from '@shared/browser'
 import { readGitTerminalInfo } from './git'
 import {
   fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph,
@@ -843,6 +843,7 @@ export function registerIpcHandlers(
   handle<{ host: string }, BrowserState>(IpcChannels.browserAllowHost, ({ host }) => browserOnly().allowHost(host))
   handle<{ host: string }, BrowserState>(IpcChannels.browserRemoveHost, ({ host }) => browserOnly().removeHost(host))
   handle<void, void>(IpcChannels.browserClearData, () => browserOnly().clearData())
+  handle<void, BrowserHistoryEntry[]>(IpcChannels.browserHistory, () => browserOnly().history())
 
   handle<InboxTerminalSettings, InboxTerminalConfiguration>(IpcChannels.ptyConfigureInbox, async (req) => {
     if (process.platform !== 'win32' && req.distro !== null) throw new Error('WSL is only available on Windows.')
