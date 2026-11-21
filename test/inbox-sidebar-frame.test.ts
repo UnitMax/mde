@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { act, createElement } from 'react'
+import { act, createElement, Fragment } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxSidebarFrame } from '../src/renderer/components/inbox/InboxSidebarFrame'
 import {
   clampInboxSidebarWidth,
   getInboxSidebarWidth,
+  INBOX_CONVERSATION_MIN_WIDTH,
   INBOX_SIDEBAR_DEFAULT_WIDTH,
   INBOX_SIDEBAR_MAX_WIDTH,
   INBOX_SIDEBAR_MIN_WIDTH,
@@ -141,5 +142,65 @@ describe('the resizable sidebar frame', () => {
     await act(async () => { handle().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) })
     expect(frame().style.width).toBe(`${INBOX_SIDEBAR_DEFAULT_WIDTH}px`)
     expect(localStorage.getItem(INBOX_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(String(INBOX_SIDEBAR_DEFAULT_WIDTH))
+  })
+})
+
+describe('the sidebar frame beside the conversation', () => {
+  let root: Root
+  let container: HTMLDivElement
+  // A window 1400px wide: the thread list ends at 260, so the conversation and the sidebar share 1140px.
+  const WINDOW = 1400
+  const LIST = 260
+  const room = WINDOW - LIST - INBOX_CONVERSATION_MIN_WIDTH
+  const handle = (): HTMLElement => container.querySelector<HTMLElement>('[data-testid="inbox-sidebar-resize"]')!
+  const frame = (): HTMLElement => container.querySelector<HTMLElement>('[data-testid="inbox-sidebar-frame"]')!
+  const pointer = (type: string, x: number): Promise<void> =>
+    act(async () => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, button: 0 })
+      Object.assign(event, { pointerId: 1 })
+      handle().dispatchEvent(event)
+    })
+
+  beforeEach(async () => {
+    localStorage.clear()
+    useInboxView.setState({ sidebarWidth: INBOX_SIDEBAR_DEFAULT_WIDTH })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const left = this.tagName === 'MAIN' ? LIST : WINDOW - INBOX_SIDEBAR_DEFAULT_WIDTH
+      return { left, right: WINDOW, top: 0, bottom: 800, width: WINDOW - left, height: 800, x: left, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    await act(async () => root.render(createElement(Fragment, null,
+      createElement('main', null, 'conversation'),
+      createElement(InboxSidebarFrame, null, createElement('p', null, 'panel')))))
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.restoreAllMocks()
+  })
+
+  it('stops a drag where the conversation would get narrower than its minimum', async () => {
+    await pointer('pointerdown', 1140)
+    await pointer('pointermove', 100)
+    await pointer('pointerup', 100)
+    expect(useInboxView.getState().sidebarWidth).toBe(room)
+    expect(frame().style.maxWidth).toBe(`min(70vw, ${room}px)`)
+    expect(handle().getAttribute('aria-valuemax')).toBe(String(room))
+  })
+
+  it('sends End to that limit rather than the largest width', async () => {
+    await act(async () => { handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true })) })
+    expect(frame().style.width).toBe(`${room}px`)
+  })
+
+  it('shows a width set on a bigger window only as wide as this one allows, and keeps it', async () => {
+    await act(async () => useInboxView.getState().setSidebarWidth(INBOX_SIDEBAR_MAX_WIDTH))
+    expect(frame().style.width).toBe(`${INBOX_SIDEBAR_MAX_WIDTH}px`)
+    expect(frame().style.maxWidth).toBe(`min(70vw, ${room}px)`)
+    expect(handle().getAttribute('aria-valuenow')).toBe(String(room))
+    expect(useInboxView.getState().sidebarWidth).toBe(INBOX_SIDEBAR_MAX_WIDTH)
   })
 })

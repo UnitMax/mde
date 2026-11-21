@@ -46,6 +46,8 @@ export function saveInboxTerminalDistro(distro: string | null): void {
 export const INBOX_SIDEBAR_DEFAULT_WIDTH = 260
 export const INBOX_SIDEBAR_MIN_WIDTH = 260
 export const INBOX_SIDEBAR_MAX_WIDTH = 1200
+/** However wide the sidebar was set, it leaves the conversation beside it at least this much of the window. */
+export const INBOX_CONVERSATION_MIN_WIDTH = 480
 
 /** `on` when it was turned on; off for anything else and when storage cannot be read. */
 function readSwitch(key: string): boolean {
