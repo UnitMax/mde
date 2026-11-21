@@ -278,6 +278,45 @@ describe('MDE browser (main process)', () => {
     expect(request('https://staging.test/api', local.id)).toBe(false)
   })
 
+  it('allows a host only once it is saved, so a failed save leaves it refused and no later save keeps it', async () => {
+    const browser = await enabledBrowser()
+    browser.open('http://localhost:3000/')
+    const local = electron.views[0]!.webContents
+    request('https://staging.test/api', local.id)
+    // browser.json cannot be written: its folder is now a file.
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    const allowing = browser.allowHost('staging.test')
+    // Not allowed while it is being saved.
+    expect(request('https://staging.test/api', local.id)).toBe(false)
+    await expect(allowing).rejects.toThrow()
+    expect(browser.state().allowedHosts).toEqual([])
+    expect(request('https://staging.test/api', local.id)).toBe(false)
+    expect(local.reload).not.toHaveBeenCalled()
+    // A later save that works writes only what is allowed.
+    await rm(dir, { force: true })
+    await mkdir(dir)
+    await browser.setWebRTC(true)
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ allowedHosts: [] })
+  })
+
+  it('refuses a removed host at once, and says so when the removal could not be saved', async () => {
+    const browser = await enabledBrowser()
+    await browser.allowHost('staging.test')
+    browser.open('http://localhost:3000/')
+    const local = electron.views[0]!.webContents
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await expect(browser.removeHost('staging.test')).rejects.toThrow(/could not be saved/)
+    expect(browser.state().allowedHosts).toEqual([])
+    expect(request('https://staging.test/api', local.id)).toBe(false)
+    // Any later save that works keeps the removal.
+    await rm(dir, { force: true })
+    await mkdir(dir)
+    await browser.allowHost('a.test')
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ allowedHosts: ['a.test'] })
+  })
+
   it('reads whether it is on and the allowed hosts back, dropping local, invalid and repeated entries', async () => {
     await writeFile(join(dir, 'browser.json'), JSON.stringify({ enabled: true, allowedHosts: ['a.test', 'localhost', '*.bad', 'A.test', 42, 'b.test:9000'] }))
     const browser = make()

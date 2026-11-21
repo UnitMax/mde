@@ -696,7 +696,8 @@ is not allowed shows "Allow <host>?" instead of the page, with Go back (to the p
 Allow and open, and Open in system browser; WebRTC is off unless Settings → Browser → Allow WebRTC is on
 (`webrtc` in `browser.json`; see the security notes for how), and turning it on or off closes every tab's page and opens it again under the new rule. Hosts
 a page was refused are listed under the toolbar, each
-allowable from there (which reloads the page). Local addresses are reached from within a page only when the page (the
+allowable from there (which reloads the page). A host is allowed only once `browser.json` with it is written; a
+removal is in force at once and reports when it could not be saved. Local addresses are reached from within a page only when the page (the
 origin that started the request) is local too, so a local host refused to a page from an allowed host is listed
 without Allow; the tab itself may still open a local page from anywhere. A page that does not load (a dev server that is not running) or
 crashes shows the error with **Try again**. The toolbar has Back, Forward, Reload (Stop while loading) and the

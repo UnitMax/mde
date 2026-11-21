@@ -43,6 +43,8 @@ export const BROWSER_FILE = 'browser.json'
 /** Chromium's net error codes the browser does not report: a load it cancelled itself, or one it refused. */
 const QUIET_LOAD_ERRORS = new Set([-3, -20])
 
+const HOST_LIMIT = `The MDE browser keeps up to ${BROWSER_ALLOWED_HOST_LIMIT} allowed hosts.`
+
 const UNSAVED_OFF = 'WebRTC is off, but the choice could not be saved, so MDE will start with it on next time. Try again.'
 
 const WORKERS_FAILED =
@@ -529,9 +531,19 @@ export class MdeBrowser {
     const host = normalizeAllowedHost(input)
     if (!host) throw new Error('Enter a host name or an IP address.')
     if (!isLoopbackHost(host) && !this.allowed.includes(host)) {
-      if (this.allowed.length >= BROWSER_ALLOWED_HOST_LIMIT) throw new Error(`The MDE browser keeps up to ${BROWSER_ALLOWED_HOST_LIMIT} allowed hosts.`)
-      this.allowed = [...this.allowed, host]
-      await this.save()
+      if (this.allowed.length >= BROWSER_ALLOWED_HOST_LIMIT) throw new Error(HOST_LIMIT)
+      // Kept first and only then allowed, within the same write: a failed save leaves the host refused, and no later
+      // save can keep a host the person saw fail.
+      await this.save({
+        hosts: (current) => {
+          if (current.includes(host)) return current
+          if (current.length >= BROWSER_ALLOWED_HOST_LIMIT) throw new Error(HOST_LIMIT)
+          return [...current, host]
+        },
+        written: () => {
+          if (!this.allowed.includes(host)) this.allowed = [...this.allowed, host]
+        },
+      })
     }
     const active = this.activeId
     for (const tab of this.tabs) {
@@ -552,8 +564,16 @@ export class MdeBrowser {
   async removeHost(host: string): Promise<BrowserState> {
     const name = host.toLowerCase()
     if (this.allowed.includes(name)) {
+      // Refused at once, whether or not it can be kept; a later save that works keeps it too.
       this.allowed = this.allowed.filter((entry) => entry !== name)
-      await this.save()
+      try {
+        await this.save()
+      } catch {
+        throw new Error(`${name} is refused now, but this could not be saved, so MDE will allow it again next time. Try again.`)
+      } finally {
+        this.changed()
+      }
+      return this.state()
     }
     this.changed()
     return this.state()
@@ -613,17 +633,17 @@ export class MdeBrowser {
 
   /**
    * Writes browser.json after any write already under way, from the values in force when its turn comes, so a slow
-   * earlier write cannot put back a value changed since. `webrtc` writes a choice before it is in force, and
-   * `written` puts it in force once written, before the next write starts.
+   * earlier write cannot put back a value changed since. `webrtc` and `hosts` write a choice before it is in force,
+   * and `written` puts it in force once written, before the next write starts.
    */
-  private save(next: { webrtc?: boolean; written?: () => void } = {}): Promise<void> {
+  private save(next: { webrtc?: boolean; hosts?: (current: string[]) => string[]; written?: () => void } = {}): Promise<void> {
     const write = this.writing.catch(() => undefined).then(async () => {
       const webrtc = next.webrtc ?? this.webrtc
       await writeJsonAtomic(this.options.file, {
         version: 1,
         enabled: this.enabled,
         webrtc,
-        allowedHosts: this.allowed,
+        allowedHosts: next.hosts ? next.hosts(this.allowed) : this.allowed,
       })
       this.savedWebRTC = webrtc
       next.written?.()

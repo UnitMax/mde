@@ -582,7 +582,9 @@ which can be older than a current browser, so the boundary is what it loads rath
   `http`, `https`, `ws` and `wss` to loopback (`localhost` and `*.localhost`, `127.0.0.0/8`, `[::1]`, `0.0.0.0`)
   and to the hosts in `<userData>/browser.json`, plus inline `data:`, `blob:` and `about:` content; everything else,
   including `file:` and URLs with a user name or password, is cancelled. A host is allowed by its exact name, on
-  every port, never by wildcard; at most 100 are kept, and the file is checked again when read.
+  every port, never by wildcard; at most 100 are kept, and the file is checked again when read. A host is allowed
+  only once `browser.json` with it is written, so a failed save leaves it refused and no later save keeps it; a
+  removed host is refused at once, and a removal that could not be saved says that the host comes back next start.
 - **Local addresses only from local pages.** A part of a page (a frame, script, image, `fetch`, WebSocket, worker or
   service worker request, and every redirect of one) reaches a loopback address only when the origin that started
   it is itself loopback: `requesterOf` (`src/main/browser.ts`) reads Chromium's `initiatorOrigin`, which a redirect
