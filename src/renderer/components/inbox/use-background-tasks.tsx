@@ -9,14 +9,21 @@ interface State {
   error: string | null
 }
 
-/** Watch only the visible thread. Poll even when the agent is idle, and reconcile missed stream events. */
-export function useBackgroundTasks(threadId: string) {
+export type BackgroundTasks = ReturnType<typeof useBackgroundTasks>
+
+/**
+ * Watch only the visible thread. Poll even when the agent is idle, and reconcile missed stream events. A null thread
+ * watches nothing, for a component handed the list by its parent.
+ */
+export function useBackgroundTasks(threadId: string | null) {
   const [state, setState] = useState<State>({ snapshot: null, error: null })
   const control = useRef<{ refresh(): Promise<void> }>()
 
   useEffect(() => {
+    // Another thread's list is not this one's.
+    setState({ snapshot: null, error: null })
     // Also allows a renderer left open during an update to keep working with an older preload.
-    if (!window.api.chat.backgroundTasks) return undefined
+    if (threadId === null || !window.api.chat.backgroundTasks) return undefined
     let disposed = false
     let supported = true
     let again = false

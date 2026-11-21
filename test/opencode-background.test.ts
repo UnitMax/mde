@@ -33,6 +33,13 @@ describe('OpenCode background tasks', () => {
     expect(jobs).toHaveLength(4)
   })
 
+  it('keeps the session of a subagent job, as OpenCode names it, and only a valid one', () => {
+    const subagent = { id: 'ses_kid', sessionID: thread.id, kind: 'subagent', status: 'running', childSessionID: 'ses_kid', agent: 'general', description: 'Haiku' }
+    expect(parseBackgroundJobs({ data: [subagent] })).toEqual([{ id: 'ses_kid', kind: 'subagent', title: 'Haiku', sessionId: 'ses_kid' }])
+    expect(parseBackgroundJobs({ data: [{ ...subagent, childSessionID: '../x' }] })[0]).not.toHaveProperty('sessionId')
+    expect(parseBackgroundJobs({ data: [{ ...shell, childSessionID: 'ses_kid' }] })[0]).not.toHaveProperty('sessionId')
+  })
+
   it('rejects malformed answers rather than reporting zero tasks', () => {
     for (const value of [null, {}, { data: null }, { data: [null] }, { data: [{ ...shell, id: '' }] }, { data: [{ ...shell, sessionID: '../other' }] }]) {
       expect(() => parseBackgroundJobs(value)).toThrow('does not understand')

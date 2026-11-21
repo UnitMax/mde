@@ -10,6 +10,7 @@ import type {
   ChatPart,
   ChatPendingMessage,
   ChatRevert,
+  ChatSubagentReport,
   ChatTokens,
   ChatUsage,
   OpenCodeModelRef,
@@ -621,7 +622,8 @@ export interface SubagentInfo {
   title: string | null
   /** What the subagent was asked to do. */
   task: string | null
-  state: 'starting' | 'running' | 'done' | 'interrupted' | 'failed'
+  /** `unreported`: OpenCode stopped running it in the background, and it never sent an answer. */
+  state: 'starting' | 'running' | 'done' | 'interrupted' | 'failed' | 'unreported'
   /** The reason it did not finish, with OpenCode's internal session ID removed. */
   problem: string | null
 }
@@ -631,12 +633,114 @@ export function subagentInfo(part: ToolPart): SubagentInfo {
   const input = parseInput(part.input)
   const text = (key: string): string | null => (typeof input[key] === 'string' && input[key].trim() ? (input[key] as string).trim() : null)
   const problem = part.error?.replace(/\s*\(sessionID: [^)]*\)/g, '').trim() || null
-  const state: SubagentInfo['state'] = part.status === 'completed'
-    ? 'done'
-    : part.status === 'error'
-      ? /interrupt|abort|cancel/i.test(part.error ?? '') ? 'interrupted' : 'failed'
-      : part.status === 'running' ? 'running' : 'starting'
-  return { agent: text('agent') ?? text('subagent_type'), title: text('description'), task: text('prompt'), state, problem }
+  const state: SubagentInfo['state'] = part.background
+    // Working in the background until it reports; the call itself returned at once.
+    ? part.report ? reportState(part.report.state) : part.unreported ? 'unreported' : 'running'
+    : part.status === 'completed'
+      ? 'done'
+      : part.status === 'error'
+        ? /interrupt|abort|cancel/i.test(part.error ?? '') ? 'interrupted' : 'failed'
+        : part.status === 'running' ? 'running' : 'starting'
+  const lost = state === 'unreported'
+    ? 'OpenCode is no longer running this subagent, and it sent no answer. It may have stopped when OpenCode was closed.'
+    : null
+  return { agent: text('agent') ?? text('subagent_type'), title: text('description'), task: text('prompt'), state, problem: lost ?? problem }
+}
+
+function reportState(state: string): SubagentInfo['state'] {
+  if (/interrupt|abort|cancel/.test(state)) return 'interrupted'
+  if (/error|fail/.test(state)) return 'failed'
+  return 'done'
+}
+
+/** How long a subagent ran: from its start to its report when it worked in the background, else the call's own time. */
+export function subagentDuration(part: ToolPart): number | undefined {
+  if (!part.background) return part.durationMs
+  if (!part.report || part.startedAt === undefined) return undefined
+  const ms = part.report.time - part.startedAt
+  return ms >= 0 ? ms : undefined
+}
+
+/** A subagent's answer: for one in the background its report, as the call's own output only says it started. */
+export function subagentAnswer(part: ToolPart): string {
+  const text = part.background ? part.report?.text : part.output
+  return text ? subagentResult(text) : ''
+}
+
+/**
+ * Gives each background subagent call the latest report its subagent sent back, and drops those reports from the
+ * conversation, so the call's row tells the whole story: working until the report, then how it ended and the answer.
+ * A report whose call is not loaded (on an older page) stays a note.
+ */
+/**
+ * How long a background subagent may be missing from OpenCode's running jobs before MDE says it ended without an
+ * answer: its report lands at about the moment its job ends, and the two are read separately.
+ */
+export const UNREPORTED_GRACE_MS = 15_000
+
+/** The child sessions of background subagent calls that have not reported back yet. */
+export function waitingSubagents(messages: readonly ChatMessage[]): string[] {
+  const waiting: string[] = []
+  for (const message of messages) {
+    if (message.kind !== 'assistant') continue
+    for (const part of message.parts) {
+      if (part.kind === 'tool' && part.background && !part.report && part.subagent) waiting.push(part.subagent.sessionId)
+    }
+  }
+  return waiting
+}
+
+/**
+ * Notes when each waiting subagent was first seen missing from the running jobs (in `missing`, kept between calls), and
+ * returns the ones missing for longer than the grace. `running` is null while the jobs are unknown (not read yet, not
+ * supported, or a failed read): nothing is judged then, and what was seen before is kept.
+ */
+export function unreportedSubagents(
+  waiting: readonly string[],
+  running: ReadonlySet<string> | null,
+  missing: Map<string, number>,
+  now: number,
+): Set<string> {
+  const gone = new Set<string>()
+  if (running) {
+    for (const child of [...missing.keys()]) if (!waiting.includes(child) || running.has(child)) missing.delete(child)
+    for (const child of waiting) if (!running.has(child) && !missing.has(child)) missing.set(child, now)
+  }
+  for (const [child, since] of missing) if (now - since >= UNREPORTED_GRACE_MS) gone.add(child)
+  return gone
+}
+
+export function attachSubagentReports(messages: readonly ChatMessage[], unreported: ReadonlySet<string> = new Set()): ChatMessage[] {
+  const calls = new Set<string>()
+  for (const message of messages) {
+    if (message.kind !== 'assistant') continue
+    for (const part of message.parts) {
+      if (part.kind === 'tool' && part.background && part.subagent) calls.add(part.subagent.sessionId)
+    }
+  }
+  if (calls.size === 0) return messages as ChatMessage[]
+  const reports = new Map<string, ChatSubagentReport | 'unreported'>()
+  const used = new Set<string>()
+  for (const message of messages) {
+    if (message.kind !== 'note' || !message.subagentReport || !calls.has(message.subagentReport.sessionId)) continue
+    reports.set(message.subagentReport.sessionId, { state: message.subagentReport.state, time: message.time, text: message.detail ?? '' })
+    used.add(message.id)
+  }
+  for (const child of unreported) if (calls.has(child) && !reports.has(child)) reports.set(child, 'unreported')
+  if (reports.size === 0) return messages as ChatMessage[]
+  return messages
+    .filter((message) => !used.has(message.id))
+    .map((message) => {
+      if (message.kind !== 'assistant') return message
+      let changed = false
+      const parts = message.parts.map((part) => {
+        const report = part.kind === 'tool' && part.background && part.subagent ? reports.get(part.subagent.sessionId) : undefined
+        if (!report) return part
+        changed = true
+        return report === 'unreported' ? { ...part, unreported: true } : { ...part, report }
+      })
+      return changed ? { ...message, parts } : message
+    })
 }
 
 /**

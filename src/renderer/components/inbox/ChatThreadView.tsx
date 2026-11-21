@@ -5,6 +5,7 @@ import { ChatAside } from '@/components/inbox/ChatAside'
 import { AsideHistoryChip } from '@/components/inbox/AsideHistoryChip'
 import { ChatFindBar } from '@/components/inbox/ChatFindBar'
 import { ChatBackgroundTasks } from '@/components/inbox/ChatBackgroundTasks'
+import { useBackgroundTasks } from '@/components/inbox/use-background-tasks'
 import { ComposerDock } from '@/components/inbox/ComposerDock'
 import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
 import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
@@ -32,7 +33,7 @@ import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { hoverScrollbar } from '@/lib/hover-scrollbar'
 import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRepeatedRunFailures, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
+import { attachSubagentReports, compactionState, unreportedSubagents, waitingSubagents, contextUsage, drawnStart, findModel, goalPhase, hideRepeatedRunFailures, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -206,9 +207,27 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     [shown, revertTarget],
   )
   const latest = useMemo(() => lastAssistant(shown), [shown])
-  const messages = useMemo(
-    () => (state ? hideRepeatedRunFailures(mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined))) : []),
+  const reported = useMemo(
+    () => (state ? attachSubagentReports(hideRepeatedRunFailures(mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined)))) : []),
     [state, shown, latest, thread.model],
+  )
+  // OpenCode's running jobs, for the bar above the message box and to tell when a background subagent ended unheard.
+  const background = useBackgroundTasks(thread.id)
+  const missingSince = useRef(new Map<string, number>())
+  useEffect(() => missingSince.current.clear(), [thread.id])
+  const waitingKey = useMemo(() => waitingSubagents(reported).join(' '), [reported])
+  const unreported = useMemo(() => {
+    const snapshot = background.snapshot
+    const subagentJobs = snapshot?.tasks.filter((task) => task.kind === 'subagent') ?? []
+    // Unknown unless the list was read, and says which subagent each job is (an OpenCode that does not, is not judged).
+    const running = snapshot?.supported && !background.error && subagentJobs.every((task) => task.sessionId)
+      ? new Set(subagentJobs.map((task) => task.sessionId!))
+      : null
+    return unreportedSubagents(waitingKey ? waitingKey.split(' ') : [], running, missingSince.current, Date.now())
+  }, [waitingKey, background.snapshot, background.error])
+  const messages = useMemo(
+    () => (unreported.size > 0 ? attachSubagentReports(reported, unreported) : reported),
+    [reported, unreported],
   )
 
   // A revert can reach back past the newest pages. Load back to the first message it leaves in view,
@@ -680,7 +699,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         )}
         {thread.worktreeRemovedAt !== undefined ? <ReadOnlyThreadNotice thread={thread} /> : <>
         <ComposerDock>
-          <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
+          <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} watched={background} />
           {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={setModel} />}
         </ComposerDock>
         <ChatComposer

@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { AlertTriangle, ChevronUp, Image, Layers, Terminal, Users, X } from 'lucide-react'
 import { ElapsedTime } from '@/components/ElapsedTime'
 import { barTrigger } from '@/components/inbox/ComposerBar'
-import { useBackgroundTasks } from '@/components/inbox/use-background-tasks'
+import { useBackgroundTasks, type BackgroundTasks } from '@/components/inbox/use-background-tasks'
 import { cn } from '@/lib/utils'
 
 const HIDE_UNAVAILABLE_KEY = 'mde.background-tasks-hide-unavailable'
@@ -22,8 +22,10 @@ const KINDS = {
  * (`ComposerDock`). Closed it says how many there are and which; open it lists them, each with how long it has been
  * going. Nothing is drawn while there are none.
  */
-export function ChatBackgroundTasks({ threadId }: { threadId: string }): JSX.Element | null {
-  const { snapshot, error, refresh } = useBackgroundTasks(threadId)
+export function ChatBackgroundTasks({ threadId, watched }: { threadId: string; watched?: BackgroundTasks }): JSX.Element | null {
+  // The thread view watches the list for its subagent rows too and hands it down; on its own this watches it itself.
+  const own = useBackgroundTasks(watched ? null : threadId)
+  const { snapshot, error, refresh } = watched ?? own
   const [open, setOpen] = useState(false)
   const [hideUnavailable, setHideUnavailable] = useState(unavailableHidden)
   const listId = useId()

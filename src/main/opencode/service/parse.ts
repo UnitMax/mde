@@ -418,6 +418,22 @@ function parseToolCalls(metadata: Json | null, fallback: ChatToolStatus): ChatTo
 }
 
 /** How long a tool ran: from when it started running to when it finished. */
+/** A background subagent's report (`metadata.source` "subagent"): the child session it is from and its state. */
+function subagentReport(value: unknown): { sessionId: string; state: string } | null {
+  const metadata = record(value)
+  if (metadata?.source !== 'subagent') return null
+  const child = metadata.childID
+  if (typeof child !== 'string' || !/^ses_[A-Za-z0-9_-]{1,200}$/.test(child)) return null
+  const state = typeof metadata.state === 'string' && /^[a-z_-]{1,40}$/i.test(metadata.state) ? metadata.state.toLowerCase() : 'completed'
+  return { sessionId: child, state }
+}
+
+/** When a running tool started; OpenCode keeps it as `time.ran`. */
+function toolStart(value: unknown): number | undefined {
+  const ran = record(value)?.ran
+  return typeof ran === 'number' && Number.isFinite(ran) && ran > 0 ? Math.round(ran) : undefined
+}
+
 function toolDuration(value: unknown): number | undefined {
   const times = record(value)
   const ran = times?.ran
@@ -478,7 +494,11 @@ function parsePart(value: unknown): ChatPart | null {
   const sessionId = childId && /^ses_[A-Za-z0-9_-]{1,200}$/.test(childId) ? childId : undefined
   const changes = status === 'completed' ? parsePatches(metadata) : { patches: [], truncated: false }
   const calls = parseToolCalls(metadata, status)
-  const durationMs = status === 'completed' || status === 'error' ? toolDuration(part.time) : undefined
+  // A subagent started in the background returns at once, saying it is still running; its answer comes as a note later.
+  // The call's own few milliseconds are not how long the subagent took, so they are left out.
+  const background = (name === 'subagent' || name === 'task') && status === 'completed' && metadata?.status === 'running'
+  const durationMs = (status === 'completed' || status === 'error') && !background ? toolDuration(part.time) : undefined
+  const startedAt = status === 'running' || background ? toolStart(part.time) : undefined
   const code = status === 'completed' || status === 'error' ? exitCode(metadata?.exit) : undefined
   const answers = name === 'question' && status === 'completed' ? parseAnswers(metadata?.answers) : undefined
   // OpenCode cuts a script's output itself and says so in the metadata.
@@ -495,6 +515,8 @@ function parsePart(value: unknown): ChatPart | null {
     ...(calls ? { calls } : {}),
     ...(sessionId ? { subagent: { sessionId } } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(background ? { background: true } : {}),
     ...(changes.patches.length > 0 ? { patches: changes.patches } : {}),
     ...(status === 'completed' && typeof metadata?.exists === 'boolean' ? { existed: metadata.exists } : {}),
     ...(code !== undefined ? { exitCode: code } : {}),
@@ -638,12 +660,14 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
       const fromGoal = message.type === 'synthetic' && record(message.metadata)?.source === 'goal'
       const goal = fromGoal ? goalNote(text) : null
       if (goal) return { kind: 'note', id, time: at, tone: 'info', ...goal }
+      const report = message.type === 'synthetic' ? subagentReport(message.metadata) : null
       return text || description
         ? {
             kind: 'note', id, time: at, tone: 'info',
             ...(!fromGoal ? { activity: 'notice' as const } : {}),
             text: description ?? (message.type === 'system' ? 'System note' : 'Added context'),
             ...(text ? { detail: text } : {}),
+            ...(report ? { subagentReport: report } : {}),
           }
         : null
     }

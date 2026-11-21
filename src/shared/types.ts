@@ -521,6 +521,14 @@ export type ChatPart =
       subagent?: { sessionId: string; model?: OpenCodeModelRef }
       /** How long the tool ran, in milliseconds, once it has finished. */
       durationMs?: number
+      /** When a running tool, or a subagent working in the background, started (epoch ms), so its time can count up. */
+      startedAt?: number
+      /** A subagent call that returned at once while the subagent works on in the background; its answer comes later. */
+      background?: boolean
+      /** A background subagent's latest report, taken from the note OpenCode adds when it goes idle (renderer only). */
+      report?: ChatSubagentReport
+      /** A background subagent OpenCode no longer runs although it never reported back (renderer only). */
+      unreported?: boolean
       /** What an edit changed, once the tool has finished. */
       patches?: ChatFilePatch[]
       /** For a file write: whether the file was already there. Known once the tool has finished. */
@@ -566,6 +574,8 @@ export type ChatMessage =
       goal?: ChatGoalNote
       /** Routine work or context notifications that can join a compact activity group. */
       activity?: 'shell' | 'skill' | 'notice'
+      /** A background subagent reporting back: its session and the state it reached. The answer is the detail. */
+      subagentReport?: { sessionId: string; state: string }
     }
 
 /**
@@ -856,12 +866,21 @@ export interface ChatPermissionModeRequest {
 }
 
 /** A running job owned by the thread or one of its subagents, as reported by OpenCode. */
+/** What a background subagent last reported: how it ended, when, and its answer. */
+export interface ChatSubagentReport {
+  state: string
+  time: number
+  text: string
+}
+
 export interface ChatBackgroundTask {
   id: string
   kind: 'shell' | 'subagent' | 'image' | 'other'
   title: string
   command?: string
   startedAt?: number
+  /** For a subagent: its own session, which is how its call in the conversation is found. */
+  sessionId?: string
 }
 
 export interface ChatBackgroundState {

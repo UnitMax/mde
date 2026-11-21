@@ -3,6 +3,7 @@ import { CHAT_TEXT_LIMIT } from '../src/shared/chat-limits'
 import type { ChatForm, ChatMessage, ChatPart, ChatPendingMessage, ChatTokens } from '../src/shared/types'
 import {
   appendLive,
+  attachSubagentReports,
   compactionState,
   contextTone,
   contextUsage,
@@ -27,6 +28,11 @@ import {
   pruneLive,
   revertedMessageCount,
   stepContext,
+  UNREPORTED_GRACE_MS,
+  unreportedSubagents,
+  waitingSubagents,
+  subagentAnswer,
+  subagentDuration,
   subagentInfo,
   subagentResult,
   toolSummary,
@@ -250,6 +256,67 @@ describe('subagent calls', () => {
     expect(subagentInfo(call({ status: 'error', error: 'Subagent failed (sessionID: ses_x): no credits' })))
       .toMatchObject({ state: 'failed', problem: 'Subagent failed: no credits' })
     expect(toolSummary(call(), '/')).toBe('Subagent: Explore repo structure')
+  })
+
+  it('folds a background subagent report into its call and drops the note', () => {
+    const background = call({
+      status: 'completed', background: true, startedAt: 1_000, subagent: { sessionId: 'ses_child' },
+      output: 'The subagent is working in the background (sessionID: ses_child).',
+    })
+    const assistant: ChatMessage = { kind: 'assistant', id: 'msg_a', time: 1, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [background] }
+    // Working until it reports: no time of its own, no answer from the "started" output.
+    expect(subagentInfo(background).state).toBe('running')
+    expect(subagentDuration(background)).toBeUndefined()
+    expect(subagentAnswer(background)).toBe('')
+
+    const report = (id: string, time: number, state: string, text: string): ChatMessage => ({
+      kind: 'note', id, time, tone: 'info', activity: 'notice', text: 'Sleep then write a haiku',
+      detail: `<subagent sessionID="ses_child" state="${state}" description="Sleep then write a haiku">\n${text}\n</subagent>`,
+      subagentReport: { sessionId: 'ses_child', state },
+    })
+    const other: ChatMessage = { ...report('n_other', 5_000, 'completed', 'Not ours') as Extract<ChatMessage, { kind: 'note' }>, id: 'n_other', subagentReport: { sessionId: 'ses_elsewhere', state: 'completed' } }
+    const merged = attachSubagentReports([assistant, report('n_1', 12_000, 'completed', 'First round'), report('n_2', 24_500, 'completed', 'Still pond holds the sky'), other])
+    expect(merged.map((message) => message.id)).toEqual(['msg_a', 'n_other'])
+    const part = (merged[0] as Extract<ChatMessage, { kind: 'assistant' }>).parts[0] as Extract<ChatPart, { kind: 'tool' }>
+    expect(subagentInfo(part).state).toBe('done')
+    expect(subagentDuration(part)).toBe(23_500)
+    expect(subagentAnswer(part)).toBe('Still pond holds the sky')
+
+    const failed = attachSubagentReports([assistant, report('n_3', 3_000, 'error', 'No credits')])
+    expect(subagentInfo((failed[0] as Extract<ChatMessage, { kind: 'assistant' }>).parts[0] as Extract<ChatPart, { kind: 'tool' }>).state).toBe('failed')
+    const stopped = attachSubagentReports([assistant, report('n_4', 3_000, 'cancelled', '')])
+    expect(subagentInfo((stopped[0] as Extract<ChatMessage, { kind: 'assistant' }>).parts[0] as Extract<ChatPart, { kind: 'tool' }>).state).toBe('interrupted')
+    // Without a background call loaded, a report stays a note; and nothing changes when there is nothing to fold.
+    const alone = [report('n_5', 3_000, 'completed', 'x')]
+    expect(attachSubagentReports(alone)).toBe(alone)
+  })
+
+  it('says a background subagent ended without an answer only once its job has been gone for a while', () => {
+    const background = call({ status: 'completed', background: true, startedAt: 1_000, subagent: { sessionId: 'ses_child' } })
+    const assistant: ChatMessage = { kind: 'assistant', id: 'msg_a', time: 1, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [background] }
+    expect(waitingSubagents([assistant])).toEqual(['ses_child'])
+    const missing = new Map<string, number>()
+    // Still running, or the jobs are unknown: nothing to say.
+    expect(unreportedSubagents(['ses_child'], new Set(['ses_child']), missing, 0).size).toBe(0)
+    expect(unreportedSubagents(['ses_child'], null, missing, 100_000).size).toBe(0)
+    // Gone from the jobs: not yet within the grace, as the report may be on its way; then it is.
+    expect(unreportedSubagents(['ses_child'], new Set(), missing, 10_000).size).toBe(0)
+    expect(unreportedSubagents(['ses_child'], null, missing, 10_000 + UNREPORTED_GRACE_MS - 1).size).toBe(0)
+    expect([...unreportedSubagents(['ses_child'], new Set(), missing, 10_000 + UNREPORTED_GRACE_MS)]).toEqual(['ses_child'])
+    // Back in the jobs (OpenCode resumed it) starts the count again; a report ends the wait.
+    expect(unreportedSubagents(['ses_child'], new Set(['ses_child']), missing, 50_000).size).toBe(0)
+    expect(missing.size).toBe(0)
+    unreportedSubagents(['ses_child'], new Set(), missing, 60_000)
+    expect(unreportedSubagents([], new Set(), missing, 90_000).size).toBe(0)
+
+    const [marked] = attachSubagentReports([assistant], new Set(['ses_child'])) as [Extract<ChatMessage, { kind: 'assistant' }>]
+    const info = subagentInfo(marked.parts[0] as Extract<ChatPart, { kind: 'tool' }>)
+    expect(info.state).toBe('unreported')
+    expect(info.problem).toContain('sent no answer')
+    // A report wins over a missing job.
+    const report: ChatMessage = { kind: 'note', id: 'n_1', time: 9_000, tone: 'info', text: 'x', detail: 'Answer', subagentReport: { sessionId: 'ses_child', state: 'completed' } }
+    const [answered] = attachSubagentReports([assistant, report], new Set(['ses_child'])) as [Extract<ChatMessage, { kind: 'assistant' }>]
+    expect(subagentInfo(answered.parts[0] as Extract<ChatPart, { kind: 'tool' }>).state).toBe('done')
   })
 
   it('drops the wrapper tag around a subagent answer', () => {

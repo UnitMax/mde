@@ -32,12 +32,16 @@ export function parseBackgroundJobs(value: unknown): ChatBackgroundTask[] {
     const kind = job.kind === 'shell' || job.kind === 'subagent' || job.kind === 'image' ? job.kind : 'other'
     const command = kind === 'shell' ? label(job.command, 4096) : undefined
     const time = record(job.time)?.started
+    const child = kind === 'subagent' && typeof job.childSessionID === 'string' && /^ses_[A-Za-z0-9_-]{1,200}$/.test(job.childSessionID)
+      ? job.childSessionID
+      : undefined
     jobs.set(job.id, {
       id: job.id,
       kind,
       title: label(job.title) ?? label(job.description) ?? command ?? (kind === 'subagent' ? 'Subagent' : kind === 'image' ? 'Image generation' : 'Background task'),
       ...(command ? { command } : {}),
       ...(typeof time === 'number' && Number.isFinite(time) && time > 0 ? { startedAt: time } : {}),
+      ...(child ? { sessionId: child } : {}),
     })
   }
   return [...jobs.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0) || a.id.localeCompare(b.id))

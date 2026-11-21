@@ -1015,7 +1015,7 @@ describe('Inbox conversation', () => {
     }
   })
 
-  it('shows parallel subagents as cards with their task and result', async () => {
+  it('shows parallel subagents as rows with their task and result', async () => {
     const input = (description: string) => JSON.stringify({ agent: 'explore', description, prompt: `Look at ${description}.\nDo not edit files.` })
     page = {
       running: true, older: null,
@@ -1034,7 +1034,12 @@ describe('Inbox conversation', () => {
     expect(view.querySelector('[data-testid="chat-subagents"]')?.textContent).toContain('2 subagents · 1 working')
     const running = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_a"]')!
     expect(running.textContent).toContain('structure')
-    expect(running.textContent).toContain('Working')
+    expect(running.getAttribute('data-subagent-state')).toBe('running')
+    // The kind of subagent and that it is one, and the provider's lettered mark before the model.
+    expect(running.textContent).toContain('Explore subagent')
+    expect(running.querySelector('[data-testid="provider-mark"]')).not.toBeNull()
+    expect(running.querySelector('[role="timer"]')).not.toBeNull()
+    expect(Array.from(running.querySelectorAll('.chat-shimmer'), (node) => node.textContent)).toContain('structure')
     expect(running.textContent).not.toContain('"agent"')
     const model = running.querySelector('[aria-label="Model: Flint Free · high"]')!
     expect(model.textContent).toBe('Flint Free · high')
@@ -1042,12 +1047,90 @@ describe('Inbox conversation', () => {
     await act(async () => running.querySelector('button')!.click())
     expect(running.textContent).toContain('Flint Free · high')
     const done = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_b"]')!
-    expect(done.textContent).toContain('Done')
+    expect(done.getAttribute('data-subagent-state')).toBe('done')
+    // Done is the ordinary end: no word for it, and no timer left running.
+    expect(done.textContent).not.toContain('Done')
+    expect(done.querySelector('[role="timer"]')).toBeNull()
     expect(done.textContent).not.toContain('core loop')
     await act(async () => done.querySelector('button')!.click())
     expect(done.textContent).toContain('Do not edit files.')
     await vi.waitFor(() => expect(done.textContent).toContain('The core loop is in main.ts.'))
     expect(done.textContent).not.toContain('sessionID')
+  })
+
+  it('keeps a background subagent working until its report, then shows its time and answer in the row', async () => {
+    const launched = {
+      kind: 'assistant' as const, id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true,
+      parts: [{
+        kind: 'tool' as const, id: 'call_bg', name: 'subagent', status: 'completed' as const, background: true, startedAt: Date.now() - 5_000,
+        input: JSON.stringify({ agent: 'general', description: 'Sleep then write a haiku', prompt: 'Sleep, then write a haiku.' }),
+        output: 'The subagent is working in the background (sessionID: ses_bg).',
+        subagent: { sessionId: 'ses_bg' },
+      }],
+    }
+    page = { running: false, older: null, messages: [launched] }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-subagent-call_bg"]')).not.toBeNull())
+    let row = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_bg"]')!
+    expect(row.getAttribute('data-subagent-state')).toBe('running')
+    expect(row.querySelector('[role="timer"]')?.textContent).toMatch(/^[5-9]s$/)
+
+    const started = launched.parts[0]!.startedAt
+    page = {
+      running: false, older: null,
+      messages: [launched, {
+        kind: 'note', id: 'msg_3', time: started + 23_000, tone: 'info', activity: 'notice', text: 'Sleep then write a haiku',
+        detail: '<subagent sessionID="ses_bg" state="completed">\nStill pond holds the sky\n</subagent>',
+        subagentReport: { sessionId: 'ses_bg', state: 'completed' },
+      }],
+    }
+    await act(async () => { useInboxChat.getState().applyEvent({ type: 'messages', threadId: 'ses_one' }) })
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-subagent-call_bg"]')?.getAttribute('data-subagent-state')).toBe('done'))
+    row = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_bg"]')!
+    expect(row.querySelector('[role="timer"]')).toBeNull()
+    expect(row.textContent).toContain('23s')
+    expect(view.querySelector('[data-testid="chat-note-msg_3"]')).toBeNull()
+    await act(async () => row.querySelector('button')!.click())
+    await vi.waitFor(() => expect(row.textContent).toContain('Still pond holds the sky'))
+    expect(row.textContent).not.toContain('working in the background')
+  })
+
+  it('says a background subagent ended without an answer once OpenCode no longer runs it', async () => {
+    const chat = api.chat as typeof api.chat & { backgroundTasks?: unknown }
+    let jobs: unknown[] = [{ id: 'ses_bg', kind: 'subagent', title: 'Haiku', sessionId: 'ses_bg' }]
+    chat.backgroundTasks = vi.fn(async () => ({ supported: true, tasks: jobs }))
+    const start = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start)
+    try {
+      page = {
+        running: false, older: null,
+        messages: [{
+          kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true,
+          parts: [{
+            kind: 'tool', id: 'call_bg', name: 'subagent', status: 'completed', background: true, startedAt: start - 1_000,
+            input: JSON.stringify({ agent: 'general', description: 'Haiku', prompt: 'Write a haiku.' }), subagent: { sessionId: 'ses_bg' },
+          }],
+        }],
+      }
+      const view = await render()
+      const state = () => view.querySelector('[data-testid="chat-subagent-call_bg"]')?.getAttribute('data-subagent-state')
+      await vi.waitFor(() => expect(chat.backgroundTasks).toHaveBeenCalled())
+      expect(state()).toBe('running')
+      // The job ends with no report: still working within the grace, then said plainly.
+      jobs = []
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await vi.waitFor(() => expect(chat.backgroundTasks).toHaveBeenCalledTimes(2))
+      expect(state()).toBe('running')
+      clock.mockReturnValue(start + 20_000)
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await vi.waitFor(() => expect(state()).toBe('unreported'))
+      const row = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_bg"]')!
+      expect(row.textContent).toContain('No answer')
+      expect(row.querySelector('[role="timer"]')).toBeNull()
+    } finally {
+      clock.mockRestore()
+      delete chat.backgroundTasks
+    }
   })
 
   it('shows raw model IDs when unlisted and leaves unavailable subagent models explicit', async () => {

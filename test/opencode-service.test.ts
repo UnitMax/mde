@@ -751,6 +751,45 @@ describe('OpenCode service parsing', () => {
     expect(tool?.kind === 'tool' && tool.output?.includes('\u001b')).toBe(false)
   })
 
+  it('keeps when a running tool started, so its time can count up', () => {
+    const tool = (status: string, time: unknown) => {
+      const message = parseMessage({
+        id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' },
+        content: [{ type: 'tool', id: 'call_1', name: 'subagent', time, state: { status, input: {} } }],
+      })
+      return message?.kind === 'assistant' ? message.parts[0] : null
+    }
+    expect(tool('running', { created: 1, ran: 1_700_000_000_000 })).toMatchObject({ startedAt: 1_700_000_000_000 })
+    expect(tool('running', { created: 1 })).not.toHaveProperty('startedAt')
+    expect(tool('running', { ran: 'soon' })).not.toHaveProperty('startedAt')
+    expect(tool('completed', { ran: 1_000, completed: 4_000 })).toMatchObject({ durationMs: 3_000 })
+    expect(tool('completed', { ran: 1_000, completed: 4_000 })).not.toHaveProperty('startedAt')
+  })
+
+  it('marks a subagent started in the background and reads its later report', () => {
+    const launched = parseMessage({
+      id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' },
+      content: [{ type: 'tool', id: 'call_1', name: 'subagent', time: { created: 1, ran: 1_795_299_378_578, completed: 1_795_299_378_588 },
+        state: { status: 'completed', input: { agent: 'general', description: 'Sleep then write a haiku', prompt: 'Sleep 20' },
+          content: [{ type: 'text', text: 'The subagent is working in the background (sessionID: ses_child).' }],
+          metadata: { sessionID: 'ses_child', status: 'running', truncated: false } } }],
+    })
+    const tool = launched?.kind === 'assistant' ? launched.parts[0] : null
+    expect(tool).toMatchObject({ background: true, startedAt: 1_795_299_378_578, subagent: { sessionId: 'ses_child' } })
+    // The call's 10 ms are not the subagent's time.
+    expect(tool).not.toHaveProperty('durationMs')
+
+    const report = parseMessage({
+      id: 'msg_2', type: 'synthetic', time: { created: 1_795_299_401_395 }, description: 'Sleep then write a haiku',
+      metadata: { source: 'subagent', childID: 'ses_child', agent: 'General', state: 'completed' },
+      text: '<subagent sessionID="ses_child" state="completed" description="Sleep then write a haiku">\nStill pond\n</subagent>',
+    })
+    expect(report).toMatchObject({ kind: 'note', time: 1_795_299_401_395, subagentReport: { sessionId: 'ses_child', state: 'completed' } })
+    for (const metadata of [{ source: 'subagent', childID: '../x' }, { source: 'goal', childID: 'ses_child' }, null]) {
+      expect(parseMessage({ id: 'msg_3', type: 'synthetic', time: { created: 1 }, text: 'x', metadata })).not.toHaveProperty('subagentReport')
+    }
+  })
+
   it('reads validated child session IDs only from subagent metadata, results and errors', () => {
     const tool = (name: string, state: Record<string, unknown>) => {
       const message = parseMessage({
