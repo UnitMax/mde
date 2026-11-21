@@ -901,6 +901,23 @@ describe('OpenCode service parsing', () => {
     expect(parse(undefined).saveIncomplete).toBeUndefined()
   })
 
+  it('never lets the explanation block an answer: a long one is shortened and says so', () => {
+    const parse = (message: unknown) => parsePermissions({ data: [{ id: 'per_1', action: 'read', resources: ['a'], save: ['a'], message }] })[0]!
+    const long = parse('why '.repeat(2000))
+    expect(long.incomplete).toBeUndefined()
+    expect(long.messageShortened).toBeUndefined()
+    expect(long.message).toBe('why '.repeat(2000).trim())
+    const huge = parse('x'.repeat(PERMISSION_LIMITS.messageLength + 10))
+    expect(huge.incomplete).toBeUndefined()
+    expect(huge.messageShortened).toBe(true)
+    expect(huge.message).toHaveLength(PERMISSION_LIMITS.messageLength)
+    for (const odd of [42, { text: 'x' }, null]) {
+      const permission = parse(odd)
+      expect(permission.incomplete).toBeUndefined()
+      expect(permission.message).toBeUndefined()
+    }
+  })
+
   it('gives each request a revision that changes with anything the card shows', () => {
     const base = { id: 'per_1', action: 'bash', resources: ['ls'], save: ['ls *'], message: 'List' }
     const revision = (request: Record<string, unknown>) => parsePermissions({ data: [request] })[0]!.revision

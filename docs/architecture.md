@@ -1304,7 +1304,8 @@ per session). The answer goes to the subagent's session, and main refuses a sess
 Their events (`permission.asked` and the rest) are passed on to the thread, so it needs input and notifies as if its
 own agent had asked. A permission card says what Always allow would save: the request's patterns for the whole
 project, in every thread, and, in the warning colour, when that is `*`, every call of the kind (a file edit saves `*`).
-Every pattern is shown (more than five get a scrolling list of their own), and invisible characters in targets
+Every pattern is shown, spaces kept as they are (more than five get a scrolling list of their own; under the `*`
+warning the full list still follows), and invisible characters in targets
 and patterns show as marked `U+XXXX` codes (`visibleSegments` in `lib/saved-permissions.ts`). An approval carries
 the request's `revision`; main refuses it if the request changed since, and the card is read again (see
 **Permission approvals** in `docs/security.md`).

@@ -72,7 +72,12 @@ export function PermissionCard({
       title={`Permission: ${permissionTitle(permission.action)}`}
       {...(permission.subagent ? { subagent: permission.subagent } : {})}
     >
-      {permission.message && <p className="mb-2 text-[13px] text-fg-muted">{permission.message}</p>}
+      {permission.message && (
+        <div data-testid="chat-permission-message" className="mb-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[13px] text-fg-muted">
+          <VisibleText text={permission.message} multiline />
+          {permission.messageShortened && <p className="mt-1 text-[12px] text-fg-subtle">MDE shortened this explanation; what is asked is shown in full below.</p>}
+        </div>
+      )}
       {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot read this permission request. Reject it here, or answer it in an OpenCode terminal.</p>}
       {hidden && <p role="alert" data-testid="chat-permission-hidden" className="mb-2 text-[13px] text-warn">This request contains invisible characters. Each one is shown as a marked code such as U+202E.</p>}
       {permission.resources.length > 0 && (
@@ -127,24 +132,38 @@ const INLINE_PATTERNS = 5
 function AlwaysAllowHint({ permission }: { permission: ChatPermission }): JSX.Element | null {
   const hint = alwaysAllowHint(permission.action, permission.save)
   if (!hint || permission.incomplete || permission.saveIncomplete) return null
+  // Whitespace kept as it is, so `one  two` and `one two` look different; long patterns wrap.
   const code = (pattern: string): JSX.Element => (
-    <code className="inbox-code-font rounded bg-bg px-1 text-[11.5px] text-fg-muted"><VisibleText text={pattern} /></code>
+    <code className="inbox-code-font whitespace-pre-wrap break-all rounded bg-bg px-1 text-[11.5px] text-fg-muted"><VisibleText text={pattern} /></code>
+  )
+  const list = (patterns: readonly string[]): JSX.Element => (
+    <ul className="mt-1 flex max-h-40 flex-col gap-0.5 overflow-auto" data-testid="chat-permission-always-patterns">
+      {patterns.map((pattern, index) => <li key={index}>{code(pattern)}</li>)}
+    </ul>
   )
   if (hint.broad) {
+    // The warning says how broad it is; the list under it says exactly what is saved, `*` included.
+    const save = permission.save ?? []
     return (
-      <p data-testid="chat-permission-always-hint" data-broad className="mt-2 text-[12px] leading-snug text-warn">
-        Always allow covers <strong className="font-semibold">every {hint.noun}</strong> in this project from now on, in all its threads, not just this one.
-        {' '}You can remove it under Permissions in the sidebar.
-      </p>
+      <div data-testid="chat-permission-always-hint" data-broad className="mt-2 text-[12px] leading-snug text-warn">
+        <p>
+          Always allow covers <strong className="font-semibold">every {hint.noun}</strong> in this project from now on, in all its threads, not just this one.
+          {' '}You can remove it under Permissions in the sidebar.
+        </p>
+        {save.length > 1 && (
+          <>
+            <p className="mt-1 text-fg-subtle">It saves these {save.length} patterns:</p>
+            {list(save)}
+          </>
+        )}
+      </div>
     )
   }
   if (hint.patterns.length > INLINE_PATTERNS) {
     return (
       <div data-testid="chat-permission-always-hint" className="mt-2 text-[12px] leading-snug text-fg-subtle">
         <p>Always allow saves these {hint.patterns.length} patterns for this project, in all its threads. You can remove them under Permissions in the sidebar.</p>
-        <ul className="mt-1 flex max-h-40 flex-col gap-0.5 overflow-auto" data-testid="chat-permission-always-patterns">
-          {hint.patterns.map((pattern, index) => <li key={index} className="break-all">{code(pattern)}</li>)}
-        </ul>
+        {list(hint.patterns)}
       </div>
     )
   }

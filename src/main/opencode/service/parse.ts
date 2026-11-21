@@ -824,12 +824,12 @@ export function parseActiveSessions(value: unknown): Set<string> {
 }
 
 /** Hard limits on a permission request, against a broken or hostile answer. Past one, MDE says so rather than cutting. */
-export const PERMISSION_LIMITS = { resources: 200, resourceLength: 32_768, save: 500, saveLength: 4096 }
+export const PERMISSION_LIMITS = { resources: 200, resourceLength: 32_768, save: 500, saveLength: 4096, messageLength: 32_768 }
 
 /**
  * Permission requests, kept whole: every target and every pattern "Always allow" would save, invisible characters
  * included (the card shows them as markers). A request whose targets MDE cannot read or that passes the limits is
- * `incomplete` (only rejecting is offered); a save list MDE cannot read is `saveIncomplete` (Allow once still is).
+ * `incomplete` (only rejecting is offered; a long explanation never is); a save list MDE cannot read is `saveIncomplete` (Allow once still is).
  * `revision` fingerprints what the card shows, so an approval is refused if the request changed after it was seen.
  */
 export function parsePermissions(value: unknown): ChatPermission[] {
@@ -841,9 +841,10 @@ export function parsePermissions(value: unknown): ChatPermission[] {
     if (!request || !id || !/^per_[A-Za-z0-9_-]{1,200}$/.test(id) || !action) continue
     const resources = readable(request.resources, PERMISSION_LIMITS.resources, PERMISSION_LIMITS.resourceLength)
     const save = request.save === undefined ? [] : readable(request.save, PERMISSION_LIMITS.save, PERMISSION_LIMITS.saveLength)
-    const incomplete = !resources ||
-      (request.message !== undefined && (typeof request.message !== 'string' || request.message.length > 4000))
-    const message = body(request.message, 4000).text.trim()
+    const incomplete = !resources
+    // The message only explains the request; it never blocks an answer. Past its limit it is shortened, and said so.
+    const explained = body(request.message, PERMISSION_LIMITS.messageLength)
+    const message = explained.text.trim()
     const saveIncomplete = !save
     const revision = createHash('sha256')
       .update(JSON.stringify([action, resources, save, message]))
@@ -854,6 +855,7 @@ export function parsePermissions(value: unknown): ChatPermission[] {
       resources: resources ?? [],
       revision,
       ...(message ? { message } : {}),
+      ...(message && explained.truncated ? { messageShortened: true } : {}),
       ...(incomplete ? { incomplete: true } : {}),
       ...(saveIncomplete ? { saveIncomplete: true } : {}),
       ...(save && save.length > 0 ? { save } : {}),

@@ -269,7 +269,8 @@ the validated `chat:*` channels.
   pattern Always allow would save (up to 500 of up to 4 KiB), nothing cut. Control, zero-width, bidi, tag and
   variation characters are shown as marked `U+XXXX` codes, with a warning, instead of being refused; line breaks
   and tabs in targets show as they are. Only targets MDE cannot read (not text, blank, or past the limits)
-  leave just Reject; a save list it cannot read turns off Always allow alone, so Allow once still works.
+  leave just Reject; a save list it cannot read turns off Always allow alone, so Allow once still works. The
+  request's message only explains it and never blocks an answer: past 32 KiB it is cut, and the card says so.
   `parsePermissions` gives each request a `revision`, a SHA-256 of what the card shows (action, targets, save
   patterns, message); the card sends it with an approval, and main re-reads the request and refuses an
   approval whose revision does not match, so a request that changed after it was shown is never approved

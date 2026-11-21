@@ -1561,6 +1561,34 @@ describe('Inbox conversation', () => {
     expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_nosave', decision: 'once', revision: 'rev-nosave' })
   })
 
+  it('lists every pattern under the `*` warning, keeps their spaces, and shows a long explanation without blocking', async () => {
+    const narrow = Array.from({ length: 20 }, (_, index) => `src/file${index}.ts`)
+    const explanation = 'Because '.repeat(800)
+    requests = {
+      permissions: [
+        { id: 'per_star', revision: 'rev-star', action: 'read', resources: ['a'], save: [...narrow, '*'] },
+        { id: 'per_space', revision: 'rev-space', action: 'read', resources: ['a'], save: ['one  two', 'one two'] },
+        { id: 'per_long', revision: 'rev-long', action: 'read', resources: ['a'], save: ['a'], message: explanation.trim(), messageShortened: true },
+      ],
+      forms: [],
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_long"]')).not.toBeNull())
+    const card = (id: string) => view.querySelector<HTMLElement>(`[data-testid="chat-permission-${id}"]`)!
+    const star = card('per_star').querySelector<HTMLElement>('[data-testid="chat-permission-always-hint"]')!
+    expect(star.getAttribute('data-broad')).toBe('true')
+    expect(star.textContent).toContain('every file read')
+    expect(Array.from(star.querySelectorAll('[data-testid="chat-permission-always-patterns"] li'), (item) => item.textContent)).toEqual([...narrow, '*'])
+    const codes = card('per_space').querySelectorAll('[data-testid="chat-permission-always-hint"] code')
+    expect(Array.from(codes, (item) => item.textContent)).toEqual(['one  two', 'one two'])
+    expect(codes[0]!.className).toContain('whitespace-pre-wrap')
+    const long = card('per_long')
+    expect(long.querySelector('[data-testid="chat-permission-message"]')?.textContent).toContain(explanation.trim())
+    expect(long.querySelector('[data-testid="chat-permission-message"]')?.textContent).toContain('MDE shortened this explanation')
+    expect(button(long, 'Allow once').disabled).toBe(false)
+    expect(button(long, 'Always allow').disabled).toBe(false)
+  })
+
   it('reads the requests again when an answer is refused, so a changed request shows as it is now', async () => {
     requests = { permissions: [{ id: 'per_1', revision: 'rev-old', action: 'shell', resources: ['ls'], save: ['ls *'] }], forms: [] }
     const view = await render()

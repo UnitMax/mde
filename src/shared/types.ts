@@ -714,6 +714,8 @@ export interface ChatPermission {
   action: string
   resources: string[]
   message?: string
+  /** The message passed MDE's limit and was cut; the card says so. */
+  messageShortened?: boolean
   /** MDE cannot read the request's targets (malformed or past its limits): it can only be rejected. */
   incomplete?: boolean
   /** The patterns "Always allow" saves for the project (`git status *`, or `*` for every edit), all of them. */
