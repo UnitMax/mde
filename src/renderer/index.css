@@ -1255,6 +1255,15 @@
   mix-blend-mode: normal;
 }
 
+/* The terminal's lightning lies over its text: on a dark theme it adds light (screen) instead of covering it. */
+.fancy-terminal-strike {
+  mix-blend-mode: screen;
+}
+
+:root[data-mode='light'] .fancy-terminal-strike {
+  mix-blend-mode: normal;
+}
+
 /*
  * Views agents show in the chat. Chart series take a fixed categorical palette rather than the theme's colours, which
  * are not chosen to tell series apart (a theme's syntax colours can repeat a hue or put red in a series). The six

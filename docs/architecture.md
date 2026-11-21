@@ -162,8 +162,8 @@ border and glow, and the titles of the others are muted; a lone pane is not sing
 at once to every `TerminalView`, so the Sessions view and the Inbox sidebar terminal change together.
 
 The Appearance section ends with **Fancy mode** (`src/renderer/fancy/`, `FancyModeSettings`), an opt-in extra that
-is off by default. Its settings (`enabled`, `background`, `backgroundEnabled`, `threadEffects`) live in the renderer's local storage under
-`mde.fancy-mode`, read and written by `fancy/settings.ts` and held in the `useFancyMode` store. Turned on, it does two
+is off by default. Its settings (`enabled`, `background`, `backgroundEnabled`, `threadEffects`, `terminalStrikes`) live in the renderer's local storage under
+`mde.fancy-mode`, read and written by `fancy/settings.ts` and held in the `useFancyMode` store. Turned on, it does three
 things, each a canvas drawn by the one shared animation loop in `fancy/scheduler.ts` (a single
 `requestAnimationFrame` for everything, a frame rate per task, no drawing while the page is hidden). Under the system's
 reduced-motion setting nothing animates: each canvas draws one still picture.
@@ -192,6 +192,18 @@ reduced-motion setting nothing animates: each canvas draws one still picture.
   and a packet of light running along the lower edge). A thread that is both unread and working shows the storm. The
   working effect also shows in the Working section, since it uses the same row. A row draws only while on screen
   (`IntersectionObserver`), so a long list costs what the visible rows cost. The mini Inbox window has no effects.
+- **Terminal lightning** (`TerminalStrike` in every `TerminalPane`, drawn by `fancy/terminal-strike.ts`): each time a
+  command is entered in a terminal, two or three forked bolts crack down through the whole pane a moment apart, the
+  pane flashes faintly, a current races round its border and sparks fly where the bolts land; it is over in under a
+  second and the canvas is empty between strikes. A command is Enter on its own (`\r` from xterm's `onData`) while
+  the terminal is on its normal screen: `terminal/command-events.ts` tells the pane's listener, and ignores pastes and
+  full-screen programs (the alternate screen). The canvas lies over the text at `z-20`, so on a dark theme it is
+  blended with `screen` and only adds light. A new command cuts the last strike short. It shares the bolt drawing
+  (`drawLightningBolt`, `lightningColors`) with the thread storm, runs only while it plays, and draws nothing under
+  reduced motion.
+
+In the settings, every choice that needs fancy mode sits in one group on a rail under its switch, shown only while it
+is on; the terminal lightning has a small terminal with a **Try it** button.
 
 The geometry and the timing of the effects (`generateBolt`, `strikeEnvelope`, `roundedPerimeter`, the rain's
 simulation, the contour lines) are pure functions with tests; the drawing itself was checked by eye in headless

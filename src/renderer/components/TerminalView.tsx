@@ -89,6 +89,7 @@ import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { SessionTabStrip } from '@/components/SessionTabStrip'
 import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
+import { TerminalStrike } from '@/components/TerminalStrike'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const noop = (): void => {}
@@ -763,6 +764,7 @@ function TerminalPane({
         onFocus={onFocus}
         isFullscreen={isFullscreen}
       />
+      <TerminalStrike terminalId={pane.terminalId} />
       <TerminalPaneOverlay
         visible={paneOverlayVisible}
         number={paneOverlayNumber}

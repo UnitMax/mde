@@ -176,6 +176,58 @@ export function crackle(position: number, time: number, seed: number): number {
   return (top + (bottom - top) * ft) * 2 - 1
 }
 
+/** The three colors lightning is drawn in: a wide halo, a glow and a bright core. */
+export interface LightningColors {
+  glow: Rgb
+  core: Rgb
+  halo: Rgb
+}
+
+export function lightningColors(palette: FancyPalette): LightningColors {
+  const dark = palette.mode === 'dark'
+  return {
+    glow: dark ? lighten(palette.accent, 0.12) : palette.accent,
+    core: dark ? mixRgb(palette.accent, [255, 255, 255], 0.88) : darken(palette.accent, 0.35),
+    halo: dark ? mixRgb(palette.accent, palette.violet, 0.35) : palette.accent
+  }
+}
+
+export function strokePath(context: CanvasRenderingContext2D, points: readonly Point[]): void {
+  context.beginPath()
+  points.forEach((point, index) => (index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y)))
+  context.stroke()
+}
+
+/** A bolt in three layers (halo, glow, core) with thinner forks; `scale` widens every stroke for a bigger surface. */
+export function drawLightningBolt(
+  context: CanvasRenderingContext2D,
+  bolt: Bolt,
+  strength: number,
+  colors: LightningColors,
+  scale = 1
+): void {
+  context.lineJoin = 'round'
+  context.lineCap = 'round'
+  const layers: Array<[Rgb, number, number]> = [
+    [colors.halo, 9, 0.12],
+    [colors.glow, 4.2, 0.38],
+    [colors.core, 1.5, 1]
+  ]
+  for (const [color, lineWidth, alpha] of layers) {
+    context.strokeStyle = rgba(color, alpha * strength)
+    context.lineWidth = lineWidth * scale
+    strokePath(context, bolt.main)
+  }
+  for (const branch of bolt.branches) {
+    context.strokeStyle = rgba(colors.glow, 0.3 * strength)
+    context.lineWidth = 2.6 * scale
+    strokePath(context, branch)
+    context.strokeStyle = rgba(colors.core, 0.8 * strength)
+    context.lineWidth = 0.9 * scale
+    strokePath(context, branch)
+  }
+}
+
 /**
  * The effect on an unread thread: a storm kept in a small box. Two arcs of current run round the border, crackling,
  * and every couple of seconds a bolt cracks across the row, flashing twice, forking, and throwing sparks where it
@@ -184,9 +236,8 @@ export function crackle(position: number, time: number, seed: number): number {
 export function createLightningEffect(palette: FancyPalette, seed: string): RowEffect {
   const dark = palette.mode === 'dark'
   const random = mulberry32(hashString(`lightning:${seed}`))
-  const glow: Rgb = dark ? lighten(palette.accent, 0.12) : palette.accent
-  const core: Rgb = dark ? mixRgb(palette.accent, [255, 255, 255], 0.88) : darken(palette.accent, 0.35)
-  const halo: Rgb = dark ? mixRgb(palette.accent, palette.violet, 0.35) : palette.accent
+  const colors = lightningColors(palette)
+  const { glow, core, halo } = colors
 
   let width = 0
   let height = 0
@@ -240,34 +291,8 @@ export function createLightningEffect(palette: FancyPalette, seed: string): RowE
     return { start: time, points: generateBolt(random, from, to, { depth: 4, roughness: 0.3, branchChance: 0, maxBranches: 0 }).main }
   }
 
-  const strokePath = (context: CanvasRenderingContext2D, points: readonly Point[]): void => {
-    context.beginPath()
-    points.forEach((point, index) => (index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y)))
-    context.stroke()
-  }
-
-  const drawBolt = (context: CanvasRenderingContext2D, bolt: Bolt, strength: number): void => {
-    context.lineJoin = 'round'
-    context.lineCap = 'round'
-    const layers: Array<[Rgb, number, number]> = [
-      [halo, 9, 0.12],
-      [glow, 4.2, 0.38],
-      [core, 1.5, 1]
-    ]
-    for (const [color, lineWidth, alpha] of layers) {
-      context.strokeStyle = rgba(color, alpha * strength)
-      context.lineWidth = lineWidth
-      strokePath(context, bolt.main)
-    }
-    for (const branch of bolt.branches) {
-      context.strokeStyle = rgba(glow, 0.3 * strength)
-      context.lineWidth = 2.6
-      strokePath(context, branch)
-      context.strokeStyle = rgba(core, 0.8 * strength)
-      context.lineWidth = 0.9
-      strokePath(context, branch)
-    }
-  }
+  const drawBolt = (context: CanvasRenderingContext2D, bolt: Bolt, strength: number): void =>
+    drawLightningBolt(context, bolt, strength, colors)
 
   /** The current: a bright head with a tail that fades, wavering sideways as if it were hard to hold. */
   const drawCurrent = (context: CanvasRenderingContext2D, head: number, length: number, time: number, energy: number): void => {

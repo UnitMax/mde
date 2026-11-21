@@ -14,6 +14,7 @@ import {
   osc52Preview,
   OSC52_PROMPT_TIMEOUT_MS
 } from './osc52'
+import { noteTerminalInput } from './command-events'
 import { emitOsc52, type Osc52GrantScope } from './osc52-notices'
 import { createRendererLease } from './renderer-lease'
 import {
@@ -355,6 +356,7 @@ function createSession(
 
   term.onData((data) => {
     void window.api.pty.write({ terminalId, data })
+    noteTerminalInput(terminalId, data, term.buffer.active.type === 'alternate')
   })
 
   const session: TerminalSession = {

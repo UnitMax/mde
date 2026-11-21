@@ -192,6 +192,8 @@
     "src/renderer/components/FancyBackground.tsx",
     "src/renderer/components/FancyModeSettings.tsx",
     "src/renderer/components/ThreadEffect.tsx",
+    "src/renderer/components/TerminalStrike.tsx",
+    "src/renderer/terminal/command-events.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

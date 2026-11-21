@@ -26,3 +26,8 @@ export function useFancyBackgroundOn(): boolean {
 export function useFancyThreadEffectsOn(): boolean {
   return useFancyMode((state) => state.settings.enabled && state.settings.threadEffects)
 }
+
+/** Whether fancy mode strikes a terminal with lightning when a command is entered in it. */
+export function useFancyTerminalStrikesOn(): boolean {
+  return useFancyMode((state) => state.settings.enabled && state.settings.terminalStrikes)
+}

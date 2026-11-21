@@ -21,6 +21,8 @@ export interface FancySettings {
   backgroundEnabled: boolean
   /** Lightning on unread threads and digital rain on working ones, in the Inbox's thread list. */
   threadEffects: boolean
+  /** A flash of lightning over a terminal each time a command is entered in it. */
+  terminalStrikes: boolean
 }
 
 export const FANCY_SETTINGS_STORAGE_KEY = 'mde.fancy-mode'
@@ -29,7 +31,8 @@ export const DEFAULT_FANCY_SETTINGS: FancySettings = {
   enabled: false,
   background: 'aurora',
   backgroundEnabled: true,
-  threadEffects: true
+  threadEffects: true,
+  terminalStrikes: true
 }
 
 export function isFancyBackgroundId(value: unknown): value is FancyBackgroundId {
@@ -45,7 +48,9 @@ export function resolveFancySettings(value: unknown): FancySettings {
     background: isFancyBackgroundId(record.background) ? record.background : DEFAULT_FANCY_SETTINGS.background,
     backgroundEnabled: typeof record.backgroundEnabled === 'boolean' ? record.backgroundEnabled : DEFAULT_FANCY_SETTINGS.backgroundEnabled,
     threadEffects:
-      typeof record.threadEffects === 'boolean' ? record.threadEffects : DEFAULT_FANCY_SETTINGS.threadEffects
+      typeof record.threadEffects === 'boolean' ? record.threadEffects : DEFAULT_FANCY_SETTINGS.threadEffects,
+    terminalStrikes:
+      typeof record.terminalStrikes === 'boolean' ? record.terminalStrikes : DEFAULT_FANCY_SETTINGS.terminalStrikes
   }
 }
 

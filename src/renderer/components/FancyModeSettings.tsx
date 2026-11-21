@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { SwitchRow } from '@/components/ui/switch'
 import { ThreadEffect } from '@/components/ThreadEffect'
 import { mountBackground } from '@/fancy/background-host'
 import { backgroundOpacity, fancyPaletteForTheme } from '@/fancy/color'
+import { playTerminalStrike } from '@/fancy/terminal-strike'
 import { FANCY_BACKGROUND_OPTIONS, type FancyBackgroundId } from '@/fancy/settings'
 import { useThemeId } from '@/fancy/use-theme-id'
 import { cn } from '@/lib/utils'
@@ -55,6 +57,35 @@ function ThreadEffectPreview(): JSX.Element {
   )
 }
 
+/** A small terminal that is struck when the button is pressed, to show the terminal lightning. */
+function TerminalStrikePreview(): JSX.Element {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const stop = useRef<(() => void) | null>(null)
+  const themeId = useThemeId()
+  useEffect(() => () => stop.current?.(), [])
+  const strike = (): void => {
+    if (!canvas.current) return
+    stop.current?.()
+    stop.current = playTerminalStrike(canvas.current, fancyPaletteForTheme(themeId), `preview:${Date.now()}`)
+  }
+  return (
+    <div className="flex items-end gap-2">
+      <div
+        className="relative h-24 w-full max-w-[260px] overflow-hidden rounded border border-line bg-bg p-2 font-mono text-[11px] leading-relaxed text-fg-muted"
+        data-testid="fancy-terminal-preview"
+      >
+        <div><span className="text-accent">~/app</span> $ npm run dev</div>
+        <div className="text-fg-subtle">ready on http://localhost:3000</div>
+        <div><span className="text-accent">~/app</span> $ <span className="inline-block h-3 w-1.5 translate-y-0.5 bg-fg-muted" /></div>
+        <canvas ref={canvas} aria-hidden="true" className="fancy-terminal-strike pointer-events-none absolute inset-0 h-full w-full" />
+      </div>
+      <Button type="button" size="sm" variant="secondary" data-testid="fancy-terminal-preview-strike" onClick={strike}>
+        Try it
+      </Button>
+    </div>
+  )
+}
+
 /** Settings, Appearance: fancy mode, its background and its thread effects. */
 export function FancyModeSettings(): JSX.Element {
   const settings = useFancyMode((state) => state.settings)
@@ -66,13 +97,19 @@ export function FancyModeSettings(): JSX.Element {
       <SwitchRow
         checked={settings.enabled}
         label="Fancy mode"
-        description="Animated backgrounds, and lightning and digital rain on the Inbox's threads. It uses some extra processor time and rests while MDE is hidden. With reduced motion on in your system, it shows still pictures."
+        description="Animated backgrounds, lightning and digital rain on the Inbox's threads, and lightning in terminals. It uses some extra processor time and rests while MDE is hidden. With reduced motion on in your system, it shows still pictures."
         testId="fancy-mode"
         onClick={() => update({ enabled: !settings.enabled })}
       />
 
       {settings.enabled && (
-        <>
+        // Everything fancy mode offers hangs off its switch, on a rail, so it reads as part of it.
+        <div
+          role="group"
+          aria-label="Fancy mode options"
+          data-testid="fancy-mode-options"
+          className="ml-3 space-y-3 border-l-2 border-accent/40 pl-4"
+        >
           <SwitchRow
             checked={settings.backgroundEnabled}
             label="Animated background"
@@ -118,7 +155,16 @@ export function FancyModeSettings(): JSX.Element {
             onClick={() => update({ threadEffects: !settings.threadEffects })}
           />
           {settings.threadEffects && <ThreadEffectPreview />}
-        </>
+
+          <SwitchRow
+            checked={settings.terminalStrikes}
+            label="Terminal lightning"
+            description="Lightning strikes across a terminal each time you enter a command in it. Full-screen programs such as editors are left alone."
+            testId="fancy-terminal-strikes"
+            onClick={() => update({ terminalStrikes: !settings.terminalStrikes })}
+          />
+          {settings.terminalStrikes && <TerminalStrikePreview />}
+        </div>
       )}
     </div>
   )

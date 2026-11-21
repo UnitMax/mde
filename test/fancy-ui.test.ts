@@ -250,6 +250,32 @@ describe('the fancy mode settings', () => {
     expect(byId('fancy-thread-preview')).not.toBeNull()
   })
 
+  it('keeps every choice that needs fancy mode in one group under its switch', async () => {
+    await openSettings()
+    expect(byId('fancy-mode-options')).toBeNull()
+    await click(byId('fancy-mode')!)
+    const group = byId('fancy-mode-options')!
+    expect(group.getAttribute('role')).toBe('group')
+    expect(group.getAttribute('aria-label')).toBe('Fancy mode options')
+    expect(group.contains(byId('fancy-mode'))).toBe(false)
+    for (const id of ['fancy-background-enabled', 'fancy-background-aurora', 'fancy-thread-effects', 'fancy-thread-preview', 'fancy-terminal-strikes', 'fancy-terminal-preview']) {
+      expect(group.contains(byId(id)), id).toBe(true)
+    }
+  })
+
+  it('turns the terminal lightning off and on, with a terminal to try it on while it is on', async () => {
+    await openSettings()
+    await click(byId('fancy-mode')!)
+    expect(byId('fancy-terminal-strikes')!.getAttribute('aria-checked')).toBe('true')
+    expect(byId('fancy-terminal-preview-strike')).not.toBeNull()
+    await click(byId('fancy-terminal-strikes')!)
+    expect(useFancyMode.getState().settings.terminalStrikes).toBe(false)
+    expect(JSON.parse(localStorage.getItem(FANCY_SETTINGS_STORAGE_KEY)!).terminalStrikes).toBe(false)
+    expect(byId('fancy-terminal-preview')).toBeNull()
+    await click(byId('fancy-terminal-strikes')!)
+    expect(byId('fancy-terminal-preview')).not.toBeNull()
+  })
+
   it('hides its choices again when it is turned off, and keeps them for the next time', async () => {
     await openSettings()
     await click(byId('fancy-mode')!)
