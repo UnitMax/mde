@@ -129,11 +129,57 @@ function readJson(text, what) {
   }
 }
 
-function main() {
-  // `npm audit` exits with 1 when it finds anything; the report on stdout is what counts.
-  const audit = npm(['audit', '--json'])
+// npm counts affected packages (including indirect ones), not individual advisories.
+function checkedReport(audit) {
+  if (audit.signal || ![0, 1].includes(audit.status)) {
+    throw new Error(`npm audit did not finish normally (${audit.signal ?? audit.status}).`)
+  }
   const report = readJson(audit.stdout, 'the npm audit report')
-  if (report.error) throw new Error(`npm audit failed: ${report.error.summary ?? JSON.stringify(report.error)}`)
+  if (report?.error) throw new Error(`npm audit failed: ${report.error.summary ?? JSON.stringify(report.error)}`)
+  const packages = report?.vulnerabilities
+  const counts = report?.metadata?.vulnerabilities
+  if (report?.auditReportVersion !== 2 || !packages || typeof packages !== 'object' || Array.isArray(packages)) {
+    throw new Error('Missing or unsupported npm audit report.')
+  }
+  const entries = Object.entries(packages)
+  if (counts?.total !== entries.length || audit.status !== (entries.length ? 1 : 0)) {
+    throw new Error('npm audit exit status, total and affected package list must agree.')
+  }
+
+  const bySeverity = { info: 0, low: 0, moderate: 0, high: 0, critical: 0 }
+  const explained = new Set()
+  const dependents = new Map()
+  for (const [name, entry] of entries) {
+    if (entry?.name !== name || !Object.hasOwn(bySeverity, entry.severity) || !Array.isArray(entry.via) || !entry.via.length) {
+      throw new Error(`Incomplete npm audit entry for ${name}.`)
+    }
+    bySeverity[entry.severity]++
+    for (const via of entry.via) {
+      if (typeof via === 'string' && Object.hasOwn(packages, via)) {
+        if (!dependents.has(via)) dependents.set(via, [])
+        dependents.get(via).push(name)
+      } else if (via?.name === name && typeof via.title === 'string' && via.title.trim()
+        && typeof via.range === 'string' && via.range.trim() && Object.hasOwn(bySeverity, via.severity)
+        && (advisoryId(via.url) || Number.isSafeInteger(via.source))) {
+        explained.add(name)
+      } else {
+        throw new Error(`Unrecognized npm audit advisory or dependency for ${name}.`)
+      }
+    }
+  }
+  for (const [severity, count] of Object.entries(bySeverity)) {
+    if (counts[severity] !== count) throw new Error(`Inconsistent npm audit count for ${severity}.`)
+  }
+  // Each indirect entry must ultimately lead to a concrete advisory. Set iteration visits additions, too.
+  for (const name of explained) {
+    for (const dependent of dependents.get(name) ?? []) explained.add(dependent)
+  }
+  if (explained.size !== entries.length) throw new Error('Affected packages lack an underlying npm audit advisory.')
+  return report
+}
+
+function main() {
+  const report = checkedReport(npm(['audit', '--json', '--audit-level=info']))
   const published = new Map()
   for (const name of new Set(EXCEPTIONS.map((exception) => exception.package))) {
     const view = npm(['view', name, 'versions', '--json'])
@@ -148,7 +194,7 @@ function main() {
     process.exitCode = 1
     return
   }
-  const total = report.metadata?.vulnerabilities?.total ?? 0
+  const total = report.metadata.vulnerabilities.total
   console.log(total === 0 ? 'found 0 vulnerabilities' : `No advisories other than the ${excused.length} excepted above.`)
 }
 

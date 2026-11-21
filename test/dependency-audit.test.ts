@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { advisoriesOf, advisoryId, auditVerdict, compareVersions, EXCEPTIONS, inRange, newestRelease } from '../scripts/audit-deps.mjs'
 
 const URL = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf'
@@ -82,5 +86,69 @@ describe('dependency audit', () => {
       expect(item.package).not.toBe('')
       expect(item.reason).not.toBe('')
     }
+  })
+})
+
+describe('dependency audit command', () => {
+  let dir: string
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mde-audit-'))
+    writeFileSync(join(dir, 'npm.cjs'), [
+      'if (process.env.AUDIT_SIGNAL) process.kill(process.pid, "SIGTERM")',
+      'process.stdout.write(process.env.AUDIT_REPORT)',
+      'process.exitCode = Number(process.env.AUDIT_STATUS)',
+    ].join('\n'))
+  })
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  function run(report: unknown, status: number, signal = '') {
+    const result = spawnSync(process.execPath, ['scripts/audit-deps.mjs'], {
+      encoding: 'utf8',
+      env: { ...process.env, npm_execpath: join(dir, 'npm.cjs'), AUDIT_REPORT: JSON.stringify(report),
+        AUDIT_STATUS: String(status), AUDIT_SIGNAL: signal },
+    })
+    if (result.error) throw result.error
+    return result
+  }
+
+  const zero = { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 }
+  const clean = { auditReportVersion: 2, vulnerabilities: {}, metadata: { vulnerabilities: zero } }
+  const advisory = { name: 'example', source: 123, title: 'Example advisory', url: URL, severity: 'high', range: '<2.0.0' }
+  const affected = {
+    ...clean,
+    vulnerabilities: {
+      example: { name: 'example', severity: 'high', via: [advisory] },
+      consumer: { name: 'consumer', severity: 'high', via: ['example'] },
+    },
+    metadata: { vulnerabilities: { ...zero, high: 2, total: 2 } },
+  }
+
+  it('accepts a complete clean report with exit status zero', () => {
+    expect(run(clean, 0)).toMatchObject({ status: 0, stdout: 'found 0 vulnerabilities\n' })
+  })
+
+  it.each([
+    ['empty report', {}, 1],
+    ['failed clean report', clean, 1],
+    ['unexpected exit', clean, 2],
+    ['unsupported format', { ...clean, auditReportVersion: 3 }, 0],
+    ['missing counts', { ...clean, metadata: {} }, 0],
+    ['invalid count', { ...clean, metadata: { vulnerabilities: { ...zero, total: '0' } } }, 0],
+    ['inconsistent severity', { ...affected, metadata: { vulnerabilities: { ...zero, total: 2 } } }, 1],
+    ['successful exit with findings', affected, 0],
+    ['incomplete advisory', { ...affected, vulnerabilities: { ...affected.vulnerabilities,
+      example: { name: 'example', severity: 'high', via: [{}] } } }, 1],
+    ['indirect entries without an advisory', { ...affected, vulnerabilities: { ...affected.vulnerabilities,
+      example: { name: 'example', severity: 'high', via: ['consumer'] } } }, 1],
+  ] as const)('rejects %s', (_label, report, status) => {
+    expect(run(report, status)).toMatchObject({ status: 1, stdout: '', stderr: expect.stringMatching(/npm audit/i) })
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects a terminated npm process', () => {
+    expect(run(clean, 0, '1')).toMatchObject({ status: 1, stderr: expect.stringContaining('SIGTERM') })
+  })
+
+  it('evaluates advisories from a valid status-one report including indirect dependencies', () => {
+    expect(run(affected, 1)).toMatchObject({ status: 1, stderr: expect.stringContaining('Example advisory') })
   })
 })

@@ -826,7 +826,8 @@ audit does not cover all shipped code.
 
 `audit:deps` (`scripts/audit-deps.mjs`) runs `npm audit --json` and fails on every
 advisory except those listed in its `EXCEPTIONS`, each with the reason it does not reach
-MDE. An exception is only for an advisory with no fixed version yet. It stops holding on
+MDE. An interrupted audit, an unsupported report, or a mismatch between the exit status,
+affected packages and vulnerability counts fails the check. An exception is only for an advisory with no fixed version yet. It stops holding on
 its own: the script reads the package's published versions, and once the newest release
 is outside the advisory's range (a fix is out) the audit fails again, asking for the
 lockfile update and the exception's removal. An exception the audit no longer reports also
