@@ -102,10 +102,18 @@ describe('dependency audit command', () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
   function run(report: unknown, status: number, signal = '') {
+    // Windows treats NPM_EXECPATH and npm_execpath as one variable when spawning a child.
+    // Remove every inherited spelling so the child always uses the fixture.
+    const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'npm_execpath'))
     const result = spawnSync(process.execPath, ['scripts/audit-deps.mjs'], {
       encoding: 'utf8',
-      env: { ...process.env, npm_execpath: join(dir, 'npm.cjs'), AUDIT_REPORT: JSON.stringify(report),
-        AUDIT_STATUS: String(status), AUDIT_SIGNAL: signal },
+      env: {
+        ...inherited,
+        npm_execpath: join(dir, 'npm.cjs'),
+        AUDIT_REPORT: JSON.stringify(report),
+        AUDIT_STATUS: String(status),
+        AUDIT_SIGNAL: signal,
+      },
     })
     if (result.error) throw result.error
     return result
