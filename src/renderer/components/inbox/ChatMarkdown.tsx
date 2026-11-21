@@ -91,13 +91,23 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   }, [])
 
   /** A file of the thread's folder that the reply names, clicked or chosen with the keyboard: it opens in the viewer. */
-  const openFile = (target: HTMLElement): boolean => {
-    const chip = target.closest<HTMLElement>('[data-file-path]') ?? target.closest('a')?.querySelector<HTMLElement>('[data-file-path]')
+  const fileChip = (target: HTMLElement): HTMLElement | null | undefined =>
+    target.closest<HTMLElement>('[data-file-path]') ?? target.closest('a')?.querySelector<HTMLElement>('[data-file-path]')
+  const openFile = (target: HTMLElement, beside = false): boolean => {
+    const chip = fileChip(target)
     const path = chip?.dataset.filePath
     if (!path || !filesRef.current) return false
     const line = Number(chip.dataset.fileLine)
-    filesRef.current.open(line > 0 ? { path, line } : { path })
+    filesRef.current.open(line > 0 ? { path, line } : { path }, beside)
     return true
+  }
+
+  // The middle button opens a file beside the conversation. Held down on a file, it would start scrolling instead.
+  const onMouseDown = (event: MouseEvent<HTMLDivElement>): void => {
+    if (event.button === 1 && filesRef.current && fileChip(event.target as HTMLElement)) event.preventDefault()
+  }
+  const onAuxClick = (event: MouseEvent<HTMLDivElement>): void => {
+    if (event.button === 1 && openFile(event.target as HTMLElement, true)) event.preventDefault()
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -130,6 +140,8 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         variant === 'reasoning' ? 'text-[13px] text-fg-muted' : 'text-[14px] leading-[1.65] text-[var(--chat-text)]',
       )}
       onClick={onClick}
+      onMouseDown={onMouseDown}
+      onAuxClick={onAuxClick}
       onKeyDown={onKeyDown}
       // The agent's replies are searched; its reasoning is not.
       data-chat-searchable={variant === 'message' ? '' : undefined}

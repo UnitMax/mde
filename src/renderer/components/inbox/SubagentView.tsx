@@ -109,7 +109,7 @@ export function SubagentView({ thread, trail }: { thread: InboxThread; trail: re
   const fileSource = useMemo<ChatFileSource | null>(() => removed ? null : {
     directory: thread.directory,
     exists: createFileLookup((path) => window.api.files.list({ sessionId: thread.id, path })),
-    open: ({ path }) => useWorkspace.getState().openFile(thread.id, path),
+    open: ({ path }, beside) => useWorkspace.getState().openFile(thread.id, path, beside || undefined),
   }, [removed, thread.directory, thread.id])
 
   const [codeFamily, setCodeFamily] = useState(() => getTerminalSettings().codeFamily)

@@ -16,7 +16,8 @@ export interface ChatFileSource {
   /** The thread's folder, as the agent sees it: absolute paths under it name its files. */
   directory: string
   exists: (path: string) => Promise<boolean>
-  open: (reference: FileReference) => void
+  /** `beside`: next to the conversation rather than over it (a middle-click). */
+  open: (reference: FileReference, beside?: boolean) => void
 }
 
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i

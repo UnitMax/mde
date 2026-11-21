@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   ChevronRight,
+  Columns2,
   File,
   FileSymlink,
   Folder,
@@ -17,7 +18,7 @@ import type { FileRoot, FilesListRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
 import { SidebarFooter } from '@/components/ui/sidebar-footer'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { OpenFolderButtons, type OpenFolderTarget } from '@/components/OpenFolderButtons'
 import { useWorkspace } from '@/store/workspace'
 import { cn } from '@/lib/utils'
@@ -84,8 +85,8 @@ function FileTree({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
   const [draggedPath, setDraggedPath] = useState<string | null>(null)
-  // What a right-click points at: a folder row, a file row (its folder), or empty space (the root, '').
-  const [menuTarget, setMenuTarget] = useState<{ path: string; containing: boolean }>({ path: '', containing: false })
+  // What a right-click points at: a folder row, a file row (its folder, and the file itself), or empty space (the root, '').
+  const [menuTarget, setMenuTarget] = useState<{ path: string; containing: boolean; file?: string }>({ path: '', containing: false })
   const [menuError, setMenuError] = useState<string | null>(null)
   const dragPreviewRef = useRef<HTMLElement | null>(null)
   const generation = useRef(0)
@@ -97,6 +98,8 @@ function FileTree({
   const directory = root ? root.directory ?? session.path : undefined
   const openFilePath = useWorkspace((state) => rootId ? state.openFiles[rootId] : undefined)
   const openFile = useWorkspace((state) => state.openFile)
+  // Only an Inbox tree has a conversation to open a file beside.
+  const openBeside = browseOnly && rootId ? (path: string) => openFile(rootId, path, true) : undefined
   // A terminal's current folder, or the Inbox thread or project the tree was opened on.
   const folderTarget: OpenFolderTarget | null = root?.terminalId
     ? { terminalId: root.terminalId }
@@ -214,7 +217,7 @@ function FileTree({
     const row = element ? entryRows.find((candidate) => candidate.path === element.dataset.path) : undefined
     if (!row) setMenuTarget({ path: '', containing: false })
     else if (row.kind === 'directory') setMenuTarget({ path: row.path, containing: false })
-    else setMenuTarget({ path: parentPath(row.path) ?? '', containing: true })
+    else setMenuTarget({ path: parentPath(row.path) ?? '', containing: true, file: row.path })
   }
 
   const revealMenuTarget = (): void => {
@@ -303,6 +306,15 @@ function FileTree({
               if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
               else if (rootId) openFile(rootId, row.path)
             }}
+            // The middle button opens a file beside the conversation; held down, it would start scrolling instead.
+            onMouseDown={(event) => {
+              if (event.button === 1 && openBeside && !isDirectory) event.preventDefault()
+            }}
+            onAuxClick={(event) => {
+              if (event.button !== 1 || !openBeside || isDirectory) return
+              event.preventDefault()
+              openBeside(row.path)
+            }}
             onKeyDown={(event) => onRowKeyDown(event, row)}
           >
             <ChevronRight
@@ -374,6 +386,19 @@ function FileTree({
             {tree}
           </ContextMenuTrigger>
           <ContextMenuContent>
+            {openBeside && menuTarget.file !== undefined && (
+              <>
+                <ContextMenuItem onSelect={() => openFile(rootId!, menuTarget.file!, false)} data-testid="file-tree-open">
+                  <File aria-hidden className="h-3.5 w-3.5" />
+                  Open
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => openBeside(menuTarget.file!)} data-testid="file-tree-open-beside">
+                  <Columns2 aria-hidden className="h-3.5 w-3.5" />
+                  Open beside the chat
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+              </>
+            )}
             <ContextMenuItem onSelect={revealMenuTarget}>
               <FolderOpen aria-hidden className="h-3.5 w-3.5" />
               {menuTarget.containing ? 'Open containing folder in File Explorer' : 'Open folder in File Explorer'}

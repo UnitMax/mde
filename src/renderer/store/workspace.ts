@@ -52,6 +52,14 @@ function withInboxThread(threads: readonly InboxThread[], thread: InboxThread): 
   return sortInboxThreads([...threads.filter((item) => item.id !== thread.id), thread])
 }
 
+function withBeside(besideFiles: Record<string, true>, rootId: string, beside: boolean): Record<string, true> {
+  if (beside === Boolean(besideFiles[rootId])) return besideFiles
+  const next = { ...besideFiles }
+  if (beside) next[rootId] = true
+  else delete next[rootId]
+  return next
+}
+
 function belongsToSession(runtimeId: string, sessionId: string): boolean {
   return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
 }
@@ -83,6 +91,8 @@ interface WorkspaceState {
   fileTreeCollapsed: boolean
   /** File open in the viewer per session, relative to the session root. */
   openFiles: Record<string, string>
+  /** The Inbox roots whose open file stands beside the conversation instead of over it. */
+  besideFiles: Record<string, true>
   ready: boolean
 
   init: () => Promise<void>
@@ -91,7 +101,13 @@ interface WorkspaceState {
   selectTodoProject: (id: string) => void
   toggleSidebar: () => void
   toggleFileTree: () => void
-  openFile: (rootId: string, path: string) => void
+  /**
+   * Shows a file in the viewer. `beside` puts it next to the Inbox conversation (true) or over it (false); left out,
+   * the viewer keeps the place it has, and a viewer that was closed opens over the conversation.
+   */
+  openFile: (rootId: string, path: string, beside?: boolean) => void
+  /** Moves the open file beside the Inbox conversation or back over it. */
+  placeFile: (rootId: string, beside: boolean) => void
   closeFile: (rootId: string) => void
 
   addTodoProject: (input: NewTodoProject) => Promise<TodoProject>
@@ -170,6 +186,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   sidebarCollapsed: false,
   fileTreeCollapsed: false,
   openFiles: {},
+  besideFiles: {},
   ready: false,
 
   init: async () => {
@@ -258,14 +275,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   toggleFileTree: () => set((state) => ({ fileTreeCollapsed: !state.fileTreeCollapsed })),
-  openFile: (rootId, path) =>
-    set((state) => ({ openFiles: { ...state.openFiles, [rootId]: path } })),
+  openFile: (rootId, path, beside) =>
+    set((state) => ({
+      openFiles: { ...state.openFiles, [rootId]: path },
+      ...(beside === undefined || beside === Boolean(state.besideFiles[rootId]) ? {} : { besideFiles: withBeside(state.besideFiles, rootId, beside) }),
+    })),
+  placeFile: (rootId, beside) =>
+    set((state) => rootId in state.openFiles && beside !== Boolean(state.besideFiles[rootId])
+      ? { besideFiles: withBeside(state.besideFiles, rootId, beside) }
+      : {}),
   closeFile: (rootId) =>
     set((state) => {
       if (!(rootId in state.openFiles)) return {}
       const openFiles = { ...state.openFiles }
       delete openFiles[rootId]
-      return { openFiles }
+      return { openFiles, besideFiles: withBeside(state.besideFiles, rootId, false) }
     }),
 
   addTodoProject: async (input) => {

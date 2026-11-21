@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Code,
+  Columns2,
   Eye,
   FileText,
   FoldHorizontal,
+  Maximize2,
   RefreshCw,
   UnfoldHorizontal,
   X
@@ -38,6 +40,10 @@ interface FileViewerProps {
   path: string
   onOpenFile: (path: string) => void
   onClose: () => void
+  /** Stands beside the Inbox conversation instead of over it. */
+  beside?: boolean
+  /** Moves the viewer beside the conversation or back over it; left out where there is no conversation to stand by. */
+  onPlace?: (beside: boolean) => void
 }
 
 function Message({ children, tone = 'muted' }: { children: string; tone?: 'muted' | 'danger' }): JSX.Element {
@@ -56,18 +62,22 @@ function Message({ children, tone = 'muted' }: { children: string; tone?: 'muted
 
 /**
  * Whether the key press is an Escape that closes the file viewer: one nothing else took, with no dialog or menu open,
- * pressed in the viewer or anywhere but a text field or a terminal, whose Escape is their own.
+ * pressed in the viewer or anywhere but a text field or a terminal, whose Escape is their own. A viewer `beside` the
+ * conversation closes only on an Escape pressed in it.
  */
-export function escapeClosesViewer(event: KeyboardEvent, root: HTMLElement | null): boolean {
+export function escapeClosesViewer(event: KeyboardEvent, root: HTMLElement | null, beside = false): boolean {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
   if (!root || document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return false
   const active = document.activeElement
-  if (!active || active === document.body || root.contains(active)) return true
+  if (active && root.contains(active)) return true
+  // Beside the conversation, Escape elsewhere is the conversation's own.
+  if (beside) return false
+  if (!active || active === document.body) return true
   if (active.closest('.xterm')) return false
   return !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active instanceof HTMLElement && active.isContentEditable))
 }
 
-export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onClose }: FileViewerProps): JSX.Element {
+export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onClose, beside = false, onPlace }: FileViewerProps): JSX.Element {
   const root = useMemo<FileRoot>(
     () => requestedRoot?.terminalId
       ? { terminalId: requestedRoot.terminalId, directory: requestedRoot.directory }
@@ -104,11 +114,13 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
   // window, while it knows a viewer is open.
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  const besideRef = useRef(beside)
+  besideRef.current = beside
   useEffect(() => {
     void window.api.fileViewer.setOpen(true)
     const stop = window.api.fileViewer.onClose(() => closeRef.current())
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (escapeClosesViewer(event, rootRef.current)) {
+      if (escapeClosesViewer(event, rootRef.current, besideRef.current)) {
         event.preventDefault()
         closeRef.current()
       }
@@ -194,9 +206,12 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
       ref={rootRef}
       tabIndex={-1}
       data-testid="file-viewer"
+      data-beside={beside || undefined}
       className="absolute inset-0 z-30 flex min-h-0 flex-col bg-bg outline-none"
     >
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5">
+      {/* Beside the conversation, as tall as the thread's header (a 44 px row above its 1 px border), so the two
+          read as one bar. */}
+      <div className={cn('flex shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5', beside ? 'h-[45px]' : 'h-9')}>
         <FileText className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
         <div className="flex min-w-0 flex-1 items-center gap-1 text-[12px]" title={path}>
           {segments.map((segment, index) => (
@@ -266,6 +281,19 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
               Source
             </Button>
           </div>
+        )}
+        {onPlace && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={() => onPlace(!beside)}
+            title={beside ? 'Expand over the chat' : 'Open beside the chat'}
+            aria-label={beside ? 'Expand over the chat' : 'Open beside the chat'}
+            data-testid="file-viewer-place"
+          >
+            {beside ? <Maximize2 className="h-3.5 w-3.5" /> : <Columns2 className="h-3.5 w-3.5" />}
+          </Button>
         )}
         <Button
           variant="ghost"

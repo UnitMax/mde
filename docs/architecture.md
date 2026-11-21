@@ -2487,6 +2487,19 @@ field or a terminal outside the viewer has the focus. Ctrl+W (Cmd+W) closes it t
 window on that key before the page sees it, so the viewer tells the main process while it is open
 (`file-viewer:open`), and the main process then takes the key in `before-input-event` and sends `file-viewer:close`
 (`src/main/file-viewer-key.ts`); with no viewer open, Ctrl+W still closes the window.
+In the Inbox a file can also stand beside the conversation instead of over it. The viewer's header has
+**Open beside the chat** (and, once there, **Expand over the chat**); a middle-click on a file in the Files tree
+(docked or in the floating card) or on a file chip in a reply opens it beside the chat straight away, and the tree's
+right-click menu on a file offers **Open** and **Open beside the chat**. Where the viewer stands is kept per Inbox
+root (`besideFiles` in the workspace store, beside `openFiles`): opening another file from the tree, a chip or
+Ctrl+P keeps it there, and closing it forgets it, so the next plain click opens over the conversation again. Beside
+the chat the viewer is a column at the right of the conversation area (`components/inbox/BesideFilePane.tsx`), its
+header as tall as the thread's; dragging the column's left edge (or the arrow keys, Home and End on it; a
+double-click resets it) sets its share of the area, between 20% and 80%, kept in `localStorage`
+(`mde.inbox-beside-file-share`), and neither side gets narrower than 280 px while the area has room for both. The
+conversation stays mounted in the same place either way. The floating sidebar card lies over the file column
+there, and the conversation then makes no way for it. Beside the chat, Escape closes the viewer only when pressed
+in it, F9 leaves it open, and what opens over the conversation (a diff, a Git graph) covers both as before.
 The file viewer covers the terminal view while terminals stay mounted at their existing size.
 The terminal view has its own stacking context so resize handles and pane overlays stay beneath the viewer.
 Fenced `mermaid` blocks render with selectable text and follow the application's color theme.

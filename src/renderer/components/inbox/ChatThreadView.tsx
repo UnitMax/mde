@@ -112,7 +112,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const fileSource = useMemo<ChatFileSource | null>(() => removed ? null : {
     directory: thread.directory,
     exists: createFileLookup((path) => window.api.files.list({ sessionId: thread.id, path })),
-    open: ({ path }) => useWorkspace.getState().openFile(thread.id, path),
+    open: ({ path }, beside) => useWorkspace.getState().openFile(thread.id, path, beside || undefined),
   }, [removed, thread.directory, thread.id])
   // A subagent row opens the subagent's own conversation in place of this one (`SubagentView`).
   const openSubagentIn = useSubagentNav((store) => store.open)

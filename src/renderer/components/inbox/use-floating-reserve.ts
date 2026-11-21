@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react'
+import { createContext, useContext, useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react'
 import { floatingReserve } from '@/lib/floating-reserve'
 import { useInboxChanges } from '@/store/inbox-changes'
 import { useInboxView } from '@/store/inbox-view'
@@ -24,11 +24,18 @@ export function usePublishFloatingCardWidth(element: RefObject<HTMLElement>): vo
 }
 
 /**
+ * Whether a file stands beside the conversation. The floating card then lies over the file, at the right, so the
+ * conversation has nothing to make way for.
+ */
+export const FileBesideContext = createContext(false)
+
+/**
  * The padding that keeps the area `element` (the conversation below the thread's header, or the new-thread page)
  * clear of the floating card where there is room: see `floatingReserve`.
  */
 export function useFloatingReserve(element: RefObject<HTMLElement>): CSSProperties | undefined {
-  const card = useInboxView((s) => (s.sidebarFloating ? s.floatingCardWidth : 0))
+  const beside = useContext(FileBesideContext)
+  const card = useInboxView((s) => (s.sidebarFloating && !beside ? s.floatingCardWidth : 0))
   const [width, setWidth] = useState(0)
   useLayoutEffect(() => {
     const node = element.current

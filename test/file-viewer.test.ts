@@ -49,7 +49,7 @@ function file(overrides: Partial<FileReadResponse> = {}): FileReadResponse {
 
 async function renderViewer(
   path: string,
-  handlers: { onOpenFile?: (path: string) => void; onClose?: () => void; root?: TerminalDirectoryRequest } = {}
+  handlers: { onOpenFile?: (path: string) => void; onClose?: () => void; root?: TerminalDirectoryRequest; beside?: boolean; onPlace?: (beside: boolean) => void } = {}
 ): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
@@ -64,7 +64,9 @@ async function renderViewer(
         root: handlers.root,
         path,
         onOpenFile: handlers.onOpenFile ?? (() => undefined),
-        onClose: handlers.onClose ?? (() => undefined)
+        onClose: handlers.onClose ?? (() => undefined),
+        ...(handlers.beside !== undefined ? { beside: handlers.beside } : {}),
+        ...(handlers.onPlace ? { onPlace: handlers.onPlace } : {}),
       })
     )
   })
@@ -486,6 +488,26 @@ describe('FileViewer', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('moves beside the chat and back only where the host offers it', async () => {
+    read.mockResolvedValue(file({ path: 'a.txt', content: 'one', size: 3 }))
+    const plain = await renderViewer('a.txt')
+    expect(plain.querySelector('[data-testid="file-viewer-place"]')).toBeNull()
+
+    const onPlace = vi.fn()
+    const over = await renderViewer('a.txt', { onPlace })
+    const toBeside = over.querySelector<HTMLButtonElement>('[data-testid="file-viewer-place"]')!
+    expect(toBeside.getAttribute('aria-label')).toBe('Open beside the chat')
+    await act(async () => toBeside.click())
+    expect(onPlace).toHaveBeenLastCalledWith(true)
+
+    const beside = await renderViewer('a.txt', { onPlace, beside: true })
+    expect(beside.querySelector('[data-testid="file-viewer"]')?.hasAttribute('data-beside')).toBe(true)
+    const toOver = beside.querySelector<HTMLButtonElement>('[data-testid="file-viewer-place"]')!
+    expect(toOver.getAttribute('aria-label')).toBe('Expand over the chat')
+    await act(async () => toOver.click())
+    expect(onPlace).toHaveBeenLastCalledWith(false)
+  })
+
   describe('closing (Escape, Ctrl+W)', () => {
     const escape = (target: EventTarget) => act(async () => {
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
@@ -503,6 +525,24 @@ describe('FileViewer', () => {
       expect(onClose).toHaveBeenCalledTimes(1)
       act(() => roots.splice(0).forEach((root) => root.unmount()))
       expect(fileViewer.setOpen).toHaveBeenLastCalledWith(false)
+    })
+
+    it('beside the chat, closes only on an Escape pressed in it', async () => {
+      read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello' }))
+      const onClose = vi.fn()
+      const container = await renderViewer('notes.txt', { onClose, beside: true, onPlace: () => undefined })
+      const chat = document.createElement('button')
+      document.body.append(chat)
+      chat.focus()
+      await escape(chat)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      await escape(document.body)
+      expect(onClose).not.toHaveBeenCalled()
+      const viewer = container.querySelector<HTMLElement>('[data-testid="file-viewer"]')!
+      viewer.focus()
+      await escape(viewer)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      chat.remove()
     })
 
     it('closes when the main process passes on Ctrl+W', async () => {

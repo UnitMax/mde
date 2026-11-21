@@ -25,6 +25,8 @@ import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/termi
 import { WorkspaceNavigation } from '@/components/WorkspaceNavigation'
 import { TodoProjectView } from '@/components/TodoProjectView'
 import { InboxThreadView } from '@/components/InboxThreadView'
+import { BesideFilePane } from '@/components/inbox/BesideFilePane'
+import { FileBesideContext } from '@/components/inbox/use-floating-reserve'
 import { useInboxLock } from '@/components/InboxPanel'
 import { inboxFileRoot } from '@/lib/inbox'
 import { SettingsDialog } from '@/components/SettingsDialog'
@@ -665,6 +667,23 @@ export function App(): JSX.Element {
     return folder ? inboxFileRoot(folder) : null
   }, [activeWorkspaceView, inboxLock, inboxThreads, selectedInboxThreadId, inboxFolders, inboxComposerFolderId])
   const inboxOpenFilePath = inboxRoot ? openFiles[inboxRoot.id] : undefined
+  const inboxFileBeside = useWorkspace((state) => inboxRoot ? Boolean(state.besideFiles[inboxRoot.id]) : false)
+  const placeFileAction = useWorkspace((state) => state.placeFile)
+  // Over the conversation, or beside it in a column of its own.
+  const inboxFileViewer = inboxRoot && inboxOpenFilePath !== undefined ? {
+    beside: inboxFileBeside,
+    viewer: (
+      <FileViewer
+        key={`viewer:${inboxRoot.id}`}
+        session={inboxRoot}
+        path={inboxOpenFilePath}
+        beside={inboxFileBeside}
+        onPlace={(beside) => placeFileAction(inboxRoot.id, beside)}
+        onOpenFile={(path) => openFileAction(inboxRoot.id, path)}
+        onClose={() => closeFileAction(inboxRoot.id)}
+      />
+    ),
+  } : null
   // Ctrl+P searches the files of what the tree shows: the open thread's project, or the new thread's folder. A deleted
   // worktree has none.
   const inboxFilePlace = useMemo<{ threadId: string } | { folderId: string } | null>(() => {
@@ -688,7 +707,9 @@ export function App(): JSX.Element {
       if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
       // From the message box, F9 goes over to the terminal while one is on screen; from anywhere else, to the box.
       if (document.activeElement?.closest('[data-testid="chat-input"]') && useInboxTerminal.getState().focusShown()) return
-      if (inboxRootId && useWorkspace.getState().openFiles[inboxRootId] !== undefined) useWorkspace.getState().closeFile(inboxRootId)
+      // A file beside the conversation leaves the box in view, so it stays open.
+      const files = useWorkspace.getState()
+      if (inboxRootId && files.openFiles[inboxRootId] !== undefined && !files.besideFiles[inboxRootId]) files.closeFile(inboxRootId)
       const changes = useInboxChanges.getState()
       if (changes.selectedPath) changes.closeFile()
       if (changes.graphThreadId) changes.closeGraph()
@@ -826,19 +847,20 @@ export function App(): JSX.Element {
             <>
               {/* What opens over the conversation covers only it, not the terminal's bottom panel below. */}
               <div ref={inboxAreaRef} className="relative min-h-0 flex-1">
-                <InboxThreadView />
+                {/* A file opened beside the conversation takes a column at its right; the conversation stays mounted
+                    in the same place either way. */}
+                <div className="flex h-full min-h-0">
+                  <div className="relative h-full min-w-0 flex-1">
+                    <FileBesideContext.Provider value={inboxFileViewer?.beside ?? false}>
+                      <InboxThreadView />
+                    </FileBesideContext.Provider>
+                  </div>
+                  {inboxFileViewer?.beside && <BesideFilePane>{inboxFileViewer.viewer}</BesideFilePane>}
+                </div>
                 {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
                 {selectedInboxThreadId && <GitGraphView threadId={selectedInboxThreadId} />}
                 <InboxTerminalGitGraph area={inboxAreaRef} filePath={inboxOpenFilePath} />
-                {inboxRoot && inboxOpenFilePath !== undefined && (
-                  <FileViewer
-                    key={`viewer:${inboxRoot.id}`}
-                    session={inboxRoot}
-                    path={inboxOpenFilePath}
-                    onOpenFile={(path) => openFileAction(inboxRoot.id, path)}
-                    onClose={() => closeFileAction(inboxRoot.id)}
-                  />
-                )}
+                {inboxFileViewer && !inboxFileViewer.beside && inboxFileViewer.viewer}
               </div>
               <BottomTerminal />
             </>

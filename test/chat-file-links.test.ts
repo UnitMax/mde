@@ -104,12 +104,17 @@ describe('links and files in a reply', () => {
     expect(container.querySelector('a[href="http://localhost:3000"]')?.querySelector('.chat-file-link')).toBeNull()
 
     await act(async () => chips[0]!.click())
-    expect(files.open).toHaveBeenLastCalledWith({ path: 'src/a.ts', line: 12 })
+    expect(files.open).toHaveBeenLastCalledWith({ path: 'src/a.ts', line: 12 }, false)
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     await act(async () => container.querySelector<HTMLElement>('a[href^="/home"]')!.click())
-    expect(files.open).toHaveBeenLastCalledWith({ path: 'src/b.ts' })
+    expect(files.open).toHaveBeenLastCalledWith({ path: 'src/b.ts' }, false)
     await act(async () => chips[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     expect(files.open).toHaveBeenCalledTimes(3)
+    // The middle button opens it beside the conversation.
+    const middle = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })
+    await act(async () => chips[1]!.dispatchEvent(middle))
+    expect(files.open).toHaveBeenLastCalledWith({ path: 'src/b.ts' }, true)
+    expect(middle.defaultPrevented).toBe(true)
     expect(open).not.toHaveBeenCalled()
   })
 

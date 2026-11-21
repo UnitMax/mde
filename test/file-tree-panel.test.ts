@@ -308,6 +308,83 @@ describe('FileTreePanel', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('Folder not found.')
   })
 
+  describe('in the Inbox', () => {
+    const inboxRender = async (): Promise<HTMLElement> => {
+      const container = document.createElement('div')
+      document.body.append(container)
+      const root = createRoot(container)
+      roots.push(root)
+      containers.push(container)
+      await act(async () => root.render(createElement(FileTreePanel, { session, browseOnly: true })))
+      return container
+    }
+    const middleClick = (element: Element) => act(async () => {
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 1 }))
+      element.dispatchEvent(new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    })
+    const rightClick = (element: Element) => act(async () => {
+      element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 }))
+    })
+    const menuItem = (label: string): HTMLElement => {
+      const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((candidate) => candidate.textContent?.trim() === label)
+      if (!item) throw new Error(`Missing menu item: ${label}`)
+      return item
+    }
+
+    beforeEach(() => useWorkspace.setState({ openFiles: {}, besideFiles: {} }))
+
+    it('opens a middle-clicked file beside the chat, and a plain click keeps it there', async () => {
+      const container = await inboxRender()
+      await middleClick(treeItem(container, 'src'))
+      expect(useWorkspace.getState().openFiles).toEqual({})
+      await middleClick(treeItem(container, 'README.md'))
+      expect(useWorkspace.getState().openFiles).toEqual({ 'session-1': 'README.md' })
+      expect(useWorkspace.getState().besideFiles).toEqual({ 'session-1': true })
+
+      await act(async () => treeItem(container, 'src').click())
+      await act(async () => treeItem(container, 'src/index.ts').click())
+      expect(useWorkspace.getState().openFiles).toEqual({ 'session-1': 'src/index.ts' })
+      expect(useWorkspace.getState().besideFiles).toEqual({ 'session-1': true })
+
+      // Closed, the next click opens over the conversation again.
+      act(() => useWorkspace.getState().closeFile('session-1'))
+      expect(useWorkspace.getState().besideFiles).toEqual({})
+      await act(async () => treeItem(container, 'README.md').click())
+      expect(useWorkspace.getState().besideFiles).toEqual({})
+    })
+
+    it('opens a right-clicked file beside the chat or over it, and offers neither for a folder', async () => {
+      const container = await inboxRender()
+      await rightClick(treeItem(container, 'README.md'))
+      await act(async () => menuItem('Open beside the chat').click())
+      expect(useWorkspace.getState().openFiles).toEqual({ 'session-1': 'README.md' })
+      expect(useWorkspace.getState().besideFiles).toEqual({ 'session-1': true })
+
+      await rightClick(treeItem(container, 'README.md'))
+      await act(async () => menuItem('Open').click())
+      expect(useWorkspace.getState().besideFiles).toEqual({})
+
+      await rightClick(treeItem(container, 'src'))
+      const labels = Array.from(document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
+      expect(labels).not.toContain('Open beside the chat')
+      expect(labels).not.toContain('Open')
+    })
+  })
+
+  it('opens nothing beside a terminal: a middle click does nothing and the menu has no such item', async () => {
+    useWorkspace.setState({ openFiles: {}, besideFiles: {} })
+    const container = await renderPanel(session, { terminalId: 'pane-1', directory: '/home/me/current' })
+    await act(async () => {
+      treeItem(container, 'README.md').dispatchEvent(new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    })
+    expect(useWorkspace.getState().openFiles).toEqual({})
+    await act(async () => {
+      treeItem(container, 'README.md').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 }))
+    })
+    const labels = Array.from(document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
+    expect(labels).not.toContain('Open beside the chat')
+  })
+
   it('offers no terminal item when the host has none', async () => {
     const container = await renderPanel(session, { terminalId: 'pane-1', directory: '/home/me/current' })
     await act(async () => {

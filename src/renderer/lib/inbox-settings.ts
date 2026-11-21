@@ -21,6 +21,7 @@ export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switc
 export const INBOX_NEXT_SUGGESTION_STORAGE_KEY = 'mde.inbox-next-suggestion'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
+export const INBOX_BESIDE_FILE_SHARE_STORAGE_KEY = 'mde.inbox-beside-file-share'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
 export const INBOX_TERMINAL_DISTRO_STORAGE_KEY = 'mde.inbox-terminal-distro'
 export const INBOX_FLOATING_TERMINAL_STORAGE_KEY = 'mde.inbox-floating-terminal'
@@ -264,6 +265,35 @@ export function saveInboxSidebarWidth(width: number): void {
     localStorage.setItem(INBOX_SIDEBAR_WIDTH_STORAGE_KEY, String(clampInboxSidebarWidth(width)))
   } catch {
     // A restricted storage environment keeps the width for this session only.
+  }
+}
+
+/** The share of the conversation area a file opened beside the conversation takes: half unless changed. */
+export const INBOX_BESIDE_FILE_DEFAULT_SHARE = 0.5
+export const INBOX_BESIDE_FILE_MIN_SHARE = 0.2
+export const INBOX_BESIDE_FILE_MAX_SHARE = 0.8
+/** Neither the conversation nor the file beside it gets narrower than this, whatever share was set. */
+export const INBOX_BESIDE_MIN_WIDTH = 280
+
+export function clampInboxBesideFileShare(share: number): number {
+  if (!Number.isFinite(share)) return INBOX_BESIDE_FILE_DEFAULT_SHARE
+  return Math.round(Math.min(Math.max(share, INBOX_BESIDE_FILE_MIN_SHARE), INBOX_BESIDE_FILE_MAX_SHARE) * 1000) / 1000
+}
+
+export function getInboxBesideFileShare(): number {
+  try {
+    const stored = localStorage.getItem(INBOX_BESIDE_FILE_SHARE_STORAGE_KEY)
+    return stored === null ? INBOX_BESIDE_FILE_DEFAULT_SHARE : clampInboxBesideFileShare(Number(stored))
+  } catch {
+    return INBOX_BESIDE_FILE_DEFAULT_SHARE
+  }
+}
+
+export function saveInboxBesideFileShare(share: number): void {
+  try {
+    localStorage.setItem(INBOX_BESIDE_FILE_SHARE_STORAGE_KEY, String(clampInboxBesideFileShare(share)))
+  } catch {
+    // A restricted storage environment keeps the share for this session only.
   }
 }
 
