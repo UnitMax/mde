@@ -11,6 +11,7 @@ export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
 export const INBOX_TURN_CHANGES_STORAGE_KEY = 'mde.inbox-turn-changes'
 export const INBOX_SIDEBAR_FLOATING_STORAGE_KEY = 'mde.inbox-sidebar-floating'
+export const INBOX_THREAD_LIST_HIDDEN_STORAGE_KEY = 'mde.inbox-thread-list-hidden'
 export const INBOX_TOOL_TURNS_STORAGE_KEY = 'mde.inbox-tool-turns'
 export const INBOX_COMMAND_NAMES_STORAGE_KEY = 'mde.inbox-command-names'
 export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
@@ -228,6 +229,15 @@ export function getInboxSidebarFloating(): boolean {
 
 export function saveInboxSidebarFloating(on: boolean): void {
   writeSwitch(INBOX_SIDEBAR_FLOATING_STORAGE_KEY, on)
+}
+
+/** Whether the Inbox's left-hand sidebar (the thread list) is hidden, giving the conversation its room. Shown unless hidden. */
+export function getInboxThreadListHidden(): boolean {
+  return readSwitch(INBOX_THREAD_LIST_HIDDEN_STORAGE_KEY)
+}
+
+export function saveInboxThreadListHidden(hidden: boolean): void {
+  writeSwitch(INBOX_THREAD_LIST_HIDDEN_STORAGE_KEY, hidden)
 }
 
 /** Whether the Tools tab groups its calls under the messages they answered; off by default, a flat list. */

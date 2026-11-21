@@ -3,6 +3,7 @@ import { useRef, type ReactNode } from 'react'
 import { InboxLockedNotice, useInboxLock } from '@/components/InboxPanel'
 import { ChatThreadView } from '@/components/inbox/ChatThreadView'
 import { ThreadHeader } from '@/components/inbox/ThreadHeader'
+import { ThreadListToggle } from '@/components/inbox/ThreadListToggle'
 import { NewThreadView } from '@/components/inbox/NewThreadView'
 import { useFloatingReserve } from '@/components/inbox/use-floating-reserve'
 import { cn } from '@/lib/utils'
@@ -33,8 +34,18 @@ export function InboxThreadView(): JSX.Element {
   const markSeen = useWorkspace((state) => state.markOpenInboxThreadSeen)
   const thread = threads.find((item) => item.id === selectedId) ?? null
 
-  if (lock) return <InboxLockedNotice />
-  if (!thread) return <><MakesWayForCard page><NewThreadView /></MakesWayForCard><InboxAutomationsDialog /></>
+  // Without a thread there is no title bar to hold the thread list's button, so it sits in the corner.
+  const corner = <ThreadListToggle className="absolute left-3 top-2 z-10" />
+  if (lock) return <div className="relative h-full">{corner}<InboxLockedNotice /></div>
+  if (!thread) {
+    return (
+      <div className="relative h-full">
+        {corner}
+        <MakesWayForCard page><NewThreadView /></MakesWayForCard>
+        <InboxAutomationsDialog />
+      </div>
+    )
+  }
 
   return (
     // Something new in the open thread stays unread until the person acts in it: a click anywhere in the thread,

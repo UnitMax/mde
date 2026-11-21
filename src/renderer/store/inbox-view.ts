@@ -10,6 +10,7 @@ import {
   getInboxNextSuggestion,
   getInboxProjectFilter,
   getInboxSidebarFloating,
+  getInboxThreadListHidden,
   getInboxToolTurns,
   getInboxSidebarWidth,
   getInboxSnoozedOpen,
@@ -26,6 +27,7 @@ import {
   saveInboxNextSuggestion,
   saveInboxProjectFilter,
   saveInboxSidebarFloating,
+  saveInboxThreadListHidden,
   saveInboxToolTurns,
   saveInboxSidebarWidth,
   saveInboxSnoozedOpen,
@@ -106,6 +108,9 @@ interface Store {
    */
   sidebarFloating: boolean
   setSidebarFloating: (on: boolean) => void
+  /** The left-hand sidebar with the thread list is hidden (from the button left of the conversation's title). Kept between runs. */
+  threadListHidden: boolean
+  setThreadListHidden: (hidden: boolean) => void
   /** The Tools tab shows a header for each message of the person's above the calls answering it (a preference, off by default). */
   toolTurns: boolean
   setToolTurns: (on: boolean) => void
@@ -197,6 +202,11 @@ export const useInboxView = create<Store>((set) => ({
   setSidebarFloating: (on) => {
     saveInboxSidebarFloating(on)
     set({ sidebarFloating: on, floatingSection: null })
+  },
+  threadListHidden: getInboxThreadListHidden(),
+  setThreadListHidden: (hidden) => {
+    saveInboxThreadListHidden(hidden)
+    set({ threadListHidden: hidden })
   },
   toolTurns: getInboxToolTurns(),
   setToolTurns: (on) => {

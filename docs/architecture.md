@@ -440,6 +440,13 @@ no separate heading; each group keeps the most recent activity first. Pins respe
 status filter, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
 `inbox.json` through `inbox:set-pinned`; older records without it are unpinned.
 
+The button just left of the thread's title (`ThreadListToggle`; in the top-left corner of the new-thread page, which has
+no title bar) hides the left-hand sidebar with the thread list so the conversation gets the full width, and shows it
+again. The sidebar is only hidden with CSS, not unmounted, because the Inbox panel also handles Ctrl+N and reads the
+drafts. The choice is kept in `localStorage` (`mde.inbox-thread-list-hidden`), off by default, and only applies in the
+Inbox. Ctrl+O still switches threads while the list is hidden. The hidden-terminal reminder sits in that sidebar's
+foot, so it is out of sight too; F11 still brings the terminal back.
+
 Ctrl-click (or Command-click on macOS) selects threads across the list and the Working and Snoozed sections without opening them.
 The open thread joins the selection when visible. The context menu of a selected thread applies its pin,
 read, snooze and park actions to all selected threads, using the clicked thread's current state to choose the action.

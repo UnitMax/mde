@@ -5,6 +5,7 @@ import { InboxStatusBadge, useInboxClock } from '@/components/InboxPanel'
 import { CompactChatToggle } from '@/components/inbox/CompactChatToggle'
 import { InboxProjectsDialog } from '@/components/inbox/InboxProjectsDialog'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
+import { ThreadListToggle } from '@/components/inbox/ThreadListToggle'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import { OpenFolderMenu } from '@/components/OpenFolderButtons'
 import { Button } from '@/components/ui/button'
@@ -191,8 +192,9 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   }
 
   return (
-    <header className="@container/thread shrink-0 border-b border-line px-5" data-testid="inbox-thread-view">
+    <header className="@container/thread shrink-0 border-b border-line pl-3 pr-5" data-testid="inbox-thread-view">
       <div className="flex h-11 min-w-0 items-center gap-3">
+        <ThreadListToggle className="-mr-1.5" />
         <h2
           className="min-w-0 shrink truncate text-sm font-semibold text-fg"
           title={`${title}\nLast activity ${sessionAge(thread.lastActivityAt, now).toLowerCase()} · ${sessionDate(thread.lastActivityAt)}`}

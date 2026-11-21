@@ -59,6 +59,7 @@ import {
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import { InboxPanel } from '@/components/InboxPanel'
 import { HiddenTerminalIndicator } from '@/components/inbox/HiddenTerminalIndicator'
+import { useInboxView } from '@/store/inbox-view'
 
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
@@ -620,6 +621,8 @@ export function Sidebar({
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
+  // Hidden, not unmounted: the Inbox panel also listens for Ctrl+N and keeps the drafts read.
+  const threadListHidden = useInboxView((state) => state.threadListHidden) && activeSection === 'inbox'
 
   const sessionList = sessions.length === 0 ? (
     <p className="px-2 py-1 text-xs text-fg-subtle">No sessions yet.</p>
@@ -718,7 +721,10 @@ export function Sidebar({
   }
 
   return (
-    <aside className="fancy-glass flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
+    <aside
+      data-testid="sidebar"
+      className={cn('fancy-glass w-[260px] shrink-0 flex-col border-r border-line bg-panel', threadListHidden ? 'hidden' : 'flex')}
+    >
       <div className="min-h-0 flex-1 px-2 pb-2 pt-3">
         <div
           id="sidebar-section-sessions"
