@@ -9,7 +9,8 @@ model-provider or remote MCP client. Its application HTTP client connects to Ope
 service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
 suppress external filters, except the **Fetch** buttons in the Git graph and in the new-thread
-branch picker, which you press to fetch a repository's remotes; the network section explains the remaining boundaries.
+branch picker, which you press to fetch a repository's remotes. The MDE browser (the Inbox Browser tab) connects
+only to local addresses and to hosts you allowed; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
 
@@ -25,6 +26,15 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   distro name). These plain-text records reopen fresh shells in the same folders after restarting
   MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
   in these records.
+- `browser.json` under Electron's user-data directory: whether the MDE browser is turned on (it is off until you
+  enable it in Settings → Browser), whether its pages may use WebRTC (off unless you allow it there) and the host
+  names you allowed it to open besides local addresses. Written when you change either switch and when you allow or
+  remove a host. Turning it off closes its tabs and keeps the allowed
+  hosts and the browsing data.
+- The MDE browser's own Chromium storage (the `persist:mde-browser` partition under Electron's user-data
+  directory): cookies, local storage, IndexedDB, cache and similar data of the pages opened in the Browser tab,
+  kept so that logins to the apps you develop last. It is separate from MDE's own storage. Settings → Browser →
+  Clear browsing data deletes it. Which tabs are open is not saved.
 - `inbox-asides.json` under Electron's user-data directory: the answered `/btw` side questions of each
   Inbox thread (the question, the answer and when it arrived, the newest 20 per thread), so they can
   be read again after their card is closed and after a restart. Written when a side question is
@@ -386,6 +396,24 @@ restored thread activity. Provider and MCP connections resulting from these Open
 made by OpenCode. The accepted `localhost` name still depends on OS name resolution, and MDE does
 not install an application-wide firewall or independently verify the actual socket peer.
 
+The MDE browser in the Inbox sidebar loads the pages you open in it. Its pages can connect only to local
+addresses (`localhost` and its subdomains, `127.0.0.0/8`, `[::1]`, `0.0.0.0`) and to the hosts you allowed in
+Settings → Browser or from its "Allow this host?" page; every other request a page makes, including scripts,
+fonts, analytics, WebSockets and redirects, is cancelled before it is sent and named on the tab. Allowed hosts
+receive whatever the page sends them, as in any browser. A link, redirect or new window to another host is not
+contacted: the tab asks whether to allow the host, and the address reaches your system browser only if you choose
+**Open in system browser** there (or **Open link in system browser** when right-clicking a link); a page cannot hand
+an address to the system browser by itself. Pages are never offered a client certificate from your certificate
+store. Name resolution of allowed hosts uses the operating system and its proxy settings.
+
+WebRTC connections do not pass the request filter, so the MDE browser blocks WebRTC unless you allow it in Settings →
+Browser: no page can open a WebRTC connection to any host, local or not, and pages cannot register service workers
+(which could otherwise serve a page without that block). Service workers registered earlier are removed first, and no
+page opens until that has succeeded. If you allow WebRTC, it becomes the exception to the host
+list: MDE still stops it from using UDP directly (`disable_non_proxied_udp`), but a page can use WebRTC over TCP, for
+example through a TURN relay, to reach a host that is not allowed. Allow it only for pages you trust with what they
+can read in the MDE browser.
+
 MDE disables Chromium's automatic DNS-over-HTTPS upgrade at startup with
 `app.configureHostResolver({ secureDnsMode: 'off' })`. This does not disable ordinary DNS, Node's
 resolver, OS network filesystems, proxies, child-program networking or all Chromium request paths.
@@ -407,7 +435,9 @@ native compilation. Network-backed paths still involve the operating system as d
 
 MDE may open a web link in the system browser when the user activates it in a terminal, Markdown
 preview or chat view. The browser makes any resulting network connection and receives the full URL,
-which may include query data. Opening a folder in a file manager or VS Code can likewise trigger the
+which may include query data. With Settings → Browser → "Clicking a web link opens it in" set to the MDE
+browser, a link to a local address or an allowed host opens in the MDE browser instead; right-clicking a link
+offers either browser. Opening a folder in a file manager or VS Code can likewise trigger the
 receiving application's filesystem, extension or network behavior.
 
 Commands entered by the user in a terminal, including commands run through third-party terminal applications, may access the network. Those are user-directed child-process activities rather than automatic connections made by MDE.

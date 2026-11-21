@@ -108,7 +108,8 @@ beneath each session; this preference is global and stored with the local termin
 OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
 Inbox, which is its background service, and opens the OpenCode configuration
 editor (see **OpenCode configuration editor** below). A command that is empty or contains a control
-character is explained under the field and not used: the Inbox keeps the previous one. The application theme and zoom are also adjustable
+character is explained under the field and not used: the Inbox keeps the previous one. The Browser section chooses
+where a left-clicked web link opens and lists the hosts the MDE browser may open (see **MDE browser** below). The application theme and zoom are also adjustable
 (see **Themes** below). The Appearance section sets the terminal
 font family, size and line height, and separately the font family of the file viewer's source code
 preview; both families are chosen from the same list of installed monospace fonts and default to
@@ -612,17 +613,63 @@ saying why it takes a while.
 
 ### Inbox sidebar tabs
 
-The right-hand sidebar's tabs (Files, Changes, Tools, Permissions, Terminal) are pills with an icon, so all of them fit at the
-sidebar's 260 px default without scrolling. Below a strip width of 23.5rem (a container query on the strip;
-four named tabs need about 22.5rem) only the tab being shown carries its name, and the others are icons
+The right-hand sidebar's tabs (Files, Changes, Tools, Permissions, Terminal, Browser) are pills with an icon, so all of them fit at the
+sidebar's 260 px default without scrolling. Below a strip width of 27.5rem (a container query on the strip;
+Files to Browser named, with their counts, need about 27rem) only the tab being shown carries its name, and the others are icons
 with their count (changed files, tool calls) as a small mark on the corner; their name and count are in the
 tooltip and the accessible name. Wider, every tab is named, with its count beside it. The strip still scrolls
 sideways as a last resort.
 
 The header holds only the tabs. Every tab has a footer of the same height (`SidebarFooter`, 36 px): the tab's own
 buttons on the left (Open folder and Refresh for Files, Git graph and Refresh for Changes, Float terminal for
-Terminal; Tools and Permissions have none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
+Terminal; Tools, Permissions and Browser have none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
 the rail keeps its Expand button at the bottom, in a strip of the footer's height, where Collapse was.
+
+### MDE browser
+
+The MDE browser is off until it is enabled in Settings → Browser (`enabled` in `browser.json`); until then its tab,
+the floating menu's Browser row and "Open in MDE browser" are not shown. The Browser tab of the Inbox sidebar
+(`InboxBrowser.tsx`) opens the web apps being developed next to the conversation. It is one browser for the whole
+Inbox, like the terminal, and is offered on the new-thread page too.
+Its tabs are owned by the main process (`src/main/browser.ts`, `MdeBrowser`): each is a `WebContentsView` in the
+`persist:mde-browser` session, made when the tab first loads something, and the renderer mirrors their state
+(`store/inbox-browser.ts`, pushed as a whole on `browser:changed`, at most once per 16 ms). Up to 12 tabs are open;
+they are not restored after a restart.
+
+The page is a native view over the window, so the renderer only holds its place: `BrowserViewport` reports the
+panel's rectangle in CSS pixels (`browser:bounds`), and the main process scales it by the window's zoom and lays the
+active tab there. It reports `null` when the panel is not on screen (another tab, the sidebar collapsed or floating,
+the view switched, the window hidden). A native view is drawn above every element of the page, so the viewport also
+watches for anything over it: children of `<body>` other than the app (Radix menus, dialogs and popovers), toasts,
+the floating terminal, and, by sampling `elementFromPoint` on a 6 × 8 grid, overlays inside the app such as the file
+viewer. While covered the page is taken off the window and the panel stays empty. No picture of the page stands in:
+one goes stale, a resize under it stretches it, and Electron 45's `capturePage` on a scaled Windows display returned
+only part of the page, enlarged. The floating terminal stays until moved, so while it covers the panel the panel says
+the page is hidden and that moving the terminal or F11 shows it. It
+measures once per animation frame after a mutation, a resize, a scroll or a visibility change, and every 400 ms for
+animations that change nothing it observes.
+
+What a page may load is in [Security → MDE browser boundary](security.md#mde-browser-boundary). A tab whose host
+is not allowed shows "Allow <host>?" instead of the page, with Go back (to the page under it, or the start page),
+Allow and open, and Open in system browser; WebRTC is off unless Settings → Browser → Allow WebRTC is on
+(`webrtc` in `browser.json`; see the security notes for how), and turning it on or off closes every tab's page and opens it again under the new rule. Hosts
+a page was refused are listed under the toolbar, each
+allowable from there (which reloads the page). A page that does not load (a dev server that is not running) or
+crashes shows the error with **Try again**. The toolbar has Back, Forward, Reload (Stop while loading) and the
+address field, which takes `localhost:3000` without a scheme; the ⋯ menu has Developer tools (a separate window),
+Open in system browser, Allowed hosts… (Settings → Browser) and Clear browsing data. Right-clicking a page gives
+Back, Forward, Reload, copy and paste, Inspect element, and for a link Open link in system browser and Copy link
+address. F5 or Ctrl+R reloads, Alt+Left and Alt+Right go back and forward, Ctrl+Shift+I toggles the developer tools,
+and F11 and F12 keep working while a page has the keyboard.
+
+Web links elsewhere in MDE (chat replies, tool rows, the transcript's right-click menu, the Markdown file viewer) go
+through `lib/web-links.ts`. A left click follows Settings → Browser → "Clicking a web link opens it in"
+(`linkClick` in the app settings, `system` by default): with **MDE browser** chosen, a link to a local address or an
+allowed host opens there (in the tab already showing it, or a new one) and brings the Inbox and its Browser tab into
+view, docking a floating sidebar; every other link still opens in the system browser, so a click never asks to allow a
+host. Right-clicking a link offers **Open in MDE browser** and **Open in system browser**; the first opens even a host
+that is not allowed, which then asks. Where the Inbox is not available there is no MDE browser and links open in the
+system browser. Settings → Browser also lists the allowed hosts (add, remove) and clears the browsing data.
 
 ### Floating sidebar menu
 
@@ -630,7 +677,7 @@ The right-hand sidebar can float over the conversation instead of standing besid
 **Float as a menu** button (beside Collapse, at the right end of every tab's footer) turns it into a card in the conversation's top right corner, below
 the thread header, and the card's **Dock as sidebar** row turns it back. The choice is kept in `localStorage`
 (`mde.inbox-sidebar-floating`), off by default. The card lists the project, Open in File Explorer (and VS Code where
-offered), Files and Terminal and, for a thread, its branch (opening the Git graph), Changes with the lines added
+offered), Files, Terminal and Browser and, for a thread, its branch (opening the Git graph), Changes with the lines added
 and removed, Tools with how many actions (commands and MCP calls) and failures, and Permissions with how many
 approvals the project has saved (only while it has any).
 
@@ -639,7 +686,8 @@ between runs): the file tree without its panel chrome, the changed files (each o
 conversation, with a refresh button), and the tool calls. The card widens to at least 22rem (or the sidebar's width)
 while a section is open and scrolls when it runs past the window. The card steps aside while the Git graph is open.
 Terminal shows the floating terminal when there is one (F11); otherwise it docks the sidebar on its Terminal tab, which
-needs the room. "Open in Terminal" from the file tree does the same. The card's hide button shrinks it to one small
+needs the room. "Open in Terminal" from the file tree does the same. Browser always docks the sidebar on its
+Browser tab, since the page is a native view laid over the docked panel. The card's hide button shrinks it to one small
 button in its corner (the same collapsed state as the docked sidebar's).
 
 Where there is room, the conversation makes way for the card instead of running under it (`lib/floating-reserve.ts`,
@@ -913,7 +961,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 The same menu has **Open in Terminal** (on a file, **Open containing folder in Terminal**): in Sessions it adds a pane to the open tab, beside the pane the tree follows, and in the Inbox it adds a pane to the shared Inbox terminal (below the last-used pane in the sidebar, beside it when the terminal floats) and brings the terminal into view. Before the new terminal mounts, the renderer sends its terminal ID, its session and the tree folder (`pty:start-in-folder`). Main accepts only a terminal ID of that session that is not running yet (never a thread's own terminal), resolves the folder exactly as for File Explorer, refuses a folder in another environment than the terminal's (a Windows folder for a WSL terminal, or another distro), and records it as the terminal's saved directory, so the ordinary launch checks it once more and starts the shell there. The pane is added only after main has accepted the folder; if main refuses it, no pane is added and the reason is shown under the tree. If the layout changed meanwhile so that the new pane would get another ID than the one main was told about, nothing is added.
 
-**Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
+**Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window, and never so wide that the conversation beside it gets narrower than 480 px) or narrower (never under 260 px). A width set on a bigger window is kept and shows only as wide as the current window allows. The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
 **Tab strip.** Files, Changes and Terminal sit in one row that never wraps: when they do not fit (the 260 px default with a change count and the float button is enough), the row scrolls sideways under an edge fade, the mouse wheel turns it, and ‹ › buttons appear on both sides and scroll it by most of its width. Left, Right, Home and End still switch tabs, and the shown tab is scrolled into view. It is the reusable `components/ui/scroll-strip.tsx`.
 
@@ -921,9 +969,11 @@ The same menu has **Open in Terminal** (on a file, **Open containing folder in T
 
 **Floating terminal.** The button beside *Collapse sidebar* on the Terminal tab lifts the same terminal out of the sidebar into a window drawn inside the app window, over everything under the title bar: the thread list, the conversation and the right sidebar (not a separate OS window, so it has no taskbar button). It is the same `InboxTerminal`, so the shells, panes and layout are the same ones; only one of the two places renders it at a time, and moving between them reattaches the live xterm (as switching tabs does). While it floats, the Terminal tab shows a notice with *Show/Hide terminal* and *Move back to the sidebar*. Everything the sidebar terminal does works in the window: Ctrl+click splits to the left, right, top or bottom, divider drags, reordering, per-pane fullscreen (which fills the window) and restart. The window itself drags by its title bar, resizes from all four edges and corners (never smaller than 320 x 180 or outside that area), maximizes to all of it (button or double-click on the title bar), hides, and docks back (it then opens the sidebar's Terminal tab and focuses the terminal). While the window is dragged, it slides after the pointer by a CSS transform in whole pixels, with `left`/`top` left where the move started, so the browser only moves the terminal's already drawn layer and the live xterm (its WebGL canvas) stays on screen without being laid out or repainted (moving it by `left`/`top` on every step flickered); a resize leaves the window alone and draws an outline that follows the pointer, so the terminal and its shell are refitted once, on release, instead of on every step. The place is saved on release only. The geometry is pure code in `src/renderer/lib/floating-window.ts`; the state in `src/renderer/store/inbox-floating-terminal.ts`; the window in `components/inbox/FloatingTerminal.tsx`, mounted in `App.tsx` beside the sidebars, while the Inbox view is showing. Whether it floats, its rectangle and whether it is maximized are kept in `localStorage` (`mde.inbox-floating-terminal`); it always starts hidden, so a restart never covers the conversation. Whatever opens over the conversation (a pane's or the thread's Git graph, a diff under review, a file from the tree) hides the window, as F11 does, when it lies over the conversation area, so what was asked for is not left beneath it; a window parked clear of that area stays (`hideFloatingTerminalOver` in `components/inbox/InboxTerminalGitGraph.tsx`). It does not come back by itself when that closes.
 
-While the terminal floats but is hidden, a small button sits at the foot of the thread list, bottom left (`components/inbox/HiddenTerminalIndicator.tsx`, mounted by `Sidebar.tsx` in the Inbox view): it says *Terminal hidden* (or how many terminals, when the layout is split), shows the F11 key, and a click shows the window again. It takes its own row below the list, so it never covers a thread, and it is gone as soon as the window is on screen or docked.
+**Bottom panel.** The terminal can also sit in a panel along the bottom of the conversation, like an editor's bottom panel: the Terminal tab's footer has *Move to the bottom* beside *Float*, and the floating window's title bar has it too; the panel's header moves it back to the sidebar or floats it. Only the terminal can go there; the other sidebar tabs stay in the sidebar. The panel sits inside the conversation's `<main>` column, below the conversation area (`components/inbox/BottomTerminal.tsx`, mounted in `App.tsx`), so the thread list and the right-hand sidebar keep their full height, and what opens over the conversation (a Git graph, a diff, a file) covers only the area above it. Its top edge drags it taller or shorter (arrow keys, Home and End work on it, a double-click resets it to 300 px); it is never shorter than 120 px and never so tall that the conversation above gets under 200 px, and a height set in a taller window is kept but shown only as tall as this one allows. The placement (`sidebar`, `bottom` or `floating`) and the height are kept with the floating window's state in `mde.inbox-floating-terminal`; the older `floating: true` is read as floating. Unlike the floating window, the panel covers nothing, so it is shown when the Inbox opens (without taking the keyboard). While it is there, new panes from the Files tree or an agent split to the right, as in the floating window, and the sidebar's Terminal tab shows the same notice as for the floating window.
 
-F11 shows and hides the floating window. Like F12 it is caught in the main process (`before-input-event`, `src/main/floating-terminal-key.ts`) so it works whichever pane has the keyboard and the shell never receives it, and a held key is swallowed. The renderer tells the main process through `floating-terminal:active` while the terminal floats (and the main process forgets it when the page reloads); at all other times F11 keeps the default of putting the window in full screen. The press comes back as the `floating-terminal:toggle` event.
+While the terminal floats or is at the bottom but is hidden, a small button sits at the foot of the thread list, bottom left (`components/inbox/HiddenTerminalIndicator.tsx`, mounted by `Sidebar.tsx` in the Inbox view): it says *Terminal hidden* (or how many terminals, when the layout is split), shows the F11 key, and a click shows the window again. It takes its own row below the list, so it never covers a thread, and it is gone as soon as the window is on screen or docked.
+
+F11 shows and hides the floating window or the bottom panel. Like F12 it is caught in the main process (`before-input-event`, `src/main/floating-terminal-key.ts`) so it works whichever pane has the keyboard and the shell never receives it, and a held key is swallowed. The renderer tells the main process through `floating-terminal:active` while the terminal floats or is at the bottom (and the main process forgets it when the page reloads); at all other times F11 keeps the default of putting the window in full screen. The press comes back as the `floating-terminal:toggle` event.
 
 On Windows, Settings → Terminal → Inbox sidebar terminal chooses an installed WSL distribution or follows the
 Windows default. The choice is kept in `localStorage` (`mde.inbox-terminal-distro`, absent for default)
@@ -966,7 +1016,8 @@ newest first; Down moves forward and returns to the empty box after the newest r
 Editing a recalled message ends history navigation. Recall uses this thread's visible conversation
 and pending messages, loads older pages when needed, and restores only text, leaving attachments
 as they are. Recalled text uses the normal draft saving path; there is no separate stored history.
-The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
+The model picker shows the selected model behind its provider's lettered badge (see **Composer toolbar**);
+the menu's provider groups carry the same badge.
 Each model row has a star control. Starred models appear once in a Favorites section above the
 provider groups, sorted by model name and labeled with their provider. Favorites follow the search
 and show only models available in the current project; unavailable favorites are remembered for
@@ -1802,14 +1853,15 @@ new-thread composer, where nothing has been measured yet.
 **Composer toolbar.** The row under the prompt box keeps what runs the message on the left (attach,
 model, agent) and what it knows plus the way out on the right (MCP, context, Send or Stop). The controls
 are quiet text and icons that take a background only on hover, with no dividers and no borders; a
-chevron shows only while a chip is hovered, focused or open. The model chip is one line in one type size,
-`OpenCode / Beam Free · Medium`: the provider in front and the effort behind in the quiet tone, the name
-in the normal one. The provider is shown only at the wide size and only when the whole line would fit
-(`providerFits` in `lib/composer-size.ts`, an estimate from the character count and the toolbar's width);
-otherwise it is left out and the name leads. The full `provider/model#effort` is always the tooltip. The toolbar measures its own width
+chevron shows only while a chip is hovered, focused or open. The model chip is one line in one type size:
+the provider's lettered badge, the model name in medium weight and the effort behind it in the regular,
+quiet tone. The badge (`ProviderMark`, `lib/provider-mark.ts`) is made from the provider's name alone, so
+providers someone configured themselves get one too: a camel-cased first word gives two letters
+(`OpenRouter` → `OR`), any other name its first letter (`Anthropic` → `A`); the hue is picked from a fixed
+set by a hash of the name. The tooltip spells out `Provider / Model · Effort`. The toolbar measures its own width
 (`useMeasuredComposerSize`) and every control reads the same size from `ComposerSizeContext`, so a
 narrow box drops labels in one fixed order instead of each control truncating on its own. The context
-meter is always its small ring, so it never takes room from the others. Below 680 px the provider goes; below 540 px the
+meter is always its small ring, so it never takes room from the others. Below 540 px the
 MCP count and the agent's name (its coloured icon stays, the name is the tooltip) go (the badge stays);
 below 410 px the effort goes too. Only the model's
 name is ever cut short, with an ellipsis, as a last resort. Send never hides; its Steer / Queue word
@@ -2529,6 +2581,14 @@ home directory unless a terminal launch supplies its current folder. Linux shell
 their existing target-shell behavior.
 
 ## Upgrade notes
+
+### Electron 45
+
+MDE moved from Electron 43 (Chromium 150) to Electron 45.4.1 (Chromium 156), which brings Chromium's connection
+allowlist that the MDE browser uses to block WebRTC. Electron 44 dropped macOS 12, so MDE now needs macOS 13 or
+later. `node-abi` is pinned through `overrides` to a release that knows Electron 45, so `@electron/rebuild` can build
+`node-pty`. Under `--ozone-platform=headless` (used only for headless checks), Electron 45 crashes when a window is
+made with `titleBarOverlay`; real X11 and Wayland do not, so headless checks have to leave the overlay out.
 
 ### Removed terminal launcher
 

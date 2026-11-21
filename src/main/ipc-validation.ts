@@ -1,5 +1,6 @@
 import { isPersistedTerminalLayout, MAX_TERMINAL_COUNT } from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
+import { BROWSER_URL_LIMIT } from '@shared/browser'
 import { goalObjectiveProblem } from '@shared/goal'
 import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@shared/inbox-folder-icons'
 import { isSessionColor } from '@shared/session-colors'
@@ -103,6 +104,10 @@ const commitHash: Validator = (value) => typeof value === 'string' && /^(?:[0-9a
 const graphLimit: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5000
 /** A moment as milliseconds since the epoch; whether it is in the future is the recorder's to check against its clock. */
 const epochMs: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 8.64e15
+const browserTabId: Validator = (value) => typeof value === 'string' && /^brt_[0-9a-f-]{36}$/.test(value)
+const browserAddress = string(BROWSER_URL_LIMIT)
+/** A position or size on the window's page, in CSS pixels. */
+const pixels: Validator = (value) => typeof value === 'number' && Number.isFinite(value) && value >= -100_000 && value <= 100_000
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
 /** A Git graph root: an Inbox thread or a live terminal, never both and never a path. */
 const gitRoot = (fields: Record<string, Validator>): Validator => {
@@ -375,6 +380,19 @@ export const ipcPayloadValidators = {
   [IpcChannels.attentionBeep]: noPayload,
   [IpcChannels.floatingTerminalActive]: object({ active: boolean }),
   [IpcChannels.fileViewerOpen]: object({ open: boolean }),
+  [IpcChannels.browserState]: noPayload,
+  [IpcChannels.browserSetEnabled]: object({ enabled: boolean }),
+  [IpcChannels.browserSetWebRTC]: object({ allowed: boolean }),
+  [IpcChannels.browserOpen]: object({ url: browserAddress }),
+  [IpcChannels.browserNewTab]: noPayload,
+  [IpcChannels.browserNavigate]: object({ tabId: browserTabId, url: browserAddress }),
+  [IpcChannels.browserAction]: object({ tabId: browserTabId, action: oneOf('back', 'forward', 'reload', 'stop', 'devtools') }),
+  [IpcChannels.browserSelect]: object({ tabId: browserTabId }),
+  [IpcChannels.browserClose]: object({ tabId: browserTabId }),
+  [IpcChannels.browserBounds]: object({ bounds: nullable(object({ x: pixels, y: pixels, width: pixels, height: pixels })) }),
+  [IpcChannels.browserAllowHost]: object({ host: string(2048) }),
+  [IpcChannels.browserRemoveHost]: object({ host: string(2048) }),
+  [IpcChannels.browserClearData]: noPayload,
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {

@@ -68,6 +68,7 @@ import {
 import { toolFileChanges, type DiffHunk } from '@/lib/diff'
 import type { StyledSpan } from '@/lib/diff-highlight'
 import { externalLinkUrl } from '@/lib/file-viewer'
+import { openWebLink } from '@/lib/web-links'
 import { argsPreview, mcpCalls, scriptDuration, scriptOf } from '@/lib/mcp'
 import { shellCommandView } from '@/lib/tool-review'
 import { cn } from '@/lib/utils'
@@ -111,7 +112,7 @@ function duration(part: ToolPart): ReactNode {
 
 function openLink(url: string): void {
   const safe = externalLinkUrl(url)
-  if (safe) window.open(safe, '_blank', 'noopener,noreferrer')
+  if (safe) openWebLink(safe)
 }
 
 /** The failure of a tool, as the panel under its row shows it. */

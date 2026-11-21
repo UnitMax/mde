@@ -37,6 +37,7 @@ import { TerminalReferences } from './mcp/terminal-references'
 import type { McpListener } from './mcp/listener'
 import { checkedInboxFolderPlace } from './ipc'
 import { toWsl } from './wsl/paths'
+import { BROWSER_FILE, BROWSER_PARTITION, MdeBrowser } from './browser'
 
 let mainWindow: BrowserWindow | null = null
 let inboxStore: InboxStore | null = null
@@ -46,6 +47,7 @@ let inboxAsides: InboxAsideHistory | null = null
 let inboxAutomations: InboxAutomations | null = null
 let inboxChat: InboxChatService | null = null
 let mdeMcp: McpListener | null = null
+let browser: MdeBrowser | null = null
 let bridgeStandby: BridgeStandby | null = null
 let quitPrepared = false
 /** The Inbox (and with it the MDE MCP) runs OpenCode natively on macOS and inside WSL on Windows. */
@@ -108,6 +110,24 @@ const ptyManager = new PtyManager({
     }
   }
 }, terminalDirectories, () => app.getLocale())
+/**
+ * The mini window's key (F12) and the floating terminal's (F11), which work whichever page has the keyboard: the
+ * window's, or a page of the MDE browser. True when the key was taken.
+ */
+function windowKey(input: Electron.Input): boolean {
+  const miniWindowAction = getMiniWindowAction(input)
+  if (miniWindowAction) {
+    if (miniWindowAction === 'toggle') miniWindow.toggle()
+    return true
+  }
+  const floatingTerminalAction = floatingTerminalKey.action(input)
+  if (floatingTerminalAction) {
+    if (floatingTerminalAction === 'toggle') mainWindow?.webContents.send(IpcEvents.floatingTerminalToggle)
+    return true
+  }
+  return false
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -141,6 +161,7 @@ function createWindow(): void {
     taskbarAttention.dispose()
     wslResources.dispose()
     miniWindow.reset()
+    browser?.dispose()
     mainWindow = null
   })
 
@@ -157,20 +178,13 @@ function createWindow(): void {
   mainWindow.webContents.on('did-start-loading', () => fileViewerKey.setOpen(false))
   // Nor a meter: the page asks for the readings again when it shows one.
   mainWindow.webContents.on('did-start-loading', () => wslResources.setEnabled(false))
+  // Nor a browser panel, so no page is left over a window that is loading again.
+  mainWindow.webContents.on('did-start-loading', () => browser?.setBounds(null))
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Handled here rather than in the renderer so it works from every pane and
     // dialog, and so the terminal never receives F12's escape sequence.
-    const miniWindowAction = getMiniWindowAction(input)
-    if (miniWindowAction) {
+    if (windowKey(input)) {
       event.preventDefault()
-      if (miniWindowAction === 'toggle') miniWindow.toggle()
-      return
-    }
-
-    const floatingTerminalAction = floatingTerminalKey.action(input)
-    if (floatingTerminalAction) {
-      event.preventDefault()
-      if (floatingTerminalAction === 'toggle') mainWindow?.webContents.send(IpcEvents.floatingTerminalToggle)
       return
     }
 
@@ -364,6 +378,19 @@ if (bridgeLaunch) {
       inboxAutomations.start()
       powerMonitor.on('resume', () => inboxAutomations?.check())
     }
+    // The MDE browser has its own session, so its pages share no cookies, storage or permissions with the window.
+    browser = new MdeBrowser({
+      session: session.fromPartition(BROWSER_PARTITION),
+      window: () => mainWindow,
+      file: join(app.getPath('userData'), BROWSER_FILE),
+      openExternal: (url) => void shell.openExternal(url),
+      send: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.browserChanged, state)
+      },
+      windowKey,
+    })
+    await browser.load()
+    browser.install()
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
@@ -373,7 +400,8 @@ if (bridgeLaunch) {
       taskbarAttention,
       floatingTerminalKey,
       wslResources,
-      fileViewerKey
+      fileViewerKey,
+      browser
     )
     createWindow()
 
@@ -394,6 +422,7 @@ if (bridgeLaunch) {
     inboxChat?.stop()
     inboxRecorder?.dispose()
     inboxAutomations?.dispose()
+    browser?.dispose()
     void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()

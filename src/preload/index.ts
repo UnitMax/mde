@@ -3,6 +3,7 @@ import { IpcChannels, IpcEvents, type RendererApi, type WslResourceSample } from
 import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
 import type { TerminalReadRequest } from '@shared/terminal-references'
 import type { InboxAutomation } from '@shared/automations'
+import type { BrowserState } from '@shared/browser'
 import type {
   ChatEvent,
   InboxThread,
@@ -243,6 +244,22 @@ const api: RendererApi = {
   floatingTerminal: {
     setActive: (active) => ipcRenderer.invoke(IpcChannels.floatingTerminalActive, { active }),
     onToggle: (listener) => subscribe<void>(IpcEvents.floatingTerminalToggle, () => listener())
+  },
+  browser: {
+    state: () => ipcRenderer.invoke(IpcChannels.browserState),
+    setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.browserSetEnabled, { enabled }),
+    setWebRTC: (allowed) => ipcRenderer.invoke(IpcChannels.browserSetWebRTC, { allowed }),
+    open: (url) => ipcRenderer.invoke(IpcChannels.browserOpen, { url }),
+    newTab: () => ipcRenderer.invoke(IpcChannels.browserNewTab),
+    navigate: (tabId, url) => ipcRenderer.invoke(IpcChannels.browserNavigate, { tabId, url }),
+    act: (tabId, action) => ipcRenderer.invoke(IpcChannels.browserAction, { tabId, action }),
+    select: (tabId) => ipcRenderer.invoke(IpcChannels.browserSelect, { tabId }),
+    close: (tabId) => ipcRenderer.invoke(IpcChannels.browserClose, { tabId }),
+    setBounds: (bounds) => ipcRenderer.invoke(IpcChannels.browserBounds, { bounds }),
+    allowHost: (host) => ipcRenderer.invoke(IpcChannels.browserAllowHost, { host }),
+    removeHost: (host) => ipcRenderer.invoke(IpcChannels.browserRemoveHost, { host }),
+    clearData: () => ipcRenderer.invoke(IpcChannels.browserClearData),
+    onChanged: (listener) => subscribe<BrowserState>(IpcEvents.browserChanged, listener)
   }
 }
 

@@ -18,7 +18,7 @@ import {
   FloatingTerminal,
   FloatingTerminalNotice
 } from '../src/renderer/components/inbox/FloatingTerminal'
-import { INBOX_FLOATING_TERMINAL_STORAGE_KEY } from '../src/renderer/lib/inbox-settings'
+import { INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT, INBOX_FLOATING_TERMINAL_STORAGE_KEY } from '../src/renderer/lib/inbox-settings'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useInboxFloatingTerminal } from '../src/renderer/store/inbox-floating-terminal'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -64,7 +64,7 @@ beforeEach(async () => {
     },
   })
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ ...VIEW, x: 0, y: 0, top: 0, left: 0, right: VIEW.width, bottom: VIEW.height, toJSON: () => ({}) })
-  useInboxFloatingTerminal.setState({ floating: false, visible: false, rect: null, maximized: false })
+  useInboxFloatingTerminal.setState({ placement: 'sidebar', floating: false, visible: false, rect: null, maximized: false })
   useInboxChanges.setState({ tab: 'files' })
   useWorkspace.setState({ fileTreeCollapsed: false })
   container = document.createElement('div')
@@ -90,7 +90,7 @@ describe('breaking the terminal out', () => {
     expect(query('floating-terminal')).not.toBeNull()
     expect(query('floating-terminal')!.getAttribute('aria-label')).toBe('Floating terminal')
     expect(query('floating-terminal')!.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
-    expect(stored()).toEqual({ floating: true, rect: null, maximized: false })
+    expect(stored()).toEqual({ placement: 'floating', rect: null, maximized: false, bottomHeight: INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT })
   })
 
   it('opens at the default place and takes the keyboard', async () => {
@@ -240,7 +240,7 @@ describe('docking back', () => {
     expect(useInboxChanges.getState().tab).toBe('terminal')
     expect(useWorkspace.getState().fileTreeCollapsed).toBe(false)
     expect(terminal.focusWhenShown).toHaveBeenCalledTimes(1)
-    expect(stored().floating).toBe(false)
+    expect(stored().placement).toBe('sidebar')
   })
 })
 

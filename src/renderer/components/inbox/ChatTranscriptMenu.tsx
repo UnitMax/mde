@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode, type RefObject } from 'react'
-import { Code, Copy, ExternalLink, FileText, Link, MessagesSquare, Quote, TextSelect } from 'lucide-react'
+import { Code, Copy, FileText, Link, MessagesSquare, Quote, TextSelect } from 'lucide-react'
 import type { ChatMessage } from '@shared/types'
 import {
   ContextMenu,
@@ -11,6 +11,7 @@ import {
 import { clickedSelection, conversationMarkdown, menuTarget, messageMarkdown, type MenuTarget } from '@/lib/chat-menu'
 import { quoteBlock } from '@/lib/chat-quote'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { WebLinkMenuItems } from '@/components/WebLinkMenuItems'
 
 /** What the right-click landed on, taken when it happened so that a streaming update cannot change it. */
 interface Snapshot extends MenuTarget {
@@ -76,16 +77,7 @@ function MenuItems({
               Copy link address
             </ContextMenuItem>,
             ...(link.external
-              ? [
-                  <ContextMenuItem
-                    key="open"
-                    data-testid="chat-menu-open-link"
-                    onSelect={() => window.open(link.external!, '_blank', 'noopener,noreferrer')}
-                  >
-                    <ExternalLink aria-hidden className={ICON} />
-                    Open link
-                  </ContextMenuItem>,
-                ]
+              ? [<WebLinkMenuItems key="open" url={link.external} testIdPrefix="chat-menu" />]
               : []),
           ]
         : []),

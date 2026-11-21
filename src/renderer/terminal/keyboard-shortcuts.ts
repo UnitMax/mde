@@ -4,7 +4,7 @@ import type { HostPlatform } from '@shared/types'
  * Where a shortcut works. A group's id is its scope: the same chord may appear in two scopes (Ctrl+F finds in
  * the Inbox and in the file viewer), but never in `global` and another scope, and never twice in one scope.
  */
-export type KeyboardShortcutScope = 'global' | 'inbox' | 'terminal' | 'files-todo'
+export type KeyboardShortcutScope = 'global' | 'inbox' | 'browser' | 'terminal' | 'files-todo'
 
 export interface KeyboardShortcutEntry {
   id: string
@@ -60,8 +60,8 @@ export function getKeyboardShortcutGroups(
         {
           id: 'inbox-floating-terminal',
           keys: ['F11'],
-          description: 'Show or hide the floating Inbox terminal.',
-          note: 'Until the terminal has been floated out of the sidebar, F11 puts the window in full screen.'
+          description: 'Show or hide the Inbox terminal while it floats or sits in the bottom panel.',
+          note: 'While the terminal is in the sidebar, F11 puts the window in full screen.'
         },
         { id: 'zoom', keys: [`${primaryModifier}+Plus`, `${primaryModifier}+Minus`, `${primaryModifier}+0`], description: 'Zoom in, zoom out, reset zoom.' },
         { id: 'rename-session-or-tab', keys: ['F2'], description: 'Rename the focused session row or terminal tab.' }
@@ -94,6 +94,16 @@ export function getKeyboardShortcutGroups(
           keys: platform === 'darwin' ? ['Ctrl+Click', 'Cmd+Click'] : ['Ctrl+Click'],
           description: 'Select several threads to pin, mark unread or park.'
         }
+      ]
+    },
+    {
+      id: 'browser',
+      label: 'MDE browser',
+      where: 'Works while a page in the Inbox Browser tab has the keyboard.',
+      shortcuts: [
+        { id: 'browser-reload', keys: ['F5', `${primaryModifier}+R`], description: 'Reload the page.' },
+        { id: 'browser-history', keys: ['Alt+Left', 'Alt+Right'], description: 'Go back, go forward.' },
+        { id: 'browser-devtools', keys: [`${primaryModifier}+Shift+I`], description: 'Open or close the page\'s developer tools, in a window of their own.' }
       ]
     },
     {

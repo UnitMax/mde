@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, ShieldCheck, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
+import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, Globe, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, ShieldCheck, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { SidebarFooter } from '@/components/ui/sidebar-footer'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
 import { ScrollStrip } from '@/components/ui/scroll-strip'
-import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
+import { BottomTerminalButton, FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
 import { useInboxTerminal } from '@/store/inbox-terminal'
@@ -15,6 +15,8 @@ import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { InboxToolCalls } from './InboxToolCalls'
 import { InboxSavedPermissions } from './InboxSavedPermissions'
+import { useInboxBrowser } from '@/store/inbox-browser'
+import { InboxBrowser } from './InboxBrowser'
 import { useInboxSavedPermissions, useSavedPermissionCount } from '@/store/inbox-saved-permissions'
 import { InboxSidebarMenu, InboxSidebarMenuButton } from './InboxSidebarMenu'
 import { useInboxView } from '@/store/inbox-view'
@@ -448,17 +450,18 @@ export function InboxChangesBadge({ threadId }: { threadId: string }): JSX.Eleme
   )
 }
 
-const SIDEBAR_TABS = ['files', 'changes', 'tools', 'permissions', 'terminal'] as const
+const SIDEBAR_TABS = ['files', 'changes', 'tools', 'permissions', 'terminal', 'browser'] as const
 type SidebarTab = (typeof SIDEBAR_TABS)[number]
-const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', permissions: 'Permissions', terminal: 'Terminal' }
-const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, permissions: ShieldCheck, terminal: SquareTerminal }
+const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', permissions: 'Permissions', terminal: 'Terminal', browser: 'Browser' }
+const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, permissions: ShieldCheck, terminal: SquareTerminal, browser: Globe }
 /**
- * A thread has changes and tool calls to show; the page for a new one has none yet, so it offers Files and Terminal.
+ * A thread has changes and tool calls to show; the page for a new one has none yet, so it offers Files, Terminal and
+ * Browser.
  * Permissions is there only while the thread's project has "Always allow" approvals saved.
  */
-const tabsFor = (threadId: string | undefined, saved: number): readonly SidebarTab[] =>
+const tabsFor = (threadId: string | undefined, saved: number, browserEnabled: boolean): readonly SidebarTab[] =>
   SIDEBAR_TABS.filter((item) =>
-    (item !== 'changes' || threadId) && (item !== 'tools' || threadId) && (item !== 'permissions' || (threadId && saved > 0)))
+    (item !== 'browser' || browserEnabled) && (item !== 'changes' || threadId) && (item !== 'tools' || threadId) && (item !== 'permissions' || (threadId && saved > 0)))
 /**
  * Each panel draws its own tabs in its header, so switching replaces the strip that has focus. The tab that was
  * chosen is focused again in the one that takes its place.
@@ -470,9 +473,10 @@ let refocusTab: SidebarTab | null = null
  * Home and End) move between them.
  */
 function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
+  const browserEnabled = useInboxBrowser((s) => s.state.enabled)
   const stored = useInboxChanges((s) => s.tab)
   const saved = useSavedPermissionCount(threadId)
-  const tabs = tabsFor(threadId, saved)
+  const tabs = tabsFor(threadId, saved, browserEnabled)
   const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
     const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
@@ -498,7 +502,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
       ref={strip}
       role="tablist"
       aria-label="Thread sidebar"
-      // The strip is the container the tabs measure: below 23.5rem (all four named need about 22.5) only the shown tab is named .
+      // The strip is the container the tabs measure: below 27.5rem (Files to Browser named, with their counts, need about 27) only the shown tab is named.
       wrapperClassName="@container/tabs flex-1"
       revealKey={tab}
       // Room above for the count marks on the icons' corners, which the scrolling list would clip.
@@ -523,7 +527,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
             : item === 'permissions' ? `${label}, ${badge} always allowed`
               : label
         // Narrow, the tab that is shown keeps its name and the others are icons; wide enough, all are named.
-        const named = selected ? '' : 'hidden @min-[23.5rem]/tabs:inline'
+        const named = selected ? '' : 'hidden @min-[27.5rem]/tabs:inline'
         return (
           <button
             key={item}
@@ -543,7 +547,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
               'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
               selected
                 ? 'bg-elevated px-2 text-fg ring-1 ring-inset ring-line-strong'
-                : 'px-1.5 text-fg-subtle hover:bg-hover hover:text-fg @min-[23.5rem]/tabs:px-2'
+                : 'px-1.5 text-fg-subtle hover:bg-hover hover:text-fg @min-[27.5rem]/tabs:px-2'
             )}
           >
             <Icon aria-hidden className="h-3.5 w-3.5 shrink-0" />
@@ -560,7 +564,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
               // An icon alone carries its count as a small mark on its corner.
               <span
                 aria-hidden
-                className="absolute -right-1.5 -top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-active px-[3px] text-[8.5px] font-semibold leading-none tabular-nums text-fg-muted ring-[1.5px] ring-panel @min-[23.5rem]/tabs:hidden"
+                className="absolute -right-1.5 -top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-active px-[3px] text-[8.5px] font-semibold leading-none tabular-nums text-fg-muted ring-[1.5px] ring-panel @min-[27.5rem]/tabs:hidden"
               >
                 {badge > 99 ? '99+' : badge}
               </span>
@@ -643,12 +647,12 @@ export function FilesSection({ session }: { session: DirectoryContext }): JSX.El
 }
 
 /**
- * Brings the Inbox terminal into view. Floating, it shows; otherwise the sidebar shows its Terminal tab, which docks
- * a floating menu card first: the terminal wants the room a docked sidebar has.
+ * Brings the Inbox terminal into view. Floating or at the bottom, it shows; otherwise the sidebar shows its Terminal
+ * tab, which docks a floating menu card first: the terminal wants the room a docked sidebar has.
  */
 export function showInboxTerminal(focus: boolean): void {
   const floating = useInboxFloatingTerminal.getState()
-  if (floating.floating) {
+  if (floating.placement !== 'sidebar') {
     floating.show()
     return
   }
@@ -794,7 +798,7 @@ function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; bra
  * one, and it is shown with the new-thread page as well.
  */
 function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
-  const floating = useInboxFloatingTerminal((s) => s.floating)
+  const away = useInboxFloatingTerminal((s) => s.placement !== 'sidebar')
   return (
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
@@ -806,24 +810,46 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
         aria-labelledby="inbox-terminal-tab"
         className="flex min-h-0 flex-1 flex-col border-t border-line"
       >
-        {floating ? <FloatingTerminalNotice /> : <InboxTerminal />}
+        {away ? <FloatingTerminalNotice /> : <InboxTerminal />}
       </div>
       <SidebarFooter actions={<SidebarActions />}>
-        {!floating && <FloatTerminalButton />}
+        {!away && <><BottomTerminalButton /><FloatTerminalButton /></>}
       </SidebarFooter>
     </aside>
   )
 }
 
 /**
+ * The Browser tab: the MDE browser, for the web apps being developed. Like the terminal it is one for the whole
+ * Inbox, not tied to a thread.
+ */
+function BrowserAside({ threadId }: { threadId?: string }): JSX.Element {
+  return (
+    <aside data-testid="inbox-browser-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={threadId} />
+      </div>
+      <div
+        role="tabpanel"
+        id="inbox-browser-panel"
+        aria-labelledby="inbox-browser-tab"
+        className="flex min-h-0 flex-1 flex-col border-t border-line"
+      >
+        <InboxBrowser />
+      </div>
+      <SidebarFooter actions={<SidebarActions />} />
+    </aside>
+  )
+}
+
+/**
  * "Open in Terminal" from the Files tree: a new pane of the Inbox terminal, starting in that folder, and the
- * terminal brought into view. Floating, the pane goes beside the last one; in the narrow sidebar, below it.
+ * terminal brought into view. Floating or at the bottom, the pane goes beside the last one; in the narrow sidebar, below it.
  */
 async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryContext): Promise<void> {
-  const floating = useInboxFloatingTerminal.getState()
-  await useInboxTerminal.getState().openInFolder(folder, where, floating.floating ? 'right' : 'bottom')
-  if (floating.floating) floating.show()
-  else showInboxTerminal(false)
+  const wide = useInboxFloatingTerminal.getState().placement !== 'sidebar'
+  await useInboxTerminal.getState().openInFolder(folder, where, wide ? 'right' : 'bottom')
+  showInboxTerminal(false)
 }
 
 /**
@@ -832,6 +858,7 @@ async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryCon
  * only the other two. It can be dragged wider, which the terminal in particular wants.
  */
 export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element | null {
+  const browserEnabled = useInboxBrowser((s) => s.state.enabled)
   const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
   const floating = useInboxView((s) => s.sidebarFloating)
@@ -839,7 +866,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   const thread = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
   const saved = useSavedPermissionCount(threadId)
   // Changes, Tools and Permissions belong to a thread. Without one, they are not offered and Files shows in their place.
-  const tab = tabsFor(threadId, saved).includes(stored) ? stored : 'files'
+  const tab = tabsFor(threadId, saved, browserEnabled).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
   // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
   const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))
@@ -893,6 +920,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
       {tab === 'tools' && thread && <ToolsAside thread={thread} />}
       {tab === 'permissions' && thread && <PermissionsAside thread={thread} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
+      {tab === 'browser' && <BrowserAside threadId={threadId} />}
     </InboxSidebarFrame>
   )
 }

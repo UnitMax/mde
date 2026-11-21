@@ -54,51 +54,43 @@ const chevron = (trigger: HTMLElement | null): Element | null => trigger?.queryS
 describe('the model chip', () => {
   const chip = (): ReactElement => createElement(ModelPicker, { models: [model], value: { id: 'beam', providerId: 'opencode', variant: 'medium' }, onChange: () => {} })
 
-  it('reads provider, name and effort as one line, and drops the provider and then the effort as the box narrows', async () => {
-    await at('wide', chip())
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('OpenCode /Beam Free·Medium')
-    expect(q('[data-testid="chat-model-provider"]')?.textContent).toBe('OpenCode /')
-    expect(chevron(q('[data-testid="chat-model-picker"]'))).not.toBeNull()
-
-    await at('medium', chip())
-    expect(q('[data-testid="chat-model-provider"]')).toBeNull()
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Beam Free·Medium')
-    expect(chevron(q('[data-testid="chat-model-picker"]'))).not.toBeNull()
+  it('shows the provider as its lettered badge in front of name and effort, and drops the effort as the box narrows', async () => {
+    for (const size of ['wide', 'medium'] as const) {
+      await at(size, chip())
+      expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('OCBeam FreeMedium')
+      expect(q('[data-testid="chat-model-picker"] [data-testid="provider-mark"]')?.textContent).toBe('OC')
+      expect(chevron(q('[data-testid="chat-model-picker"]'))).not.toBeNull()
+    }
 
     await at('narrow', chip())
     expect(q('[data-testid="chat-model-effort"]')?.textContent).toBe('Medium')
     expect(chevron(q('[data-testid="chat-model-picker"]'))).toBeNull()
 
     await at('tight', chip())
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Beam Free')
+    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('OCBeam Free')
   })
 
-  it('gives the provider, the name and the effort one type size and no extra room between them', async () => {
+  it('gives the name and the effort one type size, and keeps a short name as wide as its text', async () => {
     await at('wide', chip())
     const trigger = q('[data-testid="chat-model-picker"]')!
-    for (const part of ['chat-model-provider', 'chat-model-effort']) {
-      expect(q(`[data-testid="${part}"]`)?.className).not.toMatch(/text-\[\d/)
-    }
+    expect(q('[data-testid="chat-model-effort"]')?.className).not.toMatch(/text-\[\d/)
     // A short name is as wide as its text, not padded to a minimum.
     const name = Array.from(trigger.querySelectorAll<HTMLElement>('span.truncate')).find((span) => span.textContent === 'Beam Free')
     expect(name?.style.minWidth).toBe('5ch')
   })
 
-  it('leaves the provider out of a long name until the toolbar is wide enough for all of it', async () => {
-    const long: ChatModel = { ...model, id: 'long', name: 'Claude Sonnet 4.5 (extended thinking)' }
-    const value = { id: 'long', providerId: 'opencode', variant: 'medium' }
-    await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 680)
-    expect(q('[data-testid="chat-model-provider"]')).toBeNull()
-    expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Claude Sonnet 4.5 (extended thinking)·Medium')
-    await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 1200)
-    expect(q('[data-testid="chat-model-provider"]')?.textContent).toBe('OpenCode /')
-  })
-
-  it('keeps the whole choice in the tooltip, whatever the size', async () => {
+  it('keeps the provider, model and effort by name in the tooltip, whatever the size', async () => {
     for (const size of SIZES) {
       await at(size, chip())
-      expect(q('[data-testid="chat-model-picker"]')?.getAttribute('title')).toBe('opencode/beam#medium')
+      expect(q('[data-testid="chat-model-picker"]')?.getAttribute('title')).toBe('OpenCode / Beam Free · Medium')
     }
+  })
+
+  it('makes the badge from the name of a provider OpenCode does not know', async () => {
+    const own: ChatModel = { ...model, id: 'llama', name: 'Llama 3', providerId: 'corp-llm', providerName: 'Corp LLM Gateway' }
+    await at('wide', createElement(ModelPicker, { models: [own], value: { id: 'llama', providerId: 'corp-llm' }, onChange: () => {} }))
+    expect(q('[data-testid="chat-model-picker"] [data-testid="provider-mark"]')?.textContent).toBe('C')
+    expect(q('[data-testid="chat-model-picker"]')?.getAttribute('title')).toBe('Corp LLM Gateway / Llama 3')
   })
 })
 

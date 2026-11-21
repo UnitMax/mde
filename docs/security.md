@@ -8,7 +8,8 @@ Security-relevant design and maintenance notes. The privacy and network statemen
 MDE has no telemetry, remote crash uploader, updater, direct provider client or
 remote MCP client. Its own MCP server (the MDE MCP) is a local bridge over a Unix socket or named pipe,
 not a network listener. The application HTTP client accepts loopback OpenCode origins
-and rejects redirects. This is not a guarantee of no external traffic: OpenCode,
+and rejects redirects. The MDE browser (the Inbox Browser tab) loads pages only from local addresses and
+the hosts the person allowed; see [MDE browser boundary](#mde-browser-boundary). This is not a guarantee of no external traffic: OpenCode,
 launched commands, OS network mounts and login-shell startup have their own network
 behavior. See [`PRIVACY.md`](../PRIVACY.md).
 
@@ -552,6 +553,82 @@ scheduled, and neither agents nor the MDE MCP can create or change automations. 
 one thread per automation per look, moves the next run past now and writes the file before starting, and
 leaves a run out while the previous run's thread is still working, so a missed stretch or a short interval
 cannot start a pile of agents.
+
+### MDE browser boundary
+
+The Browser tab of the Inbox sidebar shows web apps under development. It ships the Chromium of MDE's Electron,
+which can be older than a current browser, so the boundary is what it loads rather than how new it is.
+
+- **Off by default.** The browser exists only after the person enables it in Settings → Browser (`enabled` in
+  `browser.json`). While it is off, the main process refuses to make tabs and cancels every request of its session;
+  turning it off closes all tabs and keeps the allowed hosts and browsing data.
+
+- **Only local and allowed hosts.** Every request of every page (documents, frames, scripts, styles, fonts,
+  images, `fetch`, WebSockets, redirects, service worker scripts) passes `session.webRequest.onBeforeRequest` on the
+  browser's own session before it is sent. `classifyBrowserRequest` (`src/shared/browser.ts`) lets through
+  `http`, `https`, `ws` and `wss` to loopback (`localhost` and `*.localhost`, `127.0.0.0/8`, `[::1]`, `0.0.0.0`)
+  and to the hosts in `<userData>/browser.json`, plus inline `data:`, `blob:` and `about:` content; everything else,
+  including `file:` and URLs with a user name or password, is cancelled. A host is allowed by its exact name, on
+  every port, never by wildcard; at most 100 are kept, and the file is checked again when read.
+- **Asking first.** An address typed, opened from a link or reached by a redirect whose host is not allowed is not
+  contacted: the tab shows "Allow <host>?" with **Go back** (the main button), **Allow and open** and **Open in
+  system browser**. Hosts a page tried
+  to load from are listed on the tab and can be allowed one by one, which reloads the page. Removing a host in
+  Settings → Browser refuses its next requests.
+- **Leaving the browser.** A page never hands an address to the system browser itself, since the address could carry
+  whatever the page read. A navigation (`will-navigate`) to a host that is not allowed shows "Allow <host>?" in its
+  tab, with the page kept under it so Back or **Go back** returns to it (a tab with no page under it goes back
+  to its start page); a `window.open` to one opens a new tab showing the same;
+  one to an allowed host opens as a tab. Only the person's own choice reaches `shell.openExternal`: **Open in system
+  browser** on that page (through the window's validated `openExternal` IPC) or **Open link in system browser** in
+  the page's right-click menu (`safeExternalWebUrl`, http and https only, at most one a second). MDE never opens a
+  second Electron window for a page.
+- **Client certificates.** Each tab answers `select-client-certificate` with no certificate, so a site cannot sign
+  the person in with an identity from the certificate store (Electron would otherwise pick the first match).
+- **Isolation.** Each tab is a `WebContentsView` with `sandbox`, `contextIsolation`, no Node integration, no
+  preload, no `<webview>`, and the persistent partition `persist:mde-browser`, so pages share no cookies, storage,
+  permissions or IPC with MDE's window; `assertIpcSender` still accepts only the window's own page. Spell
+  checking is off, so no dictionary is downloaded.
+- **WebRTC off by default.** WebRTC connections never pass the request filter, so unless the person allows WebRTC in
+  Settings → Browser (`webrtc` in `browser.json`), `onHeadersReceived` puts Chromium's connection allowlist on every
+  response (`withoutWebRTC`). Without one from the server it is `("*://*:*/*"); redirects=allow`
+  (`BLOCK_WEBRTC_HEADER`): every address and redirects allowed, leaving hosts to the request filter, and all WebRTC
+  blocked, which is its default. A server's own allowlist is kept, so its address and redirect rules still apply,
+  with `;webrtc=block` put last: a later parameter replaces an earlier one, so it overrides a `webrtc=allow`.
+  Chromium applies only the first member of the list (and only the first of several headers), so the parameter goes
+  on that member and the rest is passed on untouched: Chromium parses the whole list first, so a list with a malformed
+  later member stays one it refuses, blocking every connection of the page, rather than becoming a valid permissive
+  one (checked live).
+  Frames and popups without a response of their own (`about:blank`, `srcdoc`, `blob:`) inherit it; a page built by a
+  service worker would not, so the session refuses service worker scripts (`Service-Worker: script` in
+  `onBeforeSendHeaders`) and removes registered ones at startup and when WebRTC is turned off. Until that removal has
+  succeeded, the request filter cancels every request and no tab opens a page; each attempt to open one tries the
+  removal again, and clearing the browsing data also counts. Verified under Electron 45.4.1 (Chromium 156) against local STUN and TURN servers: with the header
+  no packet reached either from a top-level page, an `about:blank`, `srcdoc` or `blob:` frame, an `about:blank`
+  popup or a page from the HTTP cache, while fetches, WebSockets and redirects worked; Chromium ends the page's
+  process when a frame without its own response tries. A server's `(response-origin); webrtc=allow` kept its
+  restriction to its own origin and still had WebRTC blocked. The allowlist needs Chromium 152 or later; keep this in mind
+  before ever moving Electron back. When WebRTC is allowed, `disable_non_proxied_udp` still keeps it off plain UDP,
+  but WebRTC over TCP (a TURN relay, or ICE-TCP) reaches any host; Settings warns about this beside the switch and
+  PRIVACY.md says so. Allowing WebRTC is saved first and only then put in force, so a failed save changes nothing;
+  taking it away is in force at once, and stays so for the session even if the choice could not be saved (Settings
+  then says MDE will start with it on, with **Save again**; any later successful write of `browser.json` also saves
+  it). Writes of `browser.json` run one at a time, each from the values in force when its turn comes, so a host saved
+  alongside cannot put back an earlier WebRTC choice; allowing WebRTC takes effect inside its own write. A page keeps the rule it was loaded with, so changing the switch closes every tab's page,
+  including one kept alive under an "Allow <host>?" page, and opens it again from its address under the new rule
+  (Go back on such a page loads the page under it again); a reload would leave the old page running until the new
+  one committed.
+- **Clearing data.** Clear browsing data runs every step (storage, cache, HTTP auth cache) and reports a failure if
+  any step failed; the UI says "Cleared" only after all of them succeeded.
+- **Permissions and downloads.** The browser's session has the same deny-all permission policy as the window
+  (camera, microphone, notifications, geolocation, clipboard reading, HID, serial, USB). A download is possible only
+  from one of its tabs and always goes through the save dialog.
+- **Where the page is drawn.** The renderer reports the panel's rectangle (`browser:bounds`, finite numbers only)
+  and the main process lays the active tab over it, scaled by the window's zoom. While a menu, dialog, toast or the
+  floating terminal covers the panel, the page is taken off the window (no picture of it is taken), so the native view cannot hide MDE's own UI or take clicks meant for it.
+- **IPC.** `browser:*` channels take a `brt_<uuid>` tab ID, an address of at most 8192 characters, one of five
+  actions (back, forward, reload, stop, devtools) or a host; the main process parses every address again. Developer
+  tools open in a window of their own.
 
 ### MDE MCP boundary
 

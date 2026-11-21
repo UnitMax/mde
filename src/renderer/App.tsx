@@ -5,6 +5,8 @@ import { AddSessionDialog } from '@/components/AddSessionDialog'
 import { MiniInboxWindow } from '@/components/MiniInboxWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
+import { cn } from '@/lib/utils'
+import { BottomTerminal } from '@/components/inbox/BottomTerminal'
 import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
 import { GitGraphView } from '@/components/inbox/GitGraphView'
@@ -38,6 +40,7 @@ import { isTodoNewTaskShortcut, isTodoSearchShortcut } from '@/lib/todo-search'
 import { startAlerts } from '@/lib/alert-controller'
 import { startToasts } from '@/lib/toast-controller'
 import { Toaster } from '@/components/Toaster'
+import { useInboxBrowser } from '@/store/inbox-browser'
 import { useWorkspace } from '@/store/workspace'
 import { useFancyBackgroundOn } from '@/store/fancy-mode'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -643,6 +646,8 @@ export function App(): JSX.Element {
   }
 
   // The Inbox shows the files of the open thread's folder, or of the folder the new thread starts in.
+  // The MDE browser's allowed hosts decide where a clicked link opens, so they are read up front.
+  useEffect(() => useInboxBrowser.getState().init(), [])
   const inboxLock = useInboxLock()
   const inboxThreads = useWorkspace((state) => state.inboxThreads)
   const selectedInboxThreadId = useWorkspace((state) => state.selectedInboxThreadId)
@@ -688,6 +693,8 @@ export function App(): JSX.Element {
   }, [filePickerAvailable])
   /** The conversation area, which a floating terminal over it gives up when something opens there. */
   const mainRef = useRef<HTMLElement>(null)
+  /** The Inbox's conversation area: the `<main>` column above the terminal's bottom panel, which overlays cover. */
+  const inboxAreaRef = useRef<HTMLDivElement>(null)
 
   const closeOpenFile = (sessionId: string, rootId = sessionId): void => {
     closeFileAction(rootId)
@@ -772,22 +779,26 @@ export function App(): JSX.Element {
           onNewSession={openNewSession}
         />
 
-        <main ref={mainRef} className="relative h-full min-w-0 flex-1">
+        <main ref={mainRef} className={cn('relative h-full min-w-0 flex-1', activeWorkspaceView === 'inbox' && 'flex flex-col')}>
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
             <>
-              <InboxThreadView />
-              {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
-              {selectedInboxThreadId && <GitGraphView threadId={selectedInboxThreadId} />}
-              <InboxTerminalGitGraph area={mainRef} filePath={inboxOpenFilePath} />
-              {inboxRoot && inboxOpenFilePath !== undefined && (
-                <FileViewer
-                  key={`viewer:${inboxRoot.id}`}
-                  session={inboxRoot}
-                  path={inboxOpenFilePath}
-                  onOpenFile={(path) => openFileAction(inboxRoot.id, path)}
-                  onClose={() => closeFileAction(inboxRoot.id)}
-                />
-              )}
+              {/* What opens over the conversation covers only it, not the terminal's bottom panel below. */}
+              <div ref={inboxAreaRef} className="relative min-h-0 flex-1">
+                <InboxThreadView />
+                {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
+                {selectedInboxThreadId && <GitGraphView threadId={selectedInboxThreadId} />}
+                <InboxTerminalGitGraph area={inboxAreaRef} filePath={inboxOpenFilePath} />
+                {inboxRoot && inboxOpenFilePath !== undefined && (
+                  <FileViewer
+                    key={`viewer:${inboxRoot.id}`}
+                    session={inboxRoot}
+                    path={inboxOpenFilePath}
+                    onOpenFile={(path) => openFileAction(inboxRoot.id, path)}
+                    onClose={() => closeFileAction(inboxRoot.id)}
+                  />
+                )}
+              </div>
+              <BottomTerminal />
             </>
           ) : activeWorkspaceView === 'todo' ? (
             <TodoProjectView

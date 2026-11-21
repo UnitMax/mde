@@ -33,6 +33,7 @@ export type SettingsSection =
   | 'notifications'
   | 'shortcuts'
   | 'opencode'
+  | 'browser'
   | 'about'
 
 export interface SettingsDialogState {

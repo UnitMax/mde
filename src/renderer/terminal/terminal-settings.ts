@@ -1,5 +1,6 @@
 import { isApplicationThemeId, type ApplicationThemeId } from '@/theme/themes'
 import { isOsc52Policy, type Osc52Policy } from './osc52'
+import { isBrowserLinkClick, type BrowserLinkClick } from '@shared/browser'
 
 export interface TerminalSettings {
   family: string
@@ -25,6 +26,11 @@ export interface TerminalSettings {
   osc52Policy: Osc52Policy
   /** The command that starts OpenCode's background service for the Inbox. */
   openCodeExecutable: string
+  /**
+   * Where a left click on a web link in MDE opens it: the system browser, or the MDE browser for the addresses it
+   * may open (local ones and the allowed hosts; others still go to the system browser).
+   */
+  linkClick: BrowserLinkClick
 }
 
 export interface TerminalFontOption {
@@ -78,7 +84,8 @@ export function defaultTerminalSettings(
     terminalCards: false,
     wslResourceMeter: false,
     osc52Policy: 'notify',
-    openCodeExecutable: DEFAULT_OPENCODE_EXECUTABLE
+    openCodeExecutable: DEFAULT_OPENCODE_EXECUTABLE,
+    linkClick: 'system'
   }
 }
 
@@ -124,7 +131,8 @@ export function resolveTerminalSettings(
       typeof record.wslResourceMeter === 'boolean' ? record.wslResourceMeter : fallback.wslResourceMeter,
     osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy,
     openCodeExecutable:
-      typeof record.openCodeExecutable === 'string' ? record.openCodeExecutable : fallback.openCodeExecutable
+      typeof record.openCodeExecutable === 'string' ? record.openCodeExecutable : fallback.openCodeExecutable,
+    linkClick: isBrowserLinkClick(record.linkClick) ? record.linkClick : fallback.linkClick
   }
 }
 

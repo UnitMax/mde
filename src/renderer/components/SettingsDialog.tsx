@@ -3,6 +3,7 @@ import { MdeMcpSettings } from '@/components/inbox/MdeMcpSettings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
+import { BrowserSettings } from '@/components/BrowserSettings'
 import { FancyModeSettings } from '@/components/FancyModeSettings'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
 import { NotificationSettings } from '@/components/NotificationSettings'
@@ -45,6 +46,7 @@ const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'opencode', label: 'OpenCode' },
+  { id: 'browser', label: 'Browser' },
   { id: 'about', label: 'About' }
 ]
 
@@ -443,6 +445,8 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                 <MdeMcpSettings />
               </section>
             )}
+
+            {shownSection === 'browser' && <BrowserSettings />}
 
             {shownSection === 'about' && <AboutSettingsPanel />}
           </div>

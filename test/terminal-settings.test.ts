@@ -54,7 +54,8 @@ describe('terminal settings', () => {
       terminalCards: false,
       wslResourceMeter: false,
       osc52Policy: 'notify',
-      openCodeExecutable: 'opencode'
+      openCodeExecutable: 'opencode',
+      linkClick: 'system' as const
     })
   })
 
@@ -75,7 +76,8 @@ describe('terminal settings', () => {
       terminalCards: false,
       wslResourceMeter: false,
       osc52Policy: 'notify',
-      openCodeExecutable: 'opencode'
+      openCodeExecutable: 'opencode',
+      linkClick: 'system' as const
     })
     expect(
       resolveTerminalSettings(
@@ -98,7 +100,8 @@ describe('terminal settings', () => {
       terminalCards: false,
       wslResourceMeter: false,
       osc52Policy: 'notify',
-      openCodeExecutable: 'opencode'
+      openCodeExecutable: 'opencode',
+      linkClick: 'system' as const
     })
     expect(
       resolveTerminalSettings(
@@ -110,7 +113,8 @@ describe('terminal settings', () => {
       terminalCards: false,
       wslResourceMeter: false,
       osc52Policy: 'notify',
-      openCodeExecutable: 'opencode'
+      openCodeExecutable: 'opencode',
+      linkClick: 'system' as const
     })
   })
 
@@ -162,7 +166,8 @@ describe('terminal settings', () => {
       terminalCards: false,
       wslResourceMeter: false,
       osc52Policy: 'notify',
-      openCodeExecutable: 'opencode'
+      openCodeExecutable: 'opencode',
+      linkClick: 'system' as const
     })
   })
 
@@ -179,7 +184,8 @@ describe('terminal settings', () => {
       terminalCards: true,
       wslResourceMeter: false,
       osc52Policy: 'ask' as const,
-      openCodeExecutable: 'opencode'
+      openCodeExecutable: 'opencode',
+      linkClick: 'system' as const
     }
 
     saveTerminalSettings(settings)

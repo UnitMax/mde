@@ -1,5 +1,6 @@
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
+  INBOX_CONVERSATION_MIN_WIDTH,
   INBOX_SIDEBAR_DEFAULT_WIDTH,
   INBOX_SIDEBAR_MAX_WIDTH,
   INBOX_SIDEBAR_MIN_WIDTH,
@@ -13,7 +14,8 @@ const KEY_STEP_LARGE = 64
 /**
  * The Inbox's right-hand sidebar: whichever panel it shows (files, changes or the terminal) fills it, and
  * dragging its left edge makes it wider or narrower. The width is one setting for all three, kept between runs,
- * and it never takes more than 70% of the window, whatever was set on a bigger one.
+ * and it never takes more than 70% of the window, nor so much that the conversation beside it (the `<main>` next to
+ * it) gets narrower than INBOX_CONVERSATION_MIN_WIDTH, whatever was set on a bigger window.
  */
 export function InboxSidebarFrame({ children }: { children: ReactNode }): JSX.Element {
   const width = useInboxView((state) => state.sidebarWidth)
@@ -21,6 +23,27 @@ export function InboxSidebarFrame({ children }: { children: ReactNode }): JSX.El
   const drag = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
   const [dragging, setDragging] = useState(false)
   const frame = useRef<HTMLDivElement>(null)
+  /** The widest the sidebar can be in this window; Infinity when there is no conversation beside it to make room for. */
+  const [room, setRoom] = useState(Infinity)
+  const limit = Math.max(INBOX_SIDEBAR_MIN_WIDTH, Math.min(INBOX_SIDEBAR_MAX_WIDTH, room))
+
+  useLayoutEffect(() => {
+    const element = frame.current
+    const row = element?.parentElement
+    const main = row?.querySelector<HTMLElement>(':scope > main')
+    if (!element || !row || !main) return
+    // From the conversation's left edge to the sidebar's right edge is all the two of them have. Watching both the
+    // row and the conversation catches a window resize and the thread list on the left changing width.
+    const measure = (): void => {
+      setRoom(Math.floor(element.getBoundingClientRect().right - main.getBoundingClientRect().left - INBOX_CONVERSATION_MIN_WIDTH))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    observer.observe(main)
+    return () => observer.disconnect()
+  }, [])
 
   /** The width the sidebar has on screen, which the window can hold below the one that was set. */
   const shownWidth = (): number => frame.current?.getBoundingClientRect().width || width
@@ -36,7 +59,7 @@ export function InboxSidebarFrame({ children }: { children: ReactNode }): JSX.El
     const current = drag.current
     if (!current || current.pointerId !== event.pointerId) return
     // The sidebar is on the right, so moving the pointer left makes it wider.
-    setWidth(current.startWidth + (current.startX - event.clientX), false)
+    setWidth(Math.min(limit, current.startWidth + (current.startX - event.clientX)), false)
   }
   const finish = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const current = drag.current
@@ -51,11 +74,12 @@ export function InboxSidebarFrame({ children }: { children: ReactNode }): JSX.El
     const next = event.key === 'ArrowLeft' ? width + step
       : event.key === 'ArrowRight' ? width - step
         : event.key === 'Home' ? INBOX_SIDEBAR_MIN_WIDTH
-          : event.key === 'End' ? INBOX_SIDEBAR_MAX_WIDTH
+          : event.key === 'End' ? limit
             : null
     if (next === null) return
     event.preventDefault()
-    setWidth(next)
+    // Widening starts from the width on screen, which a smaller window may hold below the one that was set.
+    setWidth(Math.min(limit, event.key === 'ArrowLeft' ? Math.min(width, limit) + step : next))
   }
 
   return (
@@ -63,15 +87,15 @@ export function InboxSidebarFrame({ children }: { children: ReactNode }): JSX.El
       ref={frame}
       data-testid="inbox-sidebar-frame"
       className="relative flex h-full min-h-0 shrink-0"
-      style={{ width, maxWidth: '70vw' }}
+      style={{ width, maxWidth: Number.isFinite(room) ? `min(70vw, ${limit}px)` : '70vw' }}
     >
       <div
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize sidebar"
         aria-valuemin={INBOX_SIDEBAR_MIN_WIDTH}
-        aria-valuemax={INBOX_SIDEBAR_MAX_WIDTH}
-        aria-valuenow={width}
+        aria-valuemax={limit}
+        aria-valuenow={Math.min(width, limit)}
         tabIndex={0}
         title="Drag to resize. Double-click to reset."
         data-testid="inbox-sidebar-resize"

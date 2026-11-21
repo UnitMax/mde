@@ -136,6 +136,10 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  /* Where a vertical and a horizontal scrollbar meet: Chromium paints it white unless told otherwise. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
     background: var(--color-line-strong);
     border: 2px solid transparent;
@@ -1399,4 +1403,27 @@
   /* The countdown stays: it is a slow bar, and the toast needs it to go. */
   .mde-toast-slot { animation: none; transition: none; }
   .mde-toast-slot[data-leaving] { transform: none; }
+}
+
+/* A model provider's lettered badge (ProviderMark): the letters in the provider's hue on a faint tint of it. */
+.provider-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 1rem;
+  min-width: 1rem;
+  padding: 0 0.1875rem;
+  border-radius: 0.25rem;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: oklch(0.8 0.11 var(--provider-hue));
+  background: oklch(0.7 0.12 var(--provider-hue) / 0.2);
+}
+
+:root[data-mode='light'] .provider-mark {
+  color: oklch(0.47 0.13 var(--provider-hue));
+  background: oklch(0.6 0.12 var(--provider-hue) / 0.16);
 }

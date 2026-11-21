@@ -8,13 +8,13 @@ import { useInboxTerminal } from '@/store/inbox-terminal'
 export const AGENT_ARRIVAL_MS = 4000
 
 /**
- * The reminder at the foot of the Inbox's thread list that the floating terminal is there but hidden (F11),
- * and the way back to it with the mouse. Draws nothing while the terminal is in the sidebar or on screen.
+ * The reminder at the foot of the Inbox's thread list that the floating terminal or the bottom panel is there but
+ * hidden (F11), and the way back to it with the mouse. Draws nothing while the terminal is in the sidebar or on screen.
  * When an agent opens a terminal while it is hidden, the reminder lights up and a small terminal drops into it;
  * a command waiting for approval keeps it saying so until the person shows the terminal and answers.
  */
 export function HiddenTerminalIndicator(): JSX.Element | null {
-  const hidden = useInboxFloatingTerminal((state) => state.floating && !state.visible)
+  const hidden = useInboxFloatingTerminal((state) => state.placement !== 'sidebar' && !state.visible)
   const panes = useInboxTerminal((state) => state.layout.panes.length)
   const arrivals = useInboxTerminal((state) => state.agentArrivals)
   const waiting = useInboxTerminal((state) => Object.keys(state.agentCommands).length)
@@ -58,7 +58,7 @@ export function HiddenTerminalIndicator(): JSX.Element | null {
           ? 'An agent opened a terminal. Show it (F11)'
           : waiting > 0
             ? `An agent asked to run ${waiting === 1 ? 'a command' : 'commands'}. Show the terminal to approve (F11)`
-            : `Show the floating ${panes > 1 ? 'terminals' : 'terminal'} (F11)`}
+            : `Show the ${panes > 1 ? 'terminals' : 'terminal'} (F11)`}
         aria-label={`${fresh ? 'An agent opened a terminal' : label}. Show (F11)`}
         onClick={() => useInboxFloatingTerminal.getState().show()}
         className={cn(

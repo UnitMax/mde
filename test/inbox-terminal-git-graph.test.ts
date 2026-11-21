@@ -41,7 +41,7 @@ beforeEach(() => {
   useSessionGitGraph.setState({ terminalId: null })
   useInboxChanges.setState({ graphThreadId: null, selectedPath: null, graphReturn: null })
   useInboxTerminal.setState({ layout: { ...layout, panes: [{ ...layout.panes[0]!, terminalId: pane }] } })
-  useInboxFloatingTerminal.setState({ floating: true, visible: true, rect: null, maximized: false })
+  useInboxFloatingTerminal.setState({ placement: 'floating', floating: true, visible: true, rect: null, maximized: false })
   // The conversation area, and the floating window over it.
   main = document.createElement('main')
   main.getBoundingClientRect = () => box(300, 40, 900, 700)
@@ -60,7 +60,7 @@ afterEach(async () => {
 
 describe('the Git chip of an Inbox terminal pane', () => {
   it('opens the pane checkout’s graph over the conversation, and the chip closes it again', async () => {
-    useInboxFloatingTerminal.setState({ floating: false, visible: false })
+    useInboxFloatingTerminal.setState({ placement: 'sidebar', floating: false, visible: false })
     await render()
     expect(view()).toBeNull()
     await act(async () => useSessionGitGraph.getState().toggle(pane))
@@ -125,10 +125,10 @@ describe('the Git chip of an Inbox terminal pane', () => {
 
 describe('hiding the floating terminal for what opens beneath it', () => {
   it('does nothing while the terminal is docked or already hidden', () => {
-    useInboxFloatingTerminal.setState({ floating: false, visible: false })
+    useInboxFloatingTerminal.setState({ placement: 'sidebar', floating: false, visible: false })
     hideFloatingTerminalOver(main)
     expect(useInboxFloatingTerminal.getState()).toMatchObject({ floating: false, visible: false })
-    useInboxFloatingTerminal.setState({ floating: true, visible: true })
+    useInboxFloatingTerminal.setState({ placement: 'floating', floating: true, visible: true })
     floatingWindow.getBoundingClientRect = () => box(1200, 40, 200, 200)
     // Touching the area's edge is not lying over it.
     hideFloatingTerminalOver(main)

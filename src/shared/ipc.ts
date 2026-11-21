@@ -1,5 +1,6 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
+import type { BrowserAction, BrowserBounds, BrowserState } from './browser'
 import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from './automations'
 import type {
   AgentTerminalClaim,
@@ -279,6 +280,20 @@ export const IpcChannels = {
   floatingTerminalActive: 'floating-terminal:active',
   fileViewerOpen: 'file-viewer:open',
 
+  browserState: 'browser:state',
+  browserSetEnabled: 'browser:set-enabled',
+  browserSetWebRTC: 'browser:set-webrtc',
+  browserOpen: 'browser:open',
+  browserNewTab: 'browser:new-tab',
+  browserNavigate: 'browser:navigate',
+  browserAction: 'browser:action',
+  browserSelect: 'browser:select',
+  browserClose: 'browser:close',
+  browserBounds: 'browser:bounds',
+  browserAllowHost: 'browser:allow-host',
+  browserRemoveHost: 'browser:remove-host',
+  browserClearData: 'browser:clear-data',
+
   appInfo: 'app:info',
   platformInfo: 'platform:info'
 } as const
@@ -304,6 +319,8 @@ export const IpcEvents = {
   terminalRead: 'terminal-read:request',
   /** A reading of WSL's CPU and memory, while the title bar meter is shown. */
   wslResources: 'wsl:resources',
+  /** The MDE browser changed: a tab opened, loaded, was refused a host, or closed. Carries all of it. */
+  browserChanged: 'browser:changed',
 } as const
 
 export interface PlatformInfo {
@@ -833,5 +850,26 @@ export interface RendererApi {
     setActive(active: boolean): Promise<void>
     /** F11 was pressed while there is one: show it, or hide it. */
     onToggle(listener: () => void): () => void
+  }
+  /** The MDE browser in the Inbox sidebar; see `src/shared/browser.ts`. */
+  browser: {
+    state(): Promise<BrowserState>
+    setEnabled(enabled: boolean): Promise<BrowserState>
+    /** Allows or blocks WebRTC in the browser's pages; open pages are closed and opened again. */
+    setWebRTC(allowed: boolean): Promise<BrowserState>
+    /** Opens an address in the tab already showing it, or in a new tab. */
+    open(url: string): Promise<BrowserState>
+    newTab(): Promise<BrowserState>
+    navigate(tabId: string, url: string): Promise<BrowserState>
+    act(tabId: string, action: BrowserAction): Promise<void>
+    select(tabId: string): Promise<BrowserState>
+    close(tabId: string): Promise<BrowserState>
+    /** Where the sidebar panel is, so the active page is drawn there; null takes it off the window. */
+    setBounds(bounds: BrowserBounds | null): Promise<void>
+    allowHost(host: string): Promise<BrowserState>
+    removeHost(host: string): Promise<BrowserState>
+    /** Forgets the browser's cookies, storage and cache. */
+    clearData(): Promise<void>
+    onChanged(listener: (state: BrowserState) => void): () => void
   }
 }

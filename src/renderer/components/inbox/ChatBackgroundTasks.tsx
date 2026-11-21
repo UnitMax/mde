@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { AlertTriangle, ChevronDown, Image, Layers, Terminal, Users, X } from 'lucide-react'
+import { AlertTriangle, ChevronUp, Image, Layers, Terminal, Users, X } from 'lucide-react'
 import { ElapsedTime } from '@/components/ElapsedTime'
 import { barTrigger } from '@/components/inbox/ComposerBar'
 import { useBackgroundTasks } from '@/components/inbox/use-background-tasks'
@@ -50,7 +50,8 @@ export function ChatBackgroundTasks({ threadId }: { threadId: string }): JSX.Ele
           <span aria-live="polite" className="shrink-0 whitespace-nowrap text-left">{summary}</span>
           {unavailable && tasks.length > 0 && <span className="shrink-0 text-[11px] text-fg-subtle">{tasks.length} last seen</span>}
           <span className="min-w-0 flex-1 truncate text-left text-fg-subtle">{preview && `· ${preview}`}</span>
-          <ChevronDown aria-hidden className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
+          {/* The bar sits on the message box and grows upwards, so the chevron points the way it will move: up to open, down to close. */}
+          <ChevronUp aria-hidden className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
         </button>
         {unavailable && tasks.length === 0 && <button
           type="button"

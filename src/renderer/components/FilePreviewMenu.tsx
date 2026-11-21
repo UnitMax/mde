@@ -4,9 +4,12 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { externalLinkUrl } from '@/lib/file-viewer'
+import { WebLinkMenuItems } from '@/components/WebLinkMenuItems'
 
 interface FilePreviewMenuProps {
   children: ReactElement
@@ -24,6 +27,8 @@ export function FilePreviewMenu({
   empty,
 }: FilePreviewMenuProps): JSX.Element {
   const [selection, setSelection] = useState('')
+  // The web link the right-click landed on, offered to open in either browser.
+  const [link, setLink] = useState<string | null>(null)
   const [copyError, setCopyError] = useState<string | null>(null)
 
   const copy = (): void => {
@@ -37,7 +42,14 @@ export function FilePreviewMenu({
   return (
     <div className="relative h-full min-h-0">
       <ContextMenu>
-        <ContextMenuTrigger asChild onContextMenuCapture={() => setSelection(getSelectedText())}>
+        <ContextMenuTrigger
+          asChild
+          onContextMenuCapture={(event) => {
+            setSelection(getSelectedText())
+            const href = (event.target as HTMLElement).closest?.('a')?.getAttribute('href')
+            setLink(href ? externalLinkUrl(href) : null)
+          }}
+        >
           {children}
         </ContextMenuTrigger>
         <ContextMenuContent
@@ -46,6 +58,12 @@ export function FilePreviewMenu({
             onClose?.()
           }}
         >
+          {link && (
+            <>
+              <WebLinkMenuItems url={link} testIdPrefix="file-preview-menu" />
+              <ContextMenuSeparator />
+            </>
+          )}
           <ContextMenuItem disabled={!selection} onSelect={copy}>
             <Copy aria-hidden className="h-3.5 w-3.5" />
             Copy

@@ -27,6 +27,12 @@ input or fails; on Windows the button is also coloured red, yellow or green with
 Dock icon shows the count.
 It needs nothing installed.
 
+Enable the MDE browser in Settings → Browser to add the Browser tab to the Inbox sidebar. It opens the web app
+you are working on (for example `localhost:5173`) beside the conversation, with developer tools. It opens only
+local addresses and the hosts you allow (it asks first, with a button to open the address in your system browser
+instead). Right-click any link in MDE to open it in either browser; Settings → Browser chooses which one a left
+click uses and lists the allowed hosts.
+
 The Inbox terminal can also float as a window over the conversation: use the button beside Collapse sidebar on
 the Terminal tab, then F11 shows and hides it. It can be moved, resized from every edge, maximized, and put back.
 
@@ -54,7 +60,7 @@ Restart MDE and OpenCode afterward.
 
 - Node 22.22.2+, or Node 24.15+ (the locked test dependencies require these versions)
 - Windows 11, or Windows 10 version 1903 (build 18362) or newer, or Linux (X11 or Wayland)
-  or macOS on Apple Silicon
+  or macOS 13 or newer on Apple Silicon
   - Packaged Windows builds ship only `node-pty`'s ConPTY backend; the winpty fallback
     older releases would need is deliberately excluded.
 - A C/C++ toolchain, because `node-pty` is a native module and is rebuilt against the

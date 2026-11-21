@@ -181,6 +181,8 @@ import {
 import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
+import type { MdeBrowser } from './browser'
+import type { BrowserAction, BrowserBounds, BrowserState } from '@shared/browser'
 import { readGitTerminalInfo } from './git'
 import {
   fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph,
@@ -423,7 +425,8 @@ export function registerIpcHandlers(
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey,
   wslResources?: WslResourceMonitor,
-  fileViewerKey?: FileViewerKey
+  fileViewerKey?: FileViewerKey,
+  browser?: MdeBrowser
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
@@ -818,6 +821,25 @@ export function registerIpcHandlers(
   handle<void, void>(IpcChannels.attentionBeep, () => shell.beep())
   handle<{ active: boolean }, void>(IpcChannels.floatingTerminalActive, ({ active }) => floatingTerminalKey?.setActive(active))
   handle<{ open: boolean }, void>(IpcChannels.fileViewerOpen, ({ open }) => fileViewerKey?.setOpen(open))
+
+  // The MDE browser. Without one (no window yet), the calls fail rather than pretend.
+  const browserOnly = (): MdeBrowser => {
+    if (!browser) throw new Error('The MDE browser is not available.')
+    return browser
+  }
+  handle<{ enabled: boolean }, BrowserState>(IpcChannels.browserSetEnabled, ({ enabled }) => browserOnly().setEnabled(enabled))
+  handle<{ allowed: boolean }, BrowserState>(IpcChannels.browserSetWebRTC, ({ allowed }) => browserOnly().setWebRTC(allowed))
+  handle<void, BrowserState>(IpcChannels.browserState, () => browserOnly().state())
+  handle<{ url: string }, BrowserState>(IpcChannels.browserOpen, ({ url }) => browserOnly().open(url))
+  handle<void, BrowserState>(IpcChannels.browserNewTab, () => browserOnly().newTab())
+  handle<{ tabId: string; url: string }, BrowserState>(IpcChannels.browserNavigate, ({ tabId, url }) => browserOnly().navigate(tabId, url))
+  handle<{ tabId: string; action: BrowserAction }, void>(IpcChannels.browserAction, ({ tabId, action }) => browserOnly().act(tabId, action))
+  handle<{ tabId: string }, BrowserState>(IpcChannels.browserSelect, ({ tabId }) => browserOnly().select(tabId))
+  handle<{ tabId: string }, BrowserState>(IpcChannels.browserClose, ({ tabId }) => browserOnly().close(tabId))
+  handle<{ bounds: BrowserBounds | null }, void>(IpcChannels.browserBounds, ({ bounds }) => browserOnly().setBounds(bounds))
+  handle<{ host: string }, BrowserState>(IpcChannels.browserAllowHost, ({ host }) => browserOnly().allowHost(host))
+  handle<{ host: string }, BrowserState>(IpcChannels.browserRemoveHost, ({ host }) => browserOnly().removeHost(host))
+  handle<void, void>(IpcChannels.browserClearData, () => browserOnly().clearData())
 
   handle<InboxTerminalSettings, InboxTerminalConfiguration>(IpcChannels.ptyConfigureInbox, async (req) => {
     if (process.platform !== 'win32' && req.distro !== null) throw new Error('WSL is only available on Windows.')
