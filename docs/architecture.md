@@ -389,17 +389,18 @@ title beside the pointer, and a message box under the pointer gets an accent out
 and writes it where it was dropped as `[terminal:<ref> "<title>"]` (`src/shared/terminal-references.ts`).
 The text is what is kept and sent: the agent reads it as it is, and the box (a CodeMirror widget, one atomic
 piece) and the conversation (`TerminalReferenceChip`, which brings the pane into view on a click) show it as a
-chip. The ref is ten random letters and digits that main maps to the pane's terminal ID
-(`src/main/mcp/terminal-references.ts`, kept in `terminal-references.json`, the newest 200); a pane keeps its
-ref, and the Inbox terminal's panes keep their IDs between runs, so an old message still names its pane. A ref
-goes with its pane: a new pane of the Inbox terminal gets a random key (`randomPaneId` in
-`src/renderer/terminal/tabs.ts`), never the lowest free number as in Sessions, so it never takes the ID of a
-closed one, and the window tells main when a pane closes (`terminal-reference:forget`) and, at start, which panes
-it brought back (`terminal-reference:retain`); main forgets the refs of all others and reads no pane before that.
-The single pane the terminal starts with when no arrangement is saved is saved at once, so it keeps its key. Refs
-written before panes had such keys (file version 1) are not read, since one may already name a pane that took a
-closed one's number. An agent given a pane therefore never reads one that came after it. Only Inbox terminal panes that are running
-can get one. After a drop the box asks whether OpenCode's configuration
+chip. The ref is ten random letters and digits that main maps to the pane's terminal ID and to the shell it
+runs (`src/main/mcp/terminal-references.ts`, in memory only, the newest 200). A ref names one shell, not just
+its pane: the PTY manager gives every shell it starts a random ID (`PtyManager.shellId`), kept after the shell
+exits and replaced when it is restarted or disposed, and main reads a pane only while it still runs the shell
+the ref was made for, checking again when the window's answer arrives. Restart, a change of the Inbox
+terminal's WSL distribution and a new start of MDE all start a fresh shell under the same terminal ID, so each
+ends every ref to the earlier one; dragging the pane in again makes a new ref. Refs are not kept between runs (no
+shell outlives MDE), and the file earlier versions kept them in (`terminal-references.json`) is removed at start.
+A new pane of the Inbox terminal also gets a random key (`randomPaneId` in `src/renderer/terminal/tabs.ts`),
+never the lowest free number as in Sessions, and the window tells main when a pane closes
+(`terminal-reference:forget`). An agent given a pane therefore never reads a shell the person did not share.
+Only Inbox terminal panes that are running can get one. After a drop the box asks whether OpenCode's configuration
 for the thread's target has the MDE MCP (`mde-mcp:status`); when it is missing, or starts another copy of MDE,
 a line under the box says the agent cannot read the terminal and links to Settings → OpenCode. It goes once no
 terminal is left in the message.
@@ -409,8 +410,8 @@ answers `terminal-read:answer` from the pane's xterm.js buffer (`terminalBufferT
 `src/renderer/terminal/read-output.ts`: scrollback and screen, lines xterm wrapped joined again, the empty rows
 under the prompt left out, no colours since xterm keeps them as attributes) with the title, the shell's
 directory and whether it still runs. 200 lines unless asked, at most 2,000 lines and 60,000 characters (the
-newest end), 5 s for the window to answer, eight readings waiting at once. A pane that was closed, or has not
-been opened since MDE started (so it has no output), is a tool error saying so.
+newest end), 5 s for the window to answer, eight readings waiting at once. A pane that was closed, or whose
+shell restarted since it was shared, is a tool error saying so and asking for the pane to be dragged in again.
 
 **Views agents show.** `show_view({ title?, root, elements })` shows the person a dashboard, chart or table in
 the chat, where the agent called it. The format follows the idea of Vercel's json-render (a `root` and a flat map

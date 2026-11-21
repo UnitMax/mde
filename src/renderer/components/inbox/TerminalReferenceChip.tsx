@@ -5,7 +5,7 @@ import { useInboxTerminal } from '@/store/inbox-terminal'
 
 /**
  * A terminal a sent message points at (`[terminal:<ref> "<title>"]`), shown with the title the pane had when it
- * was dropped in. A click brings that pane into view, if it is still open.
+ * was dropped in. A click brings that pane into view, if it still runs the shell that was shared.
  */
 export function TerminalReferenceChip({ reference, text }: { reference: TerminalReferenceToken; text: string }): JSX.Element {
   const reveal = (): void => {
@@ -13,7 +13,7 @@ export function TerminalReferenceChip({ reference, text }: { reference: Terminal
       (found) => {
         const open = found && useInboxTerminal.getState().layout.panes.some((pane) => pane.terminalId === found.terminalId)
         if (found && open) useInboxTerminal.getState().reveal(found.terminalId)
-        else notifyActionError({ label: 'Terminal closed', title: reference.title, detail: 'That terminal pane is no longer open.' })
+        else notifyActionError({ label: 'Terminal gone', title: reference.title, detail: 'That terminal pane was closed or its shell restarted since, so the agent can no longer read it. Drag the pane in again to share it.' })
       },
       () => undefined,
     )

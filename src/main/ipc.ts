@@ -706,7 +706,7 @@ export function registerIpcHandlers(
   handle<AgentTerminalRefusal, void>(IpcChannels.agentTerminalRefuse, (req) => agentTerminals?.refuse(req))
   handle<AgentTerminalDecision, void>(IpcChannels.agentTerminalDecide, (req) => agentTerminals?.decide(req))
 
-  // Panes put into messages: main keeps which pane a ref names, and asks the window what it shows.
+  // Panes put into messages: main keeps which pane and shell a ref names, and asks the window what it shows.
   const terminalReferences = inbox.terminalReferences
   terminalReferences?.attach({
     send: (request) => {
@@ -715,22 +715,19 @@ export function registerIpcHandlers(
       contents.send(IpcEvents.terminalRead, request)
       return true
     },
+    shellId: (terminalId) => ptyManager.shellId(terminalId),
     now: () => Date.now(),
   })
   handle<TerminalReferenceCreateRequest, TerminalReferenceCreated>(IpcChannels.terminalReferenceCreate, async (req) => {
     if (!terminalReferences) throw new Error('Terminals cannot be put into messages in this build.')
-    if (!ptyManager.terminalInfo(req.terminalId)) throw new Error('That terminal is not running.')
     return terminalReferences.create(req.terminalId, req.title)
   })
   handle<{ ref: string }, { terminalId: string } | null>(IpcChannels.terminalReferenceResolve, async (req) => {
     const entry = await terminalReferences?.resolve(req.ref)
     return entry ? { terminalId: entry.terminalId } : null
   })
-  handle<{ terminalIds: string[] }, void>(IpcChannels.terminalReferenceForget, async (req) => {
-    await terminalReferences?.forget(req.terminalIds)
-  })
-  handle<{ terminalIds: string[] }, void>(IpcChannels.terminalReferenceRetain, async (req) => {
-    await terminalReferences?.retain(req.terminalIds)
+  handle<{ terminalIds: string[] }, void>(IpcChannels.terminalReferenceForget, (req) => {
+    terminalReferences?.forget(req.terminalIds)
   })
   handle<TerminalReadAnswer, void>(IpcChannels.terminalReadAnswer, (req) => terminalReferences?.answer(req))
 

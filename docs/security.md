@@ -704,12 +704,13 @@ place where something other than the window can ask the main process to act, so 
   the person dropped that pane into a message box (`terminal-reference:create`). An agent can therefore read a
   pane only when it was shown the ref: in its own thread, or passed on by another agent or person. The tool
   takes nothing but a well-formed ref and a line count; the window reads the pane and main checks the answer's
-  shape and size. Reading never writes to the terminal. Refs stay valid until their pane closes or 200 newer
-  ones push them out. A ref is bound to its pane, not to its place: Inbox panes get random keys that are never
-  handed out again, main forgets a pane's refs when the window says it closed, and at start it keeps only the refs
-  of the panes the window brought back (reading waits for that), so a pane that replaced a shared one cannot be
-  read through the old ref. Refs saved before this (version 1 of the file) are dropped unread, as one may already
-  name such a replacement.
+  shape and size. Reading never writes to the terminal. A ref is bound to the shell the person shared, not to
+  its pane's ID or place: the PTY manager gives each shell a random ID (`PtyManager.shellId`), new on every
+  start and restart, and main reads through a ref only while the pane still runs that shell, checking before it
+  asks the window and again when the answer arrives (a restart while the window reads drops the answer). Restart,
+  a change of the Inbox terminal's WSL distribution and a new start of MDE therefore all end the refs to the
+  earlier shell, as does closing the pane (Inbox panes get random keys that are never handed out again) or 200
+  newer refs pushing one out. Refs live in memory only; the file older versions kept them in is removed at start.
 
 - **Views agents show.** `show_view` sends data, never code: the view is a JSON tree of MDE's own components,
   checked against a fixed catalog (`checkView` in `src/shared/view-spec.ts`) by the bridge before it answers

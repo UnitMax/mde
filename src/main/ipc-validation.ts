@@ -290,7 +290,6 @@ export const ipcPayloadValidators = {
   [IpcChannels.terminalReferenceCreate]: object({ terminalId: id, title: string(1000, true) }),
   [IpcChannels.terminalReferenceResolve]: object({ ref: isTerminalRef }),
   [IpcChannels.terminalReferenceForget]: object({ terminalIds: array(id, MAX_TERMINAL_COUNT) }),
-  [IpcChannels.terminalReferenceRetain]: object({ terminalIds: array(id, MAX_TERMINAL_COUNT) }),
   [IpcChannels.terminalReadAnswer]: (value) =>
     object({ requestId: id, error: string(1000) })(value) ||
     object({

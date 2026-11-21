@@ -221,7 +221,6 @@ const api: RendererApi = {
     create: (req) => ipcRenderer.invoke(IpcChannels.terminalReferenceCreate, req),
     resolve: (req) => ipcRenderer.invoke(IpcChannels.terminalReferenceResolve, req),
     forget: (req) => ipcRenderer.invoke(IpcChannels.terminalReferenceForget, req),
-    retain: (req) => ipcRenderer.invoke(IpcChannels.terminalReferenceRetain, req),
     onRead: (listener) => subscribe<TerminalReadRequest>(IpcEvents.terminalRead, listener),
     answer: (req) => ipcRenderer.invoke(IpcChannels.terminalReadAnswer, req)
   },

@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  TERMINAL_REF_LENGTH,
   cleanTerminalTitle,
   isTerminalRef,
   splitTerminalReferences,
@@ -17,7 +16,6 @@ import {
   TERMINAL_READ_TIMEOUT_MS,
   TERMINAL_REFERENCE_LIMIT,
   TERMINAL_REFERENCES_FILE,
-  TERMINAL_REFERENCES_VERSION,
   TerminalReferences,
 } from '../src/main/mcp/terminal-references'
 
@@ -60,9 +58,12 @@ describe('terminal reference text', () => {
 
 describe('TerminalReferences', () => {
   let folder: string
+  /** The shell each terminal runs, as the PTY manager would say. */
+  let shells: Map<string, string>
 
   beforeEach(async () => {
     folder = await fs.mkdtemp(join(tmpdir(), 'mde-terminal-refs-'))
+    shells = new Map([[PANE, 'shell-1'], [`${PANE}x`, 'shell-x']])
   })
 
   afterEach(async () => {
@@ -79,72 +80,68 @@ describe('TerminalReferences', () => {
     }
   }
 
-  /** A window that brought back `PANE` at start. */
-  async function attached(references: TerminalReferences, sent: TerminalReadRequest[] = [], window = true): Promise<TerminalReadRequest[]> {
-    references.attach({ send: (request) => { if (window) sent.push(request); return window }, now: () => 1000 })
-    await references.retain([PANE])
-    return sent
+  /** References wired to a window (which records what it is asked) and to `shells`. */
+  function attached(sent: TerminalReadRequest[] = [], window = true): TerminalReferences {
+    const references = new TerminalReferences(folder, counter())
+    references.attach({
+      send: (request) => { if (window) sent.push(request); return window },
+      shellId: (terminalId) => shells.get(terminalId),
+      now: () => 1000,
+    })
+    return references
   }
 
-  it('gives a pane one ref, keeps it between runs, and reads the title again', async () => {
-    const references = new TerminalReferences(folder, counter())
+  const reading = (text: string) => ({ title: 'pane', directory: null, running: true, totalLines: 1, text })
+
+  it('gives a shell one ref and reads the title again', async () => {
+    const references = attached()
     const first = await references.create(PANE, 'Dev server')
     expect(isTerminalRef(first.ref)).toBe(true)
     expect(first.text).toBe(`[terminal:${first.ref} "Dev server"]`)
     const again = await references.create(PANE, 'npm run dev')
     expect(again).toEqual({ ref: first.ref, text: `[terminal:${first.ref} "npm run dev"]` })
-
-    const later = new TerminalReferences(folder, counter())
-    expect(await later.resolve(first.ref)).toEqual({ terminalId: PANE, title: 'npm run dev' })
-    const stored = JSON.parse(await fs.readFile(join(folder, TERMINAL_REFERENCES_FILE), 'utf8'))
-    expect(stored.references).toHaveLength(1)
+    expect(await references.resolve(first.ref)).toEqual({ terminalId: PANE, title: 'npm run dev' })
   })
 
-  it('names only panes of the Inbox terminal', async () => {
-    const references = new TerminalReferences(folder, counter())
+  it('names only running panes of the Inbox terminal', async () => {
+    const references = attached()
     await expect(references.create('session-1:tab:t:pane:pane-1', 'x')).rejects.toThrow(/Inbox terminal/)
     await expect(references.create(`${PANE}\n`, 'x')).rejects.toThrow()
+    await expect(references.create(`${PANE}-none`, 'x')).rejects.toThrow(/not running/)
+    await expect(new TerminalReferences(folder, counter()).create(PANE, 'x')).rejects.toThrow(/not running/)
     expect(await references.resolve('not a ref')).toBeUndefined()
   })
 
   it('keeps the newest refs only', async () => {
-    const random = counter()
-    const entries = Array.from({ length: TERMINAL_REFERENCE_LIMIT }, (_, index) => ({
-      ref: terminalRefFrom(random(TERMINAL_REF_LENGTH)),
-      terminalId: `${PANE}-${index}`,
-      title: 'pane',
-      createdAt: index,
-    }))
-    const file = join(folder, TERMINAL_REFERENCES_FILE)
-    await fs.writeFile(file, JSON.stringify({ version: TERMINAL_REFERENCES_VERSION, references: entries }))
-
-    const references = new TerminalReferences(folder, random)
-    const newest = await references.create(PANE, 'newest')
-    expect(await references.resolve(entries[0]!.ref)).toBeUndefined()
-    expect(JSON.parse(await fs.readFile(file, 'utf8')).references).toHaveLength(TERMINAL_REFERENCE_LIMIT)
-
-    const reopened = new TerminalReferences(folder)
-    expect(await reopened.resolve(entries[0]!.ref)).toBeUndefined()
-    expect(await reopened.resolve(entries[1]!.ref)).toEqual({ terminalId: entries[1]!.terminalId, title: 'pane' })
-    expect(await reopened.resolve(newest.ref)).toEqual({ terminalId: PANE, title: 'newest' })
+    const references = attached()
+    const panes = Array.from({ length: TERMINAL_REFERENCE_LIMIT + 1 }, (_, index) => `${PANE}-${index}`)
+    for (const pane of panes) shells.set(pane, `shell-${pane}`)
+    const refs = []
+    for (const pane of panes) refs.push((await references.create(pane, 'pane')).ref)
+    expect(await references.resolve(refs[0]!)).toBeUndefined()
+    expect(await references.resolve(refs[1]!)).toEqual({ terminalId: panes[1], title: 'pane' })
   })
 
-  it('ignores a damaged file', async () => {
-    await fs.writeFile(join(folder, TERMINAL_REFERENCES_FILE), '{"references":[{"ref":"../x","terminalId":"y"}, 5]}')
-    const references = new TerminalReferences(folder, counter())
+  it('keeps nothing between runs and removes the file earlier versions kept', async () => {
+    const file = join(folder, TERMINAL_REFERENCES_FILE)
+    await fs.writeFile(file, JSON.stringify({ version: 2, references: [{ ref: 'k3m9x2qavw', terminalId: PANE, title: 'old', createdAt: 1 }] }))
+    const references = attached()
     expect(await references.resolve('k3m9x2qavw')).toBeUndefined()
-    expect((await references.create(PANE, 'a')).ref).toMatch(/^[a-z2-9]{10}$/)
+    await expect(references.read('k3m9x2qavw', 10)).rejects.toThrow(/dragged into a message/)
+    await expect(fs.access(file)).rejects.toThrow()
+    await references.create(PANE, 'new')
+    await expect(fs.access(file)).rejects.toThrow()
   })
 
   it('asks the window for the pane a ref names and passes on its answer', async () => {
-    const references = new TerminalReferences(folder, counter())
-    const sent = await attached(references)
+    const sent: TerminalReadRequest[] = []
+    const references = attached(sent)
     const { ref } = await references.create(PANE, 'Dev server')
-    const reading = references.read(ref, 50)
+    const read = references.read(ref, 50)
     await vi.waitFor(() => expect(sent).toHaveLength(1))
     expect(sent[0]).toMatchObject({ terminalId: PANE, lines: 50 })
-    references.answer({ requestId: sent[0]!.requestId, reading: { title: 'Dev server', directory: null, running: true, totalLines: 1, text: 'ok' } })
-    await expect(reading).resolves.toMatchObject({ text: 'ok' })
+    references.answer({ requestId: sent[0]!.requestId, reading: reading('ok') })
+    await expect(read).resolves.toMatchObject({ text: 'ok' })
 
     const failing = references.read(ref, 50)
     await vi.waitFor(() => expect(sent).toHaveLength(2))
@@ -154,70 +151,89 @@ describe('TerminalReferences', () => {
     references.answer({ requestId: 'nobody', error: 'x' })
   })
 
-  it('refuses a ref it did not make, with no window, and too many at once', async () => {
-    const references = new TerminalReferences(folder, counter())
-    await expect(references.read('k3m9x2qavw', 10)).rejects.toThrow(/dragged into a message/)
-    const { ref } = await references.create(PANE, 'a')
-    await expect(references.read(ref, 10)).rejects.toThrow(/starting/)
-    await attached(references, [], false)
-    await expect(references.read(ref, 10)).rejects.toThrow(/no window/)
+  it('still reads a shell that exited, which is the one the person shared', async () => {
+    const sent: TerminalReadRequest[] = []
+    const references = attached(sent)
+    const { ref } = await references.create(PANE, 'build')
+    // An exited shell keeps its ID until it is restarted.
+    const read = references.read(ref, 10)
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    references.answer({ requestId: sent[0]!.requestId, reading: { ...reading('done'), running: false } })
+    await expect(read).resolves.toMatchObject({ text: 'done', running: false })
+  })
 
-    const busy = new TerminalReferences(folder, counter())
-    await attached(busy)
-    const waiting = Array.from({ length: TERMINAL_READ_PENDING_LIMIT }, () => busy.read(ref, 10))
-    await vi.waitFor(async () => expect(await busy.read(ref, 10).catch((error: Error) => error.message)).toMatch(/other terminals/))
+  it('refuses a ref it did not make, with no window, and too many at once', async () => {
+    const unattached = new TerminalReferences(folder, counter())
+    await expect(unattached.read('k3m9x2qavw', 10)).rejects.toThrow(/dragged into a message/)
+    const noWindow = attached([], false)
+    const { ref } = await noWindow.create(PANE, 'a')
+    await expect(noWindow.read(ref, 10)).rejects.toThrow(/no window/)
+
+    const busy = attached()
+    const busyRef = (await busy.create(PANE, 'a')).ref
+    const waiting = Array.from({ length: TERMINAL_READ_PENDING_LIMIT }, () => busy.read(busyRef, 10))
+    await vi.waitFor(async () => expect(await busy.read(busyRef, 10).catch((error: Error) => error.message)).toMatch(/other terminals/))
     void Promise.allSettled(waiting)
   })
 
   it('gives up on a window that does not answer', async () => {
-    const references = new TerminalReferences(folder, counter())
-    await attached(references)
+    const references = attached()
     const { ref } = await references.create(PANE, 'a')
     vi.useFakeTimers()
-    const reading = references.read(ref, 10)
-    const outcome = expect(reading).rejects.toThrow(/did not answer/)
+    const read = references.read(ref, 10)
+    const outcome = expect(read).rejects.toThrow(/did not answer/)
     await vi.advanceTimersByTimeAsync(TERMINAL_READ_TIMEOUT_MS)
     await outcome
   })
 
-  it('forgets the refs of a closed pane, so a later pane is not read through them', async () => {
-    const references = new TerminalReferences(folder, counter())
-    const sent = await attached(references)
+  it('forgets the refs of a closed pane', async () => {
+    const sent: TerminalReadRequest[] = []
+    const references = attached(sent)
     const closed = await references.create(PANE, 'shared')
     const other = await references.create(`${PANE}x`, 'other')
-    await references.forget([PANE])
+    references.forget([PANE])
     await expect(references.read(closed.ref, 10)).rejects.toThrow(/dragged into a message/)
     expect(sent).toHaveLength(0)
-    expect(await new TerminalReferences(folder, counter()).resolve(closed.ref)).toBeUndefined()
     expect(await references.resolve(other.ref)).toMatchObject({ terminalId: `${PANE}x` })
   })
 
-  it('reads nothing until the window says which panes it brought back, and forgets the refs of all others', async () => {
-    const earlier = new TerminalReferences(folder, counter())
-    const kept = await earlier.create(PANE, 'kept')
-    const gone = await earlier.create(`${PANE}x`, 'gone')
-
-    const references = new TerminalReferences(folder, counter())
+  it('does not read a new shell of the pane through a ref made for an earlier one (restart)', async () => {
     const sent: TerminalReadRequest[] = []
-    references.attach({ send: (request) => { sent.push(request); return true }, now: () => 1000 })
-    await expect(references.read(kept.ref, 10)).rejects.toThrow(/starting/)
-    await references.retain([PANE])
-    expect(await references.resolve(gone.ref)).toBeUndefined()
-    expect(await new TerminalReferences(folder, counter()).resolve(gone.ref)).toBeUndefined()
-    void references.read(kept.ref, 10).catch(() => undefined)
-    await vi.waitFor(() => expect(sent).toHaveLength(1))
-    expect(sent[0]).toMatchObject({ terminalId: PANE })
-    references.answer({ requestId: sent[0]!.requestId, error: 'done' })
+    const references = attached(sent)
+    const shared = await references.create(PANE, 'shared')
+    shells.set(PANE, 'shell-2')
+    await expect(references.read(shared.ref, 10)).rejects.toThrow(/restarted/)
+    expect(await references.resolve(shared.ref)).toBeUndefined()
+    expect(sent).toHaveLength(0)
+    // Back to the first shell ID or not, the forgotten ref stays forgotten.
+    shells.set(PANE, 'shell-1')
+    expect(await references.resolve(shared.ref)).toBeUndefined()
+
+    // Dragging the pane in again shares the new shell under a new ref.
+    shells.set(PANE, 'shell-2')
+    const again = await references.create(PANE, 'shared')
+    expect(again.ref).not.toBe(shared.ref)
+    expect(await references.resolve(again.ref)).toMatchObject({ terminalId: PANE })
   })
 
-  it('drops refs written before panes had keys of their own, which may already name a replacement pane', async () => {
-    await fs.writeFile(join(folder, TERMINAL_REFERENCES_FILE), JSON.stringify({ version: 1, references: [{ ref: 'k3m9x2qavw', terminalId: PANE, title: 'old', createdAt: 1 }] }))
-    const references = new TerminalReferences(folder, counter())
-    await attached(references)
-    expect(await references.resolve('k3m9x2qavw')).toBeUndefined()
-    const { ref } = await references.create(PANE, 'new')
-    const stored = JSON.parse(await fs.readFile(join(folder, TERMINAL_REFERENCES_FILE), 'utf8'))
-    expect(stored).toMatchObject({ version: 2, references: [{ ref }] })
-    expect(await new TerminalReferences(folder, counter()).resolve(ref)).toMatchObject({ terminalId: PANE })
+  it('does not read a pane whose shell went with a WSL distribution change', async () => {
+    const references = attached()
+    const { ref } = await references.create(PANE, 'shared')
+    shells.delete(PANE)
+    await expect(references.read(ref, 10)).rejects.toThrow(/restarted/)
+    shells.set(PANE, 'shell-other-distro')
+    await expect(references.read(ref, 10)).rejects.toThrow(/restarted/)
+  })
+
+  it('drops an answer read from a shell that replaced the shared one while it was asked', async () => {
+    const sent: TerminalReadRequest[] = []
+    const references = attached(sent)
+    const { ref } = await references.create(PANE, 'shared')
+    const read = references.read(ref, 10)
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    shells.set(PANE, 'shell-2')
+    references.answer({ requestId: sent[0]!.requestId, reading: reading('SECRET-FROM-NEW-SHELL') })
+    await expect(read).rejects.toThrow(/restarted while it was being read/)
+    expect(await references.resolve(ref)).toBeUndefined()
   })
 })

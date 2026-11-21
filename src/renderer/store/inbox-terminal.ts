@@ -402,8 +402,6 @@ export const useInboxTerminal = create<Store>((set, get) => {
     },
 
     init: () => {
-      // Panes given to agents before this run name panes that may be gone; main keeps only the ones still here.
-      void window.api.terminalReferences.retain({ terminalIds: get().layout.panes.map((pane) => pane.terminalId) }).catch(() => undefined)
       const stopExits = window.api.pty.onExit((info) => get().paneExited(info))
       const stopAgents = window.api.agentTerminals.onOpen((request) => { void get().openForAgent(request) })
       const stopReads = window.api.terminalReferences.onRead((request) => get().answerRead(request))

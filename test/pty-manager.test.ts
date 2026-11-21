@@ -247,6 +247,27 @@ describe('PtyManager runtime terminal identities', () => {
     expect(manager.status('pane-a')).toBe('running')
   })
 
+  it('names each shell with its own ID, kept after it exits and replaced by a restart', () => {
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+    const source = sourceSession()
+    expect(manager.shellId('pane-a')).toBeUndefined()
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
+    const first = manager.shellId('pane-a')
+    expect(first).toMatch(/^[0-9a-f-]{36}$/)
+    expect(manager.shellId('pane-b')).not.toBe(first)
+
+    // Reattaching a view keeps the shell; an exited shell is still the same one.
+    manager.ensure('pane-a', source, { cols: 90, rows: 24 }, palette)
+    ptyMock.children.get('pane-1')?.exitListener?.({ exitCode: 0 })
+    expect(manager.shellId('pane-a')).toBe(first)
+
+    manager.restart('pane-a', source, { cols: 80, rows: 24 }, palette)
+    expect(manager.shellId('pane-a')).not.toBe(first)
+    manager.disposeForSourceSession(source.id)
+    expect(manager.shellId('pane-a')).toBeUndefined()
+  })
+
   it('restarts a pane into the launch directory it is given', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })

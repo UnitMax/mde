@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { nativeLoginShell } from '../native-environment'
 import { macTerminalLang } from './locale'
@@ -20,6 +21,8 @@ import { resolveWindowsShell, resolveWslExecutable } from '../windows-executable
 
 interface PtySession {
   pty: IPty
+  /** Random and new for every shell started, also under the same terminal ID; see `shellId`. */
+  shellId: string
   sourceSessionId: string
   status: PtyStatus
   currentDirectory: string | null
@@ -141,6 +144,14 @@ export class PtyManager {
     return this.directoryStore?.get(terminalId, session)
   }
 
+  /**
+   * Which shell a terminal has now: a random ID made when it started, kept after it exits and replaced by a
+   * restart, so something tied to what one shell showed can tell when a later one took its terminal ID.
+   */
+  shellId(terminalId: string): string | undefined {
+    return this.sessions.get(terminalId)?.shellId
+  }
+
   status(terminalId: string): PtyStatus {
     return this.sessions.get(terminalId)?.status ?? 'none'
   }
@@ -245,6 +256,7 @@ export class PtyManager {
 
     this.sessions.set(terminalId, {
       pty: child,
+      shellId: randomUUID(),
       sourceSessionId: session.id,
       status: 'running',
       currentDirectory,

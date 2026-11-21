@@ -23,10 +23,9 @@ const stored = (): unknown => JSON.parse(localStorage.getItem(INBOX_TERMINAL_LAY
 const exit = (terminalId: string, sessionId = 'inbox-terminal'): PtyExitInfo => ({ terminalId, sessionId, exitCode: 0 }) as PtyExitInfo
 
 const forget = vi.fn(async (_req: { terminalIds: string[] }) => {})
-const retain = vi.fn(async (_req: { terminalIds: string[] }) => {})
 /** Main's API as a test gives it, with the calls that keep terminal refs to their panes. */
 function stubApi(api: Record<string, Record<string, unknown>>): void {
-  vi.stubGlobal('api', { ...api, terminalReferences: { forget, retain, ...api.terminalReferences } })
+  vi.stubGlobal('api', { ...api, terminalReferences: { forget, ...api.terminalReferences } })
 }
 
 async function load() {
@@ -42,7 +41,6 @@ beforeEach(() => {
   focus.mockClear()
   disposeScreen.mockClear()
   forget.mockClear()
-  retain.mockClear()
   stubApi({})
   vi.useFakeTimers()
 })
@@ -219,7 +217,6 @@ describe('the Inbox terminal store', () => {
       stubApi({ pty: { onExit }, agentTerminals: { onOpen: vi.fn(() => stopAgents) }, terminalReferences: { onRead: vi.fn(() => stopReads) } })
       store.getState().splitPane(ID(1), 'right')
       const unsubscribe = store.getState().init()
-      expect(retain).toHaveBeenCalledWith({ terminalIds: [ID(1), ID(2)] })
       onExit.mock.calls[0]![0](exit(ID(2)))
       expect(store.getState().layout.panes).toHaveLength(1)
       unsubscribe()
