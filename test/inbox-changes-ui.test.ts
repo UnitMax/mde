@@ -596,7 +596,7 @@ it('shows the terminal for a new thread too: it belongs to no thread', async () 
 
 it('offers to float the terminal, and shows a notice in its place while it floats', async () => {
   const floating = useInboxFloatingTerminal
-  floating.setState({ floating: false, visible: false })
+  floating.setState({ placement: 'sidebar', floating: false, visible: false })
   await sidebar()
   await act(async () => tab('terminal')!.click())
   expect(terminalPanel()?.querySelector('[data-testid="floating-terminal-break-out"]')).not.toBeNull()
@@ -609,7 +609,7 @@ it('offers to float the terminal, and shows a notice in its place while it float
   expect(terminalPanel()?.querySelector('[data-testid="floating-terminal-notice"]')?.textContent).toContain('F11')
   await act(async () => floating.getState().dock())
   expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
-  floating.setState({ floating: false, visible: false })
+  floating.setState({ placement: 'sidebar', floating: false, visible: false })
 })
 
 it('takes the keyboard to the terminal when the tab is clicked, but not when it is reached from the keyboard', async () => {
@@ -905,12 +905,12 @@ describe('Floating menu', () => {
     expect(useInboxView.getState().sidebarFloating).toBe(false)
     expect(container.querySelector('[data-testid="inbox-terminal-panel"]')).not.toBeNull()
     useInboxView.setState({ sidebarFloating: true })
-    useInboxFloatingTerminal.setState({ floating: true, visible: false })
+    useInboxFloatingTerminal.setState({ placement: 'floating', floating: true, visible: false })
     await sidebar()
     await click('[data-testid="inbox-menu-terminal"]')
     expect(useInboxFloatingTerminal.getState().visible).toBe(true)
     expect(useInboxView.getState().sidebarFloating).toBe(true)
-    useInboxFloatingTerminal.setState({ floating: false, visible: false })
+    useInboxFloatingTerminal.setState({ placement: 'sidebar', floating: false, visible: false })
   })
 
   it('offers Files and Terminal, but not changes or tools, on the new-thread page', async () => {

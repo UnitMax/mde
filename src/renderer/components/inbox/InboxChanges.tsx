@@ -7,7 +7,7 @@ import { SidebarFooter } from '@/components/ui/sidebar-footer'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
 import { ScrollStrip } from '@/components/ui/scroll-strip'
-import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
+import { BottomTerminalButton, FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
 import { useInboxTerminal } from '@/store/inbox-terminal'
@@ -647,12 +647,12 @@ export function FilesSection({ session }: { session: DirectoryContext }): JSX.El
 }
 
 /**
- * Brings the Inbox terminal into view. Floating, it shows; otherwise the sidebar shows its Terminal tab, which docks
- * a floating menu card first: the terminal wants the room a docked sidebar has.
+ * Brings the Inbox terminal into view. Floating or at the bottom, it shows; otherwise the sidebar shows its Terminal
+ * tab, which docks a floating menu card first: the terminal wants the room a docked sidebar has.
  */
 export function showInboxTerminal(focus: boolean): void {
   const floating = useInboxFloatingTerminal.getState()
-  if (floating.floating) {
+  if (floating.placement !== 'sidebar') {
     floating.show()
     return
   }
@@ -798,7 +798,7 @@ function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; bra
  * one, and it is shown with the new-thread page as well.
  */
 function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
-  const floating = useInboxFloatingTerminal((s) => s.floating)
+  const away = useInboxFloatingTerminal((s) => s.placement !== 'sidebar')
   return (
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
@@ -810,10 +810,10 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
         aria-labelledby="inbox-terminal-tab"
         className="flex min-h-0 flex-1 flex-col border-t border-line"
       >
-        {floating ? <FloatingTerminalNotice /> : <InboxTerminal />}
+        {away ? <FloatingTerminalNotice /> : <InboxTerminal />}
       </div>
       <SidebarFooter actions={<SidebarActions />}>
-        {!floating && <FloatTerminalButton />}
+        {!away && <><BottomTerminalButton /><FloatTerminalButton /></>}
       </SidebarFooter>
     </aside>
   )
@@ -844,13 +844,12 @@ function BrowserAside({ threadId }: { threadId?: string }): JSX.Element {
 
 /**
  * "Open in Terminal" from the Files tree: a new pane of the Inbox terminal, starting in that folder, and the
- * terminal brought into view. Floating, the pane goes beside the last one; in the narrow sidebar, below it.
+ * terminal brought into view. Floating or at the bottom, the pane goes beside the last one; in the narrow sidebar, below it.
  */
 async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryContext): Promise<void> {
-  const floating = useInboxFloatingTerminal.getState()
-  await useInboxTerminal.getState().openInFolder(folder, where, floating.floating ? 'right' : 'bottom')
-  if (floating.floating) floating.show()
-  else showInboxTerminal(false)
+  const wide = useInboxFloatingTerminal.getState().placement !== 'sidebar'
+  await useInboxTerminal.getState().openInFolder(folder, where, wide ? 'right' : 'bottom')
+  showInboxTerminal(false)
 }
 
 /**

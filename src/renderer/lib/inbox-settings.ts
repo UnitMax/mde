@@ -289,26 +289,49 @@ export function saveInboxTerminalLayout(value: StoredTerminalLayout): void {
   }
 }
 
-/** Whether the Inbox's terminal floats over the conversation, and where its window was left. */
+/**
+ * Where the Inbox's terminal is: a tab of the right-hand sidebar, a panel along the bottom of the conversation, or a
+ * window floating over everything under the title bar.
+ */
+export type InboxTerminalPlacement = 'sidebar' | 'bottom' | 'floating'
+
+/** The bottom panel's height: never less than this, and never so tall the conversation above gets under its minimum. */
+export const INBOX_BOTTOM_TERMINAL_MIN_HEIGHT = 120
+export const INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT = 300
+export const INBOX_CONVERSATION_MIN_HEIGHT = 200
+
+/** Where the Inbox's terminal is, where its floating window was left, and how tall its bottom panel is. */
 export interface StoredFloatingTerminal {
-  floating: boolean
+  placement: InboxTerminalPlacement
   /** Null until the window has been moved or resized: it then opens in its default place. */
   rect: FloatingRect | null
   maximized: boolean
+  bottomHeight: number
 }
 
-export const DEFAULT_FLOATING_TERMINAL: StoredFloatingTerminal = { floating: false, rect: null, maximized: false }
+export const DEFAULT_FLOATING_TERMINAL: StoredFloatingTerminal = {
+  placement: 'sidebar',
+  rect: null,
+  maximized: false,
+  bottomHeight: INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT,
+}
+
+const PLACEMENTS: readonly InboxTerminalPlacement[] = ['sidebar', 'bottom', 'floating']
 
 export function parseStoredFloatingTerminal(raw: string | null): StoredFloatingTerminal {
   if (!raw) return DEFAULT_FLOATING_TERMINAL
   try {
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== 'object') return DEFAULT_FLOATING_TERMINAL
-    const { floating, rect, maximized } = value as Record<string, unknown>
+    const { placement, floating, rect, maximized, bottomHeight } = value as Record<string, unknown>
     return {
-      floating: floating === true,
+      // Before the bottom panel there was only `floating: true`.
+      placement: PLACEMENTS.find((item) => item === placement) ?? (floating === true ? 'floating' : 'sidebar'),
       rect: isFloatingRect(rect) ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
       maximized: maximized === true,
+      bottomHeight: typeof bottomHeight === 'number' && Number.isFinite(bottomHeight)
+        ? Math.max(INBOX_BOTTOM_TERMINAL_MIN_HEIGHT, Math.round(bottomHeight))
+        : INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT,
     }
   } catch {
     return DEFAULT_FLOATING_TERMINAL

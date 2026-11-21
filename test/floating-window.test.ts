@@ -103,13 +103,22 @@ describe('stored floating terminal', () => {
     expect(parseStoredFloatingTerminal('')).toEqual(DEFAULT_FLOATING_TERMINAL)
     expect(parseStoredFloatingTerminal('{not json')).toEqual(DEFAULT_FLOATING_TERMINAL)
     expect(parseStoredFloatingTerminal('7')).toEqual(DEFAULT_FLOATING_TERMINAL)
-    expect(DEFAULT_FLOATING_TERMINAL).toEqual({ floating: false, rect: null, maximized: false })
+    expect(DEFAULT_FLOATING_TERMINAL).toEqual({ placement: 'sidebar', rect: null, maximized: false, bottomHeight: 300 })
   })
 
   it('reads what was saved, and drops a window rectangle that is not one', () => {
-    expect(parseStoredFloatingTerminal(JSON.stringify({ floating: true, rect: start, maximized: true }))).toEqual({ floating: true, rect: start, maximized: true })
-    expect(parseStoredFloatingTerminal(JSON.stringify({ floating: 'yes', rect: { x: 1, y: 2, width: 0, height: 5 }, maximized: 1 }))).toEqual(DEFAULT_FLOATING_TERMINAL)
-    expect(parseStoredFloatingTerminal(JSON.stringify({ floating: true, rect: { ...start, extra: 'x' } })).rect).toEqual(start)
+    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'floating', rect: start, maximized: true, bottomHeight: 420 })))
+      .toEqual({ placement: 'floating', rect: start, maximized: true, bottomHeight: 420 })
+    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'top', floating: 'yes', rect: { x: 1, y: 2, width: 0, height: 5 }, maximized: 1, bottomHeight: 'tall' }))).toEqual(DEFAULT_FLOATING_TERMINAL)
+    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'floating', rect: { ...start, extra: 'x' } })).rect).toEqual(start)
+  })
+
+  it('puts the terminal at the bottom when it was left there, never shorter than the minimum', () => {
+    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'bottom', bottomHeight: 10 }))).toMatchObject({ placement: 'bottom', bottomHeight: 120 })
+  })
+
+  it('reads the older `floating: true` as floating', () => {
+    expect(parseStoredFloatingTerminal(JSON.stringify({ floating: true, rect: null, maximized: false })).placement).toBe('floating')
   })
 
   it('accepts only finite, positive-size rectangles', () => {

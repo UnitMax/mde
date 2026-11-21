@@ -60,8 +60,8 @@ export function getKeyboardShortcutGroups(
         {
           id: 'inbox-floating-terminal',
           keys: ['F11'],
-          description: 'Show or hide the floating Inbox terminal.',
-          note: 'Until the terminal has been floated out of the sidebar, F11 puts the window in full screen.'
+          description: 'Show or hide the Inbox terminal while it floats or sits in the bottom panel.',
+          note: 'While the terminal is in the sidebar, F11 puts the window in full screen.'
         },
         { id: 'zoom', keys: [`${primaryModifier}+Plus`, `${primaryModifier}+Minus`, `${primaryModifier}+0`], description: 'Zoom in, zoom out, reset zoom.' },
         { id: 'rename-session-or-tab', keys: ['F2'], description: 'Rename the focused session row or terminal tab.' }

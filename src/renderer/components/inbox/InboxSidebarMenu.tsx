@@ -154,7 +154,7 @@ export function InboxSidebarMenu({
   const messages = useInboxChat((s) => (threadId ? s.threads[threadId]?.messages : undefined))
   const tally = useMemo(() => (threadId ? toolTally(messages ?? []) : null), [threadId, messages])
   const changes = useInboxChanges((s) => (threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined))
-  const floatingTerminal = useInboxFloatingTerminal((s) => s.floating)
+  const floatingTerminal = useInboxFloatingTerminal((s) => s.placement !== 'sidebar')
   const toggleCollapsed = useWorkspace((s) => s.toggleFileTree)
   const stored = useInboxView((s) => s.floatingSection)
   const sidebarWidth = useInboxView((s) => s.sidebarWidth)
@@ -204,7 +204,7 @@ export function InboxSidebarMenu({
           meta={floatingTerminal
             ? <kbd className="rounded border border-line px-1 font-sans text-[10.5px]">F11</kbd>
             : <PanelRight aria-hidden className="h-3.5 w-3.5" />}
-          title={floatingTerminal ? 'Show the floating terminal (F11)' : 'Dock the sidebar and show its terminal'}
+          title={floatingTerminal ? 'Show the terminal (F11)' : 'Dock the sidebar and show its terminal'}
           onClick={() => showInboxTerminal(true)}
           testId="inbox-menu-terminal"
         />

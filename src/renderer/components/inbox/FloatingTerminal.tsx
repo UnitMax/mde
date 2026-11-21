@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { AppWindow, Maximize2, Minimize2, Minus, PanelRight, Terminal } from 'lucide-react'
+import { AppWindow, Maximize2, Minimize2, Minus, PanelBottom, PanelRight, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -36,9 +36,32 @@ interface Gesture {
 }
 
 /** Puts the terminal back in the sidebar, and gives it the keyboard there. */
-function dockTerminal(): void {
+export function dockTerminal(): void {
   focusInboxTerminalWhenShown()
   useInboxFloatingTerminal.getState().dock()
+}
+
+/** Moves the terminal into the panel below the conversation, and gives it the keyboard there. */
+export function moveTerminalToBottom(): void {
+  focusInboxTerminalWhenShown()
+  useInboxFloatingTerminal.getState().place('bottom')
+}
+
+/** The button that moves the terminal into the panel below the conversation. */
+export function BottomTerminalButton({ testId = 'bottom-terminal-move' }: { testId?: string }): JSX.Element {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0"
+      title="Move terminal to a panel below the conversation (then F11 shows and hides it)"
+      aria-label="Move terminal to the bottom"
+      data-testid={testId}
+      onClick={moveTerminalToBottom}
+    >
+      <PanelBottom className="h-3.5 w-3.5" />
+    </Button>
+  )
 }
 
 /** The button in the sidebar's Terminal tab that lifts the terminal out into a floating window. */
@@ -58,12 +81,13 @@ export function FloatTerminalButton(): JSX.Element {
   )
 }
 
-/** What the sidebar's Terminal tab shows while the terminal floats, since it cannot be in two places. */
+/** What the sidebar's Terminal tab shows while the terminal floats or is at the bottom, since it cannot be in two places. */
 export function FloatingTerminalNotice(): JSX.Element {
   const visible = useInboxFloatingTerminal((state) => state.visible)
+  const bottom = useInboxFloatingTerminal((state) => state.placement === 'bottom')
   return (
     <div data-testid="floating-terminal-notice" role="status" className="flex flex-col items-start gap-3 p-4 text-[12px] leading-snug text-fg-muted">
-      <p>The terminal is floating over the conversation. Press F11 to show or hide it.</p>
+      <p>{bottom ? 'The terminal is in the panel below the conversation.' : 'The terminal is floating over the conversation.'} Press F11 to show or hide it.</p>
       <div className="flex flex-wrap gap-2">
         <Button
           variant="secondary"
@@ -173,6 +197,7 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
       >
         <Terminal className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-subtle">Terminal</span>
+        <BottomTerminalButton testId="floating-terminal-bottom" />
         <Button
           variant="ghost"
           size="icon-sm"
@@ -239,13 +264,15 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
  */
 export function FloatingTerminal(): JSX.Element | null {
   const floating = useInboxFloatingTerminal((state) => state.floating)
+  const outside = useInboxFloatingTerminal((state) => state.placement !== 'sidebar')
   const visible = useInboxFloatingTerminal((state) => state.visible)
   const layer = useRef<HTMLDivElement>(null)
   const [bounds, setBounds] = useState<FloatingBounds | null>(null)
 
-  // While the terminal floats, the main process hands F11 to it rather than putting the window in full screen.
+  // While the terminal floats or is at the bottom, the main process hands F11 to it (to show and hide it) rather than
+  // putting the window in full screen.
   useEffect(() => {
-    if (!floating) return
+    if (!outside) return
     const api = window.api.floatingTerminal
     void api.setActive(true)
     const stop = api.onToggle(() => useInboxFloatingTerminal.getState().toggle())
@@ -253,7 +280,7 @@ export function FloatingTerminal(): JSX.Element | null {
       stop()
       void api.setActive(false)
     }
-  }, [floating])
+  }, [outside])
 
   useLayoutEffect(() => {
     const element = layer.current

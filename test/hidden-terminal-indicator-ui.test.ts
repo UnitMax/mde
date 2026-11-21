@@ -10,12 +10,12 @@ import { useInboxTerminal } from '../src/renderer/store/inbox-terminal'
 let root: Root
 let container: HTMLDivElement
 const indicator = (): HTMLButtonElement | null => container.querySelector('[data-testid="hidden-terminal-indicator"]')
-const set = (state: { floating: boolean; visible: boolean }): Promise<void> => act(async () => useInboxFloatingTerminal.setState(state))
+const set = (state: { floating: boolean; visible: boolean }): Promise<void> => act(async () => useInboxFloatingTerminal.setState({ ...state, placement: state.floating ? 'floating' : 'sidebar' }))
 
 beforeEach(async () => {
   localStorage.clear()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  useInboxFloatingTerminal.setState({ floating: false, visible: false, rect: null, maximized: false })
+  useInboxFloatingTerminal.setState({ placement: 'sidebar', floating: false, visible: false, rect: null, maximized: false })
   useInboxTerminal.setState({ agentArrivals: 0, agentCommands: {} })
   container = document.createElement('div')
   document.body.append(container)
@@ -53,7 +53,7 @@ describe('the hidden floating terminal indicator', () => {
     await act(async () => useInboxTerminal.setState({ layout: { ...layout, panes: [pane, { ...pane, terminalId: 'second' }] } }))
     await set({ floating: true, visible: false })
     expect(indicator()!.textContent).toContain('2 terminals hidden')
-    expect(indicator()!.title).toBe('Show the floating terminals (F11)')
+    expect(indicator()!.title).toBe('Show the terminals (F11)')
     await act(async () => useInboxTerminal.setState({ layout }))
   })
 

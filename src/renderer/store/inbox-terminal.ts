@@ -227,7 +227,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
       const workspace = useWorkspace.getState()
       if (workspace.activeWorkspaceView !== 'inbox') workspace.setWorkspaceView('inbox')
       const floating = useInboxFloatingTerminal.getState()
-      if (floating.floating) floating.show()
+      if (floating.placement !== 'sidebar') floating.show()
       else {
         useWorkspace.setState({ fileTreeCollapsed: false })
         useInboxChanges.getState().setTab('terminal')
@@ -242,9 +242,9 @@ export const useInboxTerminal = create<Store>((set, get) => {
       let claimed: string | null = null
       try {
         await readySession()
-        // Floating, the pane goes beside the last one; in the narrow sidebar, below it. It is placed by the last
+        // Floating or at the bottom, the pane goes beside the last one; in the narrow sidebar, below it. It is placed by the last
         // pane rather than the one in use, so it never lands in the middle of what the person is working in.
-        const side: TerminalSplitSide = useInboxFloatingTerminal.getState().floating ? 'right' : 'bottom'
+        const side: TerminalSplitSide = useInboxFloatingTerminal.getState().placement !== 'sidebar' ? 'right' : 'bottom'
         const previous = get().layout
         // Panes other requests are still opening count too: each is checked before main starts its shell, and main
         // tells the agent it is open as soon as it has started.
