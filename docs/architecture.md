@@ -737,7 +737,13 @@ the thread header, and the card's **Dock as sidebar** row turns it back. The cho
 (`mde.inbox-sidebar-floating`), off by default. The card lists the project, Open in File Explorer (and VS Code where
 offered), Files, Terminal and Browser and, for a thread, its branch (opening the Git graph), Changes with the lines added
 and removed, Tools with how many actions (commands and MCP calls) and failures, and Permissions with how many
-approvals the project has saved (only while it has any).
+approvals the project has saved (only while it has any), and Lineage with how many threads are in the thread's fork
+tree (only for a thread that has forks or was forked from another). Lineage opens a dialog drawing that tree
+(`lib/fork-lineage.ts`, `components/inbox/ForkLineageDialog.tsx`), built from the recorded `forkedFrom` alone: from the
+thread it all began with (or, when that one was removed, a placeholder for it, so its other forks are still found) down
+through every fork of a fork, oldest first, each with its state, Archived when it is, and when it was made. The open
+thread is marked and has the keyboard first; the arrows move, and choosing a thread opens it. Only the floating card has
+it; the docked sidebar does not.
 
 Files, Changes, Tools and Permissions open out below their row, one at a time (`floatingSection` in `useInboxView`, not kept
 between runs): the file tree without its panel chrome, the changed files (each opening its diff over the

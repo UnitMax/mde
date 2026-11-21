@@ -146,6 +146,7 @@
     "src/renderer/lib/provider-mark.ts",
     "src/renderer/lib/input-modality.ts",
     "src/renderer/lib/chat-timeline.ts",
+    "src/renderer/lib/fork-lineage.ts",
     "src/renderer/lib/chat-find.ts",
     "src/renderer/lib/inbox-search.ts",
     "src/renderer/lib/alerts.ts",

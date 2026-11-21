@@ -913,6 +913,30 @@ describe('Floating menu', () => {
     useInboxFloatingTerminal.setState({ placement: 'sidebar', floating: false, visible: false })
   })
 
+  it('opens the fork lineage as a tree and opens the thread chosen there', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    // A thread with no forks has no lineage row.
+    expect(container.querySelector('[data-testid="inbox-menu-lineage"]')).toBeNull()
+    const fork: InboxThread = { ...thread, id: 'ses_fork', title: 'Try another way', createdAt: 2, forkedFrom: thread.id }
+    const deeper: InboxThread = { ...thread, id: 'ses_deeper', title: 'And again', createdAt: 3, forkedFrom: fork.id, archived: true }
+    await act(async () => useWorkspace.setState({ inboxThreads: [thread, fork, deeper] }))
+    expect(container.querySelector('[data-testid="inbox-menu-lineage"]')?.textContent).toContain('3 threads')
+    await click('[data-testid="inbox-menu-lineage"]')
+    const dialog = document.body.querySelector('[data-testid="fork-lineage-dialog"]')!
+    const items = Array.from(dialog.querySelectorAll('[role="treeitem"]'))
+    expect(items.map((item) => item.getAttribute('aria-level'))).toEqual(['1', '2', '3'])
+    expect(items[0]?.getAttribute('aria-current')).toBe('true')
+    expect(items[0]?.textContent).toContain('This thread')
+    expect(items[2]?.textContent).toContain('Archived')
+    expect(document.activeElement).toBe(items[0])
+    await act(async () => { items[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
+    expect(document.activeElement).toBe(items[1])
+    await act(async () => (items[1] as HTMLElement).click())
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe(fork.id)
+    expect(document.body.querySelector('[data-testid="fork-lineage-dialog"]')).toBeNull()
+  })
+
   it('offers Files and Terminal, but not changes or tools, on the new-thread page', async () => {
     useInboxView.setState({ sidebarFloating: true })
     await render(createElement(InboxSidebar, { session }))

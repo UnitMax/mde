@@ -1,10 +1,11 @@
-import { useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { ChangesSection, FilesSection, showInboxTerminal } from '@/components/inbox/InboxChanges'
+import { ForkLineageDialog, useForkLineageCount } from '@/components/inbox/ForkLineageDialog'
 import { InboxToolCalls } from '@/components/inbox/InboxToolCalls'
 import { InboxSavedPermissions } from '@/components/inbox/InboxSavedPermissions'
 import { useSavedPermissionCount } from '@/store/inbox-saved-permissions'
 import { usePublishFloatingCardWidth } from '@/components/inbox/use-floating-reserve'
-import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, Globe, PanelRight, PanelRightClose, PanelRightOpen, ShieldCheck, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, GitFork, Globe, PanelRight, PanelRightClose, PanelRightOpen, ShieldCheck, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type { DirectoryContext, InboxThread } from '@shared/types'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { useOpenFolder } from '@/components/OpenFolderButtons'
@@ -160,6 +161,8 @@ export function InboxSidebarMenu({
   const sidebarWidth = useInboxView((s) => s.sidebarWidth)
   const removed = thread?.worktreeRemovedAt !== undefined
   const saved = useSavedPermissionCount(threadId)
+  const lineage = useForkLineageCount(threadId)
+  const [lineageOpen, setLineageOpen] = useState(false)
   const card = useRef<HTMLElement>(null)
   usePublishFloatingCardWidth(card)
   // Changes and Tools belong to a thread; a section that does not apply is shut.
@@ -285,6 +288,20 @@ export function InboxSidebarMenu({
                 {open === 'permissions' && (
                   <Section testId="inbox-menu-permissions-section"><InboxSavedPermissions thread={thread} /></Section>
                 )}
+              </>
+            )}
+            {/* Only for a thread with forks, or forked from another: the tree it belongs to. */}
+            {lineage > 1 && (
+              <>
+                <Row
+                  icon={GitFork}
+                  label="Lineage"
+                  meta={`${lineage} threads`}
+                  title="Show the tree of forks this thread belongs to"
+                  onClick={() => setLineageOpen(true)}
+                  testId="inbox-menu-lineage"
+                />
+                <ForkLineageDialog threadId={threadId} open={lineageOpen} onOpenChange={setLineageOpen} />
               </>
             )}
           </>
