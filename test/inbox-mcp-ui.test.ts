@@ -85,16 +85,20 @@ describe('the MCP chip', () => {
   const open = () => act(async () => { trigger().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
   const row = (name: string): HTMLElement | null => q(`[data-testid="chat-mcp-server-${name}"]`)
 
-  it('is not there while OpenCode has no MCP server for the place, and not when the list cannot be read', async () => {
+  it('hides the chip when the place has no MCP servers', async () => {
     servers = []
     const empty = await chip()
     expect(q('[data-testid="chat-mcp-chip"]', empty)).toBeNull()
     expect(empty.textContent).toBe('')
+  })
 
+  it('hides the chip when OpenCode reports MCP is unsupported', async () => {
     mcp.mockImplementation(async () => ({ servers: [], supported: false }))
     const unsupported = await chip()
     expect(q('[data-testid="chat-mcp-chip"]', unsupported)).toBeNull()
+  })
 
+  it('hides the chip when the chat API has no MCP method', async () => {
     Object.defineProperty(window, 'api', { configurable: true, value: { chat: {} } })
     const missing = await chip()
     expect(q('[data-testid="chat-mcp-chip"]', missing)).toBeNull()
