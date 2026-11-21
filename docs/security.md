@@ -835,6 +835,12 @@ fails, so it gets removed, as also happens when GitHub withdraws an advisory. No
 currently excepted (the `picomatch` GHSA-fc5q-39xc-vjpf exception was removed on
 2026-11-18 after GitHub withdrew that advisory).
 
+The WSL Windows build helper checks the staging directory and its ancestors with Windows Node
+before syncing or deleting build output. It initializes a marker only in an empty directory.
+A nonempty directory requires the existing MDE marker. This guards against accidental build
+directory overrides. Build commands inherit their working directory without inserting the
+override into shell command text.
+
 The release workflow (started by hand on the default branch) runs the full dependency
 audit, tests, license check, typecheck, and packaged-output audit in fresh Windows and
 macOS jobs before uploading ZIP/DMG artifacts and checksums. Build jobs have read-only

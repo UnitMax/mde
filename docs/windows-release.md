@@ -36,7 +36,12 @@ Windows first (see Requirements in the README).
 `npm run build:win:remote` rsyncs the repository to a staging directory under the Windows
 temporary directory and runs the build there using native Windows npm/node with `node-pty`'s
 Windows x64 prebuilt runtime. Set `MDE_WINDOWS_BUILD_DIR` to a Windows-format path to override
-the staging directory. The staging `dist` is emptied before each run, so it only ever holds the
+the default `%TEMP%\mde-winbuild`. Choose a new or empty directory. The helper writes a
+`.mde-build-root` marker on first use and verifies it before syncing or cleaning on later builds.
+If your existing staging folder predates the marker, close the packaged app and rename the
+folder once, or point the override at a fresh directory. Keep the old folder until you have
+checked its contents. Drive roots, home directories, the source checkout, and paths through
+symlinks or junctions are refused. The staging `dist` is emptied before each run, so it only ever holds the
 artifacts of the build you just made. The first build runs `npm ci`; later builds reuse the
 Windows `node_modules` directory until the dependency or native build inputs change.
 
@@ -102,7 +107,7 @@ npm run build:win:remote -- --dir
 
 This creates only `dist/win-unpacked`, skipping ZIP compression while retaining
 the license checks, type checks, application compilation, and package audit.
-After the audit succeeds, the command prints the Windows path to `mde.exe`.
+After the audit succeeds, the command prints the path to `mde.exe` using `%TEMP%` or `%MDE_WINDOWS_BUILD_DIR%`.
 The staging `dist` is still emptied first, including any ZIP from an earlier run.
 
 To also reinstall the cached Windows dependencies, add `--force-deps`; the flags
