@@ -973,11 +973,17 @@ export function requestSessionIds(value: unknown): Map<string, string> {
 }
 
 /** A session's parent (a subagent's session has one) and title; null when the answer is not that session. */
+/**
+ * A session's parent, read for the session asked about. Only a missing or null `parentID` means it has none (a session
+ * a person started); any other value must be a session ID exactly, or the answer is not believed (null), so a broken
+ * answer cannot pass for the top of a chain.
+ */
 export function parseSessionParent(value: unknown, sessionId: string): { parentId: string | null; title: string | null } | null {
   const session = record(data(value, 'a session'))
   if (session?.id !== sessionId) return null
-  const parent = short(session.parentID)
-  return { parentId: parent && /^ses_[A-Za-z0-9_-]{1,200}$/.test(parent) ? parent : null, title: short(session.title, 512) }
+  const parent = session.parentID
+  if (parent !== undefined && parent !== null && (typeof parent !== 'string' || !/^ses_[A-Za-z0-9_-]{1,200}$/.test(parent))) return null
+  return { parentId: typeof parent === 'string' ? parent : null, title: short(session.title, 512) }
 }
 
 /** Only a confirmed child of the recorded thread may supply a subagent's model. */

@@ -1788,6 +1788,29 @@ describe('Inbox chat service', () => {
       service.stop()
     })
 
+    it('believes a session has no parent only when OpenCode leaves the parent out, never for a broken one', async () => {
+      const { service, folder, request } = await started()
+      const answers: Record<string, unknown> = {
+        ses_none: { id: 'ses_none' },
+        ses_null: { id: 'ses_null', parentID: null },
+        ses_number: { id: 'ses_number', parentID: 42 },
+        ses_empty: { id: 'ses_empty', parentID: '' },
+        ses_padded: { id: 'ses_padded', parentID: ' ses_new ' },
+        ses_prefix: { id: 'ses_prefix', parentID: 'msg_new' },
+        ses_long: { id: 'ses_long', parentID: `ses_${'a'.repeat(201)}` },
+        ses_control: { id: 'ses_control', parentID: 'ses_new\u0000' },
+        ses_swapped: { id: 'ses_other', parentID: 'ses_new' },
+      }
+      request.mockImplementation(async (_target: unknown, operation: ServiceOperation, req: ServiceRequest = {}) =>
+        operation === 'session.get' ? { data: answers[req.params?.sessionID ?? ''] } : null)
+      expect(await service.threadOfSession(folder.target, 'ses_none')).toBeNull()
+      expect(await service.threadOfSession(folder.target, 'ses_null')).toBeNull()
+      for (const id of ['ses_number', 'ses_empty', 'ses_padded', 'ses_prefix', 'ses_long', 'ses_control', 'ses_swapped']) {
+        await expect(service.threadOfSession(folder.target, id), id).rejects.toThrow('cannot tell which thread')
+      }
+      service.stop()
+    })
+
     it('passes a subagent\'s request events on to its thread', async () => {
       const { service, events, store } = await started()
       const emit = (type: string, data: Record<string, unknown>) =>

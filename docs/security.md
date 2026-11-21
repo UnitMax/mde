@@ -676,7 +676,8 @@ place where something other than the window can ask the main process to act, so 
   the configuration, and so does its thread. When the caller cannot be told, `create_thread` refuses rather
   than start the thread on the configuration: a call that names no session (OpenCode names it in every call),
   a chain longer than four parents, a session OpenCode cannot read or will not answer about, or a thread of
-  another OpenCode. `open_terminal` goes on without a caller, which there only labels the pane. The session
+  another OpenCode. A chain ends only at a session whose answer carries the ID asked for and leaves `parentID`
+  out (or null); a parent that is not exactly a session ID makes the chain unknown, not ended. `open_terminal` goes on without a caller, which there only labels the pane. The session
   is what OpenCode says, not proof: an agent allowed to run commands could run the bridge itself with any
   session, but such an agent could also reach the web or start OpenCode directly. The mode
   is copied when the thread starts: changing the caller's mode later does not change it, and the new thread
