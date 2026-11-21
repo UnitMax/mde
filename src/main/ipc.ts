@@ -146,6 +146,7 @@ import type {
   ChatSuggestion,
   ChatGoal,
   ChatGoalRequest,
+  ChatSubagentRequest,
   ChatThreadRequest,
   ChatDraftRequest,
   ChatDraft,
@@ -807,6 +808,8 @@ export function registerIpcHandlers(
   handle<ChatFormReplyRequest, void>(IpcChannels.chatFormReply, (req) => chat.replyForm(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatSubscribe, (req) => chat.subscribe(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatUnsubscribe, (req) => chat.unsubscribe(req.threadId))
+  handle<ChatSubagentRequest, void>(IpcChannels.chatWatchSubagent, (req) => chat.watchSubagent(req.threadId, req.sessionId))
+  handle<ChatSubagentRequest, void>(IpcChannels.chatUnwatchSubagent, (req) => chat.unwatchSubagent(req.threadId, req.sessionId))
 
   handle<void, WindowMode>(IpcChannels.windowModeGet, () => miniWindow.mode)
   handle<SetWindowModeRequest, WindowMode>(IpcChannels.windowModeSet, (req) => {

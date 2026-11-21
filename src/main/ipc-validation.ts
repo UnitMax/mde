@@ -321,7 +321,11 @@ export const ipcPayloadValidators = {
   },
   [IpcChannels.chatDrafts]: noPayload,
   [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })), permissionMode: optional(permissionMode) }),
-  [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
+  [IpcChannels.chatMessages]: object({
+    threadId: opencodeSessionId,
+    sessionId: optional(opencodeSessionId),
+    cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)),
+  }),
   [IpcChannels.chatSearch]: object({ query: string(200, true), includeParked: optional((v) => typeof v === 'boolean') }),
   [IpcChannels.chatFiles]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), query: string(300, true), search: optional((v) => typeof v === 'boolean') })(value) &&
     exactlyOnePlace(value),
@@ -370,6 +374,8 @@ export const ipcPayloadValidators = {
   }),
   [IpcChannels.chatSubscribe]: chatThread,
   [IpcChannels.chatUnsubscribe]: chatThread,
+  [IpcChannels.chatWatchSubagent]: object({ threadId: opencodeSessionId, sessionId: opencodeSessionId }),
+  [IpcChannels.chatUnwatchSubagent]: object({ threadId: opencodeSessionId, sessionId: opencodeSessionId }),
   [IpcChannels.windowModeGet]: noPayload,
   [IpcChannels.windowModeSet]: object({ mode: oneOf('normal', 'mini') }),
   [IpcChannels.windowChromeSet]: object({ color: hexColor, symbolColor: hexColor }),

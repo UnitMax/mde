@@ -141,8 +141,10 @@ export interface ActivityRowProps {
   subject?: ReactNode
   /** The small print at the right: a count, a time. */
   meta?: ReactNode
-  /** What the row opens onto. A row without it is not a button. */
+  /** What the row opens onto. A row without it (or `onActivate`) is not a button. */
   detail?: ReactNode
+  /** The row leads somewhere else rather than opening in place, such as a subagent's own conversation. */
+  onActivate?: () => void
   defaultOpen?: boolean
   /** Keeps the row open or shut from the outside, until the person clicks it. */
   open?: boolean
@@ -174,6 +176,7 @@ export function ActivityRow({
   subject,
   meta,
   detail,
+  onActivate,
   defaultOpen = false,
   open: controlled,
   onToggle,
@@ -194,7 +197,7 @@ export function ActivityRow({
     onToggle?.(next)
     if (controlled === undefined) setOwn(next)
   }
-  const expandable = detail !== undefined && detail !== null && detail !== false
+  const expandable = !onActivate && detail !== undefined && detail !== null && detail !== false
   const active = status === 'running' || status === 'pending'
   const bad = failed || status === 'error'
   const line = (
@@ -211,6 +214,12 @@ export function ActivityRow({
       {(subject === undefined || subject === null) && <span className="flex-1" />}
       {meta !== undefined && meta !== null && (
         <span className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-[11.5px] tabular-nums text-fg-subtle">{meta}</span>
+      )}
+      {onActivate && (
+        <ChevronRight
+          aria-hidden
+          className="h-3.5 w-3.5 shrink-0 text-fg-subtle opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100"
+        />
       )}
       {expandable && (
         <ChevronRight
@@ -233,7 +242,16 @@ export function ActivityRow({
       data-failed={bad ? '' : undefined}
       className={cn('min-w-0', active && 'chat-rise', className)}
     >
-      {expandable ? (
+      {onActivate ? (
+        <button
+          type="button"
+          title={title}
+          onClick={onActivate}
+          className={cn(base, 'transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none')}
+        >
+          {line}
+        </button>
+      ) : expandable ? (
         <button
           ref={headerRef}
           type="button"

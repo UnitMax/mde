@@ -1734,6 +1734,9 @@ describe('Inbox chat service', () => {
             ],
           }
           case 'form.list': return { data: [{ id: 'frm_child', sessionID: 'ses_child', title: 'Pick', fields: [] }] }
+          case 'session.message.list':
+            return { data: [{ id: `msg_${req.params?.sessionID}`, type: 'user', time: { created: 1 }, text: `Hello from ${req.params?.sessionID}` }] }
+          case 'session.active': return { data: { ses_child: { type: 'running' } } }
           case 'session.get': {
             const id = req.params?.sessionID
             return id === 'ses_child' ? session('ses_child', 'ses_new', 'Write hello.txt file')
@@ -1808,6 +1811,52 @@ describe('Inbox chat service', () => {
       for (const id of ['ses_number', 'ses_empty', 'ses_padded', 'ses_prefix', 'ses_long', 'ses_control', 'ses_swapped']) {
         await expect(service.threadOfSession(folder.target, id), id).rejects.toThrow('cannot tell which thread')
       }
+      service.stop()
+    })
+
+    it('reads a subagent\'s conversation through its thread, and refuses a session that is not one of its subagents', async () => {
+      const { service, calls } = await started()
+      const child = await service.messages({ threadId: 'ses_new', sessionId: 'ses_child' })
+      expect(child.messages).toMatchObject([{ kind: 'user', text: 'Hello from ses_child' }])
+      expect(child.running).toBe(true)
+      expect(calls.find((call) => call.operation === 'session.message.list')?.request.params).toEqual({ sessionID: 'ses_child' })
+      // Without the thread's extras: no held messages, totals or revert.
+      expect(calls.some((call) => call.operation === 'session.inbox.list')).toBe(false)
+      expect(child).not.toHaveProperty('pending')
+      expect((await service.messages({ threadId: 'ses_new', sessionId: 'ses_grand' })).messages).toMatchObject([{ text: 'Hello from ses_grand' }])
+      calls.length = 0
+      for (const sessionId of ['ses_stranger', 'ses_l4', 'ses_missing']) {
+        await expect(service.messages({ threadId: 'ses_new', sessionId })).rejects.toThrow()
+      }
+      expect(calls.some((call) => call.operation === 'session.message.list')).toBe(false)
+      service.stop()
+    })
+
+    it('passes on the changes of a watched subagent only, once it is known to belong to the thread', async () => {
+      const { service, events } = await started()
+      const emit = (type: string, data: Record<string, unknown>) =>
+        (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void }).onEvent({ type, data }, wsl)
+      await expect(service.watchSubagent('ses_new', 'ses_stranger')).rejects.toThrow('not from this thread')
+      await expect(service.watchSubagent('ses_new', 'ses_new')).rejects.toThrow()
+      emit('session.step.ended', { sessionID: 'ses_child' })
+      expect(events.filter((event) => event.type === 'subagent')).toEqual([])
+      await service.watchSubagent('ses_new', 'ses_child')
+      await service.watchSubagent('ses_new', 'ses_child')
+      emit('session.step.ended', { sessionID: 'ses_child' })
+      emit('session.execution.succeeded', { sessionID: 'ses_child' })
+      emit('session.step.ended', { sessionID: 'ses_stranger' })
+      expect(events.filter((event) => event.type === 'subagent')).toEqual([
+        { type: 'subagent', threadId: 'ses_new', sessionId: 'ses_child' },
+        { type: 'subagent', threadId: 'ses_new', sessionId: 'ses_child' },
+      ])
+      // Held twice, let go twice.
+      events.length = 0
+      service.unwatchSubagent('ses_new', 'ses_child')
+      emit('session.step.ended', { sessionID: 'ses_child' })
+      expect(events.filter((event) => event.type === 'subagent')).toHaveLength(1)
+      service.unwatchSubagent('ses_new', 'ses_child')
+      emit('session.step.ended', { sessionID: 'ses_child' })
+      expect(events.filter((event) => event.type === 'subagent')).toHaveLength(1)
       service.stop()
     })
 

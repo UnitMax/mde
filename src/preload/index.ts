@@ -189,6 +189,8 @@ const api: RendererApi = {
     replyForm: (req) => ipcRenderer.invoke(IpcChannels.chatFormReply, req),
     subscribe: (req) => ipcRenderer.invoke(IpcChannels.chatSubscribe, req),
     unsubscribe: (req) => ipcRenderer.invoke(IpcChannels.chatUnsubscribe, req),
+    watchSubagent: (req) => ipcRenderer.invoke(IpcChannels.chatWatchSubagent, req),
+    unwatchSubagent: (req) => ipcRenderer.invoke(IpcChannels.chatUnwatchSubagent, req),
     onEvent: (listener) => subscribe<ChatEvent>(IpcEvents.chatEvent, listener)
   },
   opencodeConfig: {

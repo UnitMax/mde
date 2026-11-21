@@ -44,6 +44,7 @@ import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
 import { shownSuggestion, useInboxSuggestion } from '@/store/inbox-suggestion'
 import { useInboxView } from '@/store/inbox-view'
+import { SubagentOpenContext, useSubagentNav, type SubagentCrumb } from '@/store/subagent-nav'
 import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
@@ -113,6 +114,9 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     exists: createFileLookup((path) => window.api.files.list({ sessionId: thread.id, path })),
     open: ({ path }) => useWorkspace.getState().openFile(thread.id, path),
   }, [removed, thread.directory, thread.id])
+  // A subagent row opens the subagent's own conversation in place of this one (`SubagentView`).
+  const openSubagentIn = useSubagentNav((store) => store.open)
+  const openSubagent = useCallback((crumb: SubagentCrumb) => openSubagentIn(thread.id, crumb), [openSubagentIn, thread.id])
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const composerSlot = useRef<HTMLDivElement>(null)
@@ -558,6 +562,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   return (
     <ChatFileSourceContext.Provider value={fileSource}>
     <McpServerNamesContext.Provider value={mcpNames}>
+    <SubagentOpenContext.Provider value={openSubagent}>
     <div
       ref={rootRef}
       className="@container flex min-h-0 flex-1 flex-col"
@@ -765,6 +770,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         }}
       />
     </div>
+    </SubagentOpenContext.Provider>
     </McpServerNamesContext.Provider>
     </ChatFileSourceContext.Provider>
   )

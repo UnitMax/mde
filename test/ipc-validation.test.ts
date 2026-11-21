@@ -129,6 +129,8 @@ const validPayloads = {
   [IpcChannels.chatFormReply]: { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: 'Red', q1: ['a', 'b'], q2: true, q3: 3 } },
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
+  [IpcChannels.chatWatchSubagent]: { threadId: 'ses_thread', sessionId: 'ses_child' },
+  [IpcChannels.chatUnwatchSubagent]: { threadId: 'ses_thread', sessionId: 'ses_child' },
   [IpcChannels.opencodeConfigRead]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
   [IpcChannels.automationsList]: undefined,
   [IpcChannels.automationsSave]: { folderId: 'fld_app', text: 'Check the build', agent: 'build', model: { id: 'model-1', providerId: 'provider-1' }, schedule: { kind: 'daily', time: 540, days: [1, 2, 3, 4, 5] } },
@@ -437,6 +439,11 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatCreate, { ...create, worktree: 'main' })
     rejects(IpcChannels.chatSend, { threadId: 'thread', text: 'Hi' })
     rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', cursor: 'has space' })
+    // A subagent is named by its session ID, like a thread; anything else is refused before it reaches OpenCode.
+    expect(() => assertIpcPayload(IpcChannels.chatMessages, { threadId: 'ses_thread', sessionId: 'ses_child' })).not.toThrow()
+    rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', sessionId: '../ses_child' })
+    rejects(IpcChannels.chatWatchSubagent, { threadId: 'ses_thread' })
+    rejects(IpcChannels.chatWatchSubagent, { threadId: 'ses_thread', sessionId: 'msg_1' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'per_1', decision: 'maybe' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'frm_1', decision: 'once' })
     rejects(IpcChannels.chatSavedPermissionRemove, { threadId: 'ses_thread', id: 'per_1' })

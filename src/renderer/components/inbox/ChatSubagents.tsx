@@ -1,3 +1,4 @@
+import { useContext } from 'react'
 import { CircleSlash, Split } from 'lucide-react'
 import type { ChatModel, ChatPart, ChatToolStatus } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
@@ -7,6 +8,7 @@ import { ActivityRow, Glyph, Rail } from '@/components/inbox/chat-ui'
 import { formatDuration } from '@/lib/duration'
 import { findModel, modelKey, modelName, subagentAnswer, subagentDuration, subagentInfo, type SubagentInfo } from '@/lib/chat'
 import { cn } from '@/lib/utils'
+import { SubagentOpenContext } from '@/store/subagent-nav'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
@@ -101,6 +103,11 @@ function SubagentRow({ part, models }: { part: ToolPart; models: readonly ChatMo
   const active = info.state === 'running' || info.state === 'starting'
   const title = info.title ?? (info.task ? taskLine(info.task) : null) ?? (info.state === 'starting' ? 'Starting…' : null)
   const hasMore = Boolean(info.task || subagentAnswer(part) || info.problem)
+  const openSubagent = useContext(SubagentOpenContext)
+  const session = part.subagent?.sessionId
+  const label = subagentLabel(info.agent)
+  // Its whole conversation, read-only, in place of the thread; a row with no session yet opens onto what it has.
+  const activate = openSubagent && session ? () => openSubagent({ sessionId: session, label, title }) : undefined
   return (
     <ActivityRow
       testId={`chat-subagent-${part.id}`}
@@ -108,10 +115,12 @@ function SubagentRow({ part, models }: { part: ToolPart; models: readonly ChatMo
       icon={info.state === 'interrupted' || info.state === 'unreported' ? CircleSlash : Split}
       status={ROW_STATUS[info.state]}
       quiet={info.state === 'interrupted' || info.state === 'unreported'}
-      verb={subagentLabel(info.agent)}
+      verb={label}
+      title={activate ? (info.problem ?? 'Open the subagent’s conversation') : undefined}
       subject={title ? <span className={cn(active ? 'chat-shimmer' : 'text-fg-muted')}>{title}</span> : undefined}
       meta={<SubagentMeta part={part} info={info} models={models} />}
-      detail={hasMore ? <SubagentDetail part={part} info={info} /> : undefined}
+      onActivate={activate}
+      detail={!activate && hasMore ? <SubagentDetail part={part} info={info} /> : undefined}
       attrs={{ 'data-subagent-state': info.state }}
     />
   )

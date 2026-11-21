@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxGitInfo, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { cancelScheduledRefreshes, useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useSubagentNav } from '../src/renderer/store/subagent-nav'
 import { PERMISSION_CHANGE_HOLD_MS } from '../src/renderer/components/inbox/ChatRequestCards'
 import { useModelFavorites } from '../src/renderer/store/model-favorites'
 import { useToasts } from '../src/renderer/store/toasts'
@@ -1044,14 +1045,13 @@ describe('Inbox conversation', () => {
     const model = running.querySelector('[aria-label="Model: Flint Free · high"]')!
     expect(model.textContent).toBe('Flint Free · high')
     expect(model.getAttribute('title')).toBe('opencode/free-1#high')
-    await act(async () => running.querySelector('button')!.click())
-    expect(running.textContent).toContain('Flint Free · high')
     const done = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_b"]')!
     expect(done.getAttribute('data-subagent-state')).toBe('done')
     // Done is the ordinary end: no word for it, and no timer left running.
     expect(done.textContent).not.toContain('Done')
     expect(done.querySelector('[role="timer"]')).toBeNull()
     expect(done.textContent).not.toContain('core loop')
+    // Without a session to open (OpenCode named none), the row opens onto what it has, in place.
     await act(async () => done.querySelector('button')!.click())
     expect(done.textContent).toContain('Do not edit files.')
     await vi.waitFor(() => expect(done.textContent).toContain('The core loop is in main.ts.'))
@@ -1090,9 +1090,6 @@ describe('Inbox conversation', () => {
     expect(row.querySelector('[role="timer"]')).toBeNull()
     expect(row.textContent).toContain('23s')
     expect(view.querySelector('[data-testid="chat-note-msg_3"]')).toBeNull()
-    await act(async () => row.querySelector('button')!.click())
-    await vi.waitFor(() => expect(row.textContent).toContain('Still pond holds the sky'))
-    expect(row.textContent).not.toContain('working in the background')
   })
 
   it('says a background subagent ended without an answer once OpenCode no longer runs it', async () => {
@@ -1130,6 +1127,65 @@ describe('Inbox conversation', () => {
     } finally {
       clock.mockRestore()
       delete chat.backgroundTasks
+    }
+  })
+
+  it('opens a subagent as its own read-only conversation, deeper subagents too, and goes back up the trail', async () => {
+    const call = (id: string, session: string, agent: string, description: string) => ({
+      kind: 'tool' as const, id, name: 'subagent', status: 'completed' as const, output: 'Done.',
+      input: JSON.stringify({ agent, description, prompt: 'Work.' }), subagent: { sessionId: session },
+    })
+    const pages: Record<string, ChatMessagesPage> = {
+      ses_one: { running: false, older: null, messages: [
+        { kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true, parts: [call('call_1', 'ses_child', 'general', 'Sleep then write a haiku')] },
+      ] },
+      ses_child: { running: true, older: null, messages: [
+        { kind: 'user', id: 'msg_c1', time: 3, text: 'Sleep 20 seconds, then write a haiku.' },
+        { kind: 'assistant', id: 'msg_c2', time: 4, agent: 'general', model: options.defaultModel!, completed: true, parts: [
+          { kind: 'text', text: 'Still pond holds the sky' },
+          call('call_2', 'ses_grandchild', 'explore', 'Count syllables'),
+        ] },
+      ] },
+      ses_grandchild: { running: false, older: null, messages: [{ kind: 'user', id: 'msg_g1', time: 5, text: 'Count the syllables.' }] },
+    }
+    api.chat.messages.mockImplementation((async (request: { sessionId?: string }) => pages[request.sessionId ?? 'ses_one']!) as never)
+    const chat = api.chat as typeof api.chat & { watchSubagent?: unknown; unwatchSubagent?: unknown }
+    chat.watchSubagent = vi.fn(async () => undefined)
+    chat.unwatchSubagent = vi.fn(async () => undefined)
+    try {
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-subagent-call_1"]')).not.toBeNull())
+      await act(async () => view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_1"] button')!.click())
+
+      // In place of the thread: the subagent's own conversation, read through the thread, with no message box.
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="subagent-view"]')?.textContent).toContain('Still pond holds the sky'))
+      expect(api.chat.messages).toHaveBeenCalledWith({ threadId: 'ses_one', sessionId: 'ses_child' })
+      expect(chat.watchSubagent).toHaveBeenCalledWith({ threadId: 'ses_one', sessionId: 'ses_child' })
+      expect(view.querySelector('[data-testid="subagent-view"]')?.textContent).toContain('Sleep 20 seconds, then write a haiku.')
+      expect(view.querySelector('[data-testid="subagent-view"] [contenteditable="true"]')).toBeNull()
+      expect(view.querySelector('[data-testid="subagent-read-only"]')).not.toBeNull()
+      expect(view.querySelector('[data-testid="subagent-trail-current"]')?.textContent).toBe('General subagent: Sleep then write a haiku')
+      expect(view.querySelector('[data-testid="chat-working"]')).not.toBeNull()
+      // The thread stays drawn underneath, hidden, to come back to as it was.
+      expect(view.querySelector('[data-testid="chat-thread"]')?.closest('.hidden')).not.toBeNull()
+
+      // Its own subagent opens deeper down the trail.
+      await act(async () => view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_2"] button')!.click())
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="subagent-view"]')?.textContent).toContain('Count the syllables.'))
+      expect(view.querySelector('[data-testid="subagent-trail-current"]')?.textContent).toBe('Explore subagent: Count syllables')
+      expect(chat.unwatchSubagent).toHaveBeenCalledWith({ threadId: 'ses_one', sessionId: 'ses_child' })
+
+      // Escape goes up one level; the trail's first link goes back to the thread.
+      await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="subagent-trail-current"]')?.textContent).toBe('General subagent: Sleep then write a haiku'))
+      await act(async () => view.querySelector<HTMLElement>('[data-testid="subagent-trail-thread"]')!.click())
+      expect(view.querySelector('[data-testid="subagent-view"]')).toBeNull()
+      expect(view.querySelector('[data-testid="chat-thread"]')?.closest('.hidden')).toBeNull()
+    } finally {
+      api.chat.messages.mockImplementation(async () => page)
+      useSubagentNav.setState({ stacks: {} })
+      delete chat.watchSubagent
+      delete chat.unwatchSubagent
     }
   })
 

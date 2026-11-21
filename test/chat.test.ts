@@ -702,3 +702,15 @@ describe('where the drawn part of a conversation begins', () => {
     expect(drawnStart(messages, 'msg_9', 2)).toBe(3)
   })
 })
+
+describe('subagent conversation pages', () => {
+  it('puts the newest page together with what was loaded further back', async () => {
+    const { mergeNewestPage } = await import('../src/renderer/components/inbox/use-subagent-conversation')
+    const user = (id: string): ChatMessage => ({ kind: 'user', id, time: 1, text: id })
+    // Older messages stay; the page's own replace what was loaded of them.
+    expect(mergeNewestPage([user('msg_1'), user('msg_2'), user('msg_3')], [user('msg_3'), user('msg_4')], false).map((m) => m.id))
+      .toEqual(['msg_1', 'msg_2', 'msg_3', 'msg_4'])
+    // A page that reaches the start is the whole conversation.
+    expect(mergeNewestPage([user('msg_0'), user('msg_1')], [user('msg_1')], true).map((m) => m.id)).toEqual(['msg_1'])
+  })
+})

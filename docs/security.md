@@ -180,8 +180,9 @@ the validated `chat:*` channels.
   error message. A 401 or connection failure drops it and rediscovers once.
 - **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of method
   and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, the child sessions of a
-  recorded thread (`parentID` only, to find a running subagent's session), message
-  list, prompt, interrupt, agent and model switch, permission and form
+  recorded thread or of an open subagent (`parentID` only, to find a running subagent's session), message
+  list (a subagent's, for the read-only subagent view, only when its parents lead to the thread named in the
+  request; its live changes are passed on by `chat:watch-subagent` under the same check), prompt, interrupt, agent and model switch, permission and form
   list/reply (a subagent's found in the directory's pending lists and answered in its session only when its parents
   lead to the thread), the project's saved "Always allow" approvals (listed by the thread's folder; one is removed only when
   that list holds it), session update, staging or clearing a revert, fork, compact, one-off text generation for a

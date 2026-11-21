@@ -888,8 +888,16 @@ export interface ChatBackgroundState {
   tasks: ChatBackgroundTask[]
 }
 
+/** A subagent of a thread, open in a subagent view. */
+export interface ChatSubagentRequest {
+  threadId: string
+  sessionId: string
+}
+
 export interface ChatMessagesRequest {
   threadId: string
+  /** A subagent of the thread (any depth) to read instead of the thread itself. */
+  sessionId?: string
   /** Cursor from a previous page's `older`; omitted for the newest page. */
   cursor?: string
 }
@@ -1053,6 +1061,8 @@ export type ChatEvent =
   | { type: 'goal'; threadId: string; goal: ChatGoal | null }
   /** The service connection was lost and restored; refetch everything. */
   | { type: 'reconnected'; threadId: string }
+  /** A subagent open in a subagent view changed (its messages or whether it runs); read it again. */
+  | { type: 'subagent'; threadId: string; sessionId: string }
   /** An MCP server of this target changed (connected, failed, lost its tools); not tied to one thread. */
   | { type: 'mcp'; target: OpenCodeTarget }
 

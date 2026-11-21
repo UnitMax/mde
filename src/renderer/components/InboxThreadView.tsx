@@ -5,6 +5,8 @@ import { ChatThreadView } from '@/components/inbox/ChatThreadView'
 import { ThreadHeader } from '@/components/inbox/ThreadHeader'
 import { ThreadListToggle } from '@/components/inbox/ThreadListToggle'
 import { NewThreadView } from '@/components/inbox/NewThreadView'
+import { SubagentView } from '@/components/inbox/SubagentView'
+import { useSubagentNav } from '@/store/subagent-nav'
 import { useFloatingReserve } from '@/components/inbox/use-floating-reserve'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
@@ -33,6 +35,7 @@ export function InboxThreadView(): JSX.Element {
   const lock = useInboxLock()
   const markSeen = useWorkspace((state) => state.markOpenInboxThreadSeen)
   const thread = threads.find((item) => item.id === selectedId) ?? null
+  const trail = useSubagentNav((state) => (thread ? state.stacks[thread.id] : undefined))
 
   // Without a thread there is no title bar to hold the thread list's button, so it sits in the corner.
   const corner = <ThreadListToggle className="absolute left-3 top-2 z-10" />
@@ -51,9 +54,16 @@ export function InboxThreadView(): JSX.Element {
     // Something new in the open thread stays unread until the person acts in it: a click anywhere in the thread,
     // or a key (typing a reply). Capture, so an editor that stops the event still counts.
     <div className="flex h-full min-h-0 flex-col" onPointerDownCapture={markSeen} onKeyDownCapture={markSeen}>
-      <ThreadHeader thread={thread} />
+      {/* A subagent opened from the thread is read in its place. The thread stays drawn underneath, hidden, so going
+          back finds it as it was left, with its message box and scroll place. */}
+      {trail && trail.length > 0 && (
+        <MakesWayForCard><SubagentView key={trail[trail.length - 1]!.sessionId} thread={thread} trail={trail} /></MakesWayForCard>
+      )}
+      <div className={cn('flex min-h-0 flex-1 flex-col', trail && trail.length > 0 && 'hidden')}>
+        <ThreadHeader thread={thread} />
+        <MakesWayForCard><ChatThreadView key={thread.id} thread={thread} /></MakesWayForCard>
+      </div>
       <InboxAutomationsDialog />
-      <MakesWayForCard><ChatThreadView key={thread.id} thread={thread} /></MakesWayForCard>
     </div>
   )
 }

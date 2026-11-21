@@ -103,6 +103,7 @@ import type {
   ChatSuggestion,
   ChatGoal,
   ChatGoalRequest,
+  ChatSubagentRequest,
   ChatThreadRequest,
   ChatBackgroundState,
   ChatDraft,
@@ -249,6 +250,8 @@ export const IpcChannels = {
   chatFormReply: 'chat:form-reply',
   chatSubscribe: 'chat:subscribe',
   chatUnsubscribe: 'chat:unsubscribe',
+  chatWatchSubagent: 'chat:watch-subagent',
+  chatUnwatchSubagent: 'chat:unwatch-subagent',
 
   opencodeConfigRead: 'opencode-config:read',
   opencodeConfigPreview: 'opencode-config:preview',
@@ -765,6 +768,9 @@ export interface RendererApi {
     replyForm(req: ChatFormReplyRequest): Promise<void>
     subscribe(req: ChatThreadRequest): Promise<void>
     unsubscribe(req: ChatThreadRequest): Promise<void>
+    /** Passes on the changes of a subagent of the thread, open in a subagent view; refused for any other session. */
+    watchSubagent(req: ChatSubagentRequest): Promise<void>
+    unwatchSubagent(req: ChatSubagentRequest): Promise<void>
     onEvent(listener: (event: ChatEvent) => void): () => void
   }
   /** OpenCode's own global configuration file. The renderer names a target (this computer or a WSL distro), never a path. */

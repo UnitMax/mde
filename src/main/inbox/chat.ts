@@ -291,6 +291,11 @@ export class InboxChatService {
   /** Child sessions whose model changes should refresh an open parent conversation. */
   private readonly subagentParents = new Map<string, string>()
   /**
+   * Subagent sessions open in a subagent view (keyed by service and session), with the thread they belong to and how
+   * many views hold them: their changes are passed on to be read again.
+   */
+  private readonly watchedSubagents = new Map<string, { threadId: string; count: number }>()
+  /**
    * The child session of each running subagent call, as OpenCode tells it in a passing progress event (keyed by
    * thread and call ID). OpenCode saves it with the call only when the subagent has finished.
    */
@@ -344,6 +349,7 @@ export class InboxChatService {
     this.subagentParents.clear()
     this.subagentCalls.clear()
     this.sessionOwners.clear()
+    this.watchedSubagents.clear()
   }
 
   /** The OpenCode executable from Settings; discovery runs it to find each service. */
@@ -751,15 +757,22 @@ export class InboxChatService {
     })
   }
 
+  /**
+   * A page of a thread's conversation, or of one of its subagents' (`sessionId`): only a session whose chain of parents
+   * leads to the thread can be read this way, so the renderer cannot open any other session through a thread. A
+   * subagent's conversation is read without the thread's extras (held messages, totals, revert).
+   */
   async messages(request: ChatMessagesRequest): Promise<ChatMessagesPage> {
     const thread = this.thread(request.threadId)
     this.streams.ensure(thread.target)
+    const sessionId = await this.answeringSession(thread, request.sessionId)
+    const own = sessionId === thread.id
     const query: Record<string, string> = { limit: String(CHAT_PAGE_SIZE) }
     if (request.cursor) query.cursor = request.cursor
     else query.order = 'desc'
     let pageSize = CHAT_PAGE_SIZE
     const loadPage = async (): Promise<unknown> => {
-      try { return await this.dependencies.client.request(thread.target, 'session.message.list', { params: { sessionID: thread.id }, query: { ...query, limit: String(pageSize) } }) }
+      try { return await this.dependencies.client.request(thread.target, 'session.message.list', { params: { sessionID: sessionId }, query: { ...query, limit: String(pageSize) } }) }
       catch (error) {
         if (!(error instanceof Error) || error.message !== 'The OpenCode service sent more data than MDE accepts.' || pageSize === 1) throw error
         pageSize = Math.max(1, Math.floor(pageSize / 2))
@@ -768,7 +781,7 @@ export class InboxChatService {
     }
     // Read before the conversation: a message delivered in between is then in both, which the reader
     // sorts out by ID, and not in neither. The newest page only; and a service that cannot say leaves it unknown.
-    const inbox = request.cursor
+    const inbox = request.cursor || !own
       ? undefined
       : await this.dependencies.client.request(thread.target, 'session.inbox.list', { params: { sessionID: thread.id } })
         .then((answer) => ({ pending: parsePendingMessages(answer, this.dependencies.thumbnail), compactionHeld: holdsCompaction(answer) }))
@@ -777,12 +790,12 @@ export class InboxChatService {
       loadPage(),
       this.dependencies.client.request(thread.target, 'session.active'),
       // The thread's totals are only wanted with the newest page, and the conversation shows without them.
-      request.cursor
+      request.cursor || !own
         ? null
         : this.dependencies.client.request(thread.target, 'session.get', { params: { sessionID: thread.id } }).catch(() => null),
     ])
-    const result = parseMessagesPage(page, parseActiveSessions(active).has(thread.id), pageSize, this.dependencies.thumbnail)
-    await this.loadSubagentModels(thread, result)
+    const result = parseMessagesPage(page, parseActiveSessions(active).has(sessionId), pageSize, this.dependencies.thumbnail)
+    await this.loadSubagentModels(thread, result, sessionId)
     const usage = session ? parseSessionUsage(session) : null
     // Only an answer from the service says whether a revert is staged; without one it stays unknown.
     const revert = session ? parseSessionRevert(session) : undefined
@@ -799,7 +812,7 @@ export class InboxChatService {
    * from the progress event when MDE saw it, otherwise the thread's child session titled with the call's description
    * (only when exactly one unclaimed child is). The listing also carries each child's model.
    */
-  private async findRunningSubagents(thread: InboxThread, page: ChatMessagesPage): Promise<Map<string, OpenCodeModelRef>> {
+  private async findRunningSubagents(thread: InboxThread, page: ChatMessagesPage, parentId: string): Promise<Map<string, OpenCodeModelRef>> {
     const models = new Map<string, OpenCodeModelRef>()
     const unknown: Extract<ChatPart, { kind: 'tool' }>[] = []
     const claimed = new Set<string>()
@@ -807,7 +820,7 @@ export class InboxChatService {
       if (message.kind !== 'assistant') continue
       for (const part of message.parts) {
         if (part.kind !== 'tool' || (part.name !== 'subagent' && part.name !== 'task')) continue
-        const key = `${thread.id}\n${part.id}`
+        const key = `${parentId}\n${part.id}`
         if (part.subagent) {
           this.subagentCalls.delete(key)
           claimed.add(part.subagent.sessionId)
@@ -824,9 +837,9 @@ export class InboxChatService {
     if (unknown.length === 0) return models
     try {
       const children = parseChildSessions(await this.dependencies.client.request(thread.target, 'session.children', {
-        query: { parentID: thread.id, order: 'desc', limit: '50' },
+        query: { parentID: parentId, order: 'desc', limit: '50' },
         timeoutMs: 2_000,
-      }), thread.id)
+      }), parentId)
       for (const part of unknown) {
         const description = subagentDescription(part.input)
         const matches = children.filter((child) => child.title.trim() === description && !claimed.has(child.id))
@@ -841,8 +854,9 @@ export class InboxChatService {
   }
 
   /** Read only the child sessions named by these calls; a missing child must never hide the chat. */
-  private async loadSubagentModels(thread: InboxThread, page: ChatMessagesPage): Promise<void> {
-    const listed = await this.findRunningSubagents(thread, page)
+  /** `parentId` is the session the page is from: the thread's, or a subagent's whose own subagents these are. */
+  private async loadSubagentModels(thread: InboxThread, page: ChatMessagesPage, parentId: string): Promise<void> {
+    const listed = await this.findRunningSubagents(thread, page, parentId)
     const children = new Map<string, NonNullable<Extract<ChatPart, { kind: 'tool' }>['subagent']>[]>()
     for (const message of page.messages) {
       if (message.kind !== 'assistant') continue
@@ -871,7 +885,7 @@ export class InboxChatService {
             params: { sessionID: sessionId },
             timeoutMs: 2_000,
           })
-          const model = parseSubagentModel(answer, sessionId, thread.id)
+          const model = parseSubagentModel(answer, sessionId, parentId)
           if (model) {
             for (const call of calls) call.model = model
             if (this.subscribed.has(thread.id)) {
@@ -1489,9 +1503,44 @@ export class InboxChatService {
     }
   }
 
+  /**
+   * Passes on the changes of a subagent open in a subagent view, once it is known to belong to the thread: a session
+   * that does not is refused, as reading it would be.
+   */
+  async watchSubagent(threadId: string, sessionId: string): Promise<void> {
+    const thread = this.thread(threadId)
+    if (sessionId === thread.id) throw new Error('A thread is not its own subagent.')
+    await this.answeringSession(thread, sessionId)
+    const key = `${serviceTargetKey(thread.target)}\n${sessionId}`
+    const watched = this.watchedSubagents.get(key)
+    if (watched) watched.count += 1
+    else this.watchedSubagents.set(key, { threadId, count: 1 })
+    this.streams.ensure(thread.target)
+  }
+
+  unwatchSubagent(threadId: string, sessionId: string): void {
+    const thread = this.dependencies.store.get(threadId)
+    if (!thread) {
+      // The thread is gone: nothing of it is passed on any more.
+      for (const [key, watched] of this.watchedSubagents) if (watched.threadId === threadId) this.watchedSubagents.delete(key)
+      return
+    }
+    const key = `${serviceTargetKey(thread.target)}\n${sessionId}`
+    const watched = this.watchedSubagents.get(key)
+    if (!watched || watched.threadId !== threadId) return
+    if (watched.count > 1) watched.count -= 1
+    else this.watchedSubagents.delete(key)
+  }
+
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
     this.dependencies.recorder.applyServiceEvent(event)
     const sessionId = serviceEventSessionId(event)
+    // A subagent open in a subagent view: its conversation or its running changed, and is read again.
+    const watched = sessionId && this.watchedSubagents.size > 0 ? this.watchedSubagents.get(`${serviceTargetKey(target)}\n${sessionId}`) : undefined
+    if (watched && sessionId && (MESSAGE_EVENTS.has(event.type) || event.type.startsWith('session.execution.') ||
+      event.type === 'session.model.selected' || event.type === 'session.agent.selected')) {
+      this.dependencies.send({ type: 'subagent', threadId: watched.threadId, sessionId })
+    }
     // A subagent's permission request or question is filed under its own session, which is no thread.
     if (sessionId && REQUEST_EVENTS.has(event.type) && !this.dependencies.store.get(sessionId)) {
       void this.forwardSubagentRequest(event, target, sessionId)
