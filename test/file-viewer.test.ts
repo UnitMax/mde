@@ -11,6 +11,7 @@ import { FileViewer } from '../src/renderer/components/FileViewer'
 import { languageForPath } from '../src/renderer/lib/code-languages'
 import { firstMatchFrom, seedQuery } from '../src/renderer/lib/file-find'
 import {
+  CODE_WRAP_STORAGE_KEY,
   externalLinkUrl,
   formatFileSize,
   isMarkdownPath,
@@ -486,6 +487,24 @@ describe('FileViewer', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Close file"]')?.click()
     })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('wraps long source lines unless turned off, and remembers the choice', async () => {
+    localStorage.clear()
+    read.mockResolvedValue(file({ path: 'a.txt', content: 'x'.repeat(500), size: 500 }))
+    const container = await renderViewer('a.txt')
+    const toggle = container.querySelector<HTMLButtonElement>('[data-testid="file-viewer-wrap"]')!
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('.cm-content')?.classList.contains('cm-lineWrapping')).toBe(true)
+    await act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelector('.cm-content')?.classList.contains('cm-lineWrapping')).toBe(false)
+    expect(localStorage.getItem(CODE_WRAP_STORAGE_KEY)).toBe('off')
+
+    read.mockResolvedValue(file({ path: 'b.md', content: '# Title', size: 7 }))
+    const markdown = await renderViewer('b.md')
+    expect(markdown.querySelector('[data-testid="file-viewer-wrap"]')).toBeNull()
+    localStorage.clear()
   })
 
   it('moves beside the chat and back only where the host offers it', async () => {

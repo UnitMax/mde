@@ -9,6 +9,7 @@ import {
   Maximize2,
   RefreshCw,
   UnfoldHorizontal,
+  WrapText,
   X
 } from 'lucide-react'
 import type { FileReadResponse, Session } from '@shared/types'
@@ -21,7 +22,7 @@ import { FileFindBar } from '@/components/FileFindBar'
 import { seedQuery, type FileFinder } from '@/lib/file-find'
 import { cn } from '@/lib/utils'
 import { ipcErrorMessage } from '@/lib/ipc-error'
-import { MAX_FILE_VIEW_LABEL, formatFileSize, isMarkdownPath } from '@/lib/file-viewer'
+import { MAX_FILE_VIEW_LABEL, formatFileSize, getCodeWrap, isMarkdownPath, saveCodeWrap } from '@/lib/file-viewer'
 import {
   getMarkdownPreviewWidth,
   saveMarkdownPreviewWidth,
@@ -88,6 +89,7 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [showSource, setShowSource] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<MarkdownPreviewWidth>(getMarkdownPreviewWidth)
+  const [wrap, setWrap] = useState(getCodeWrap)
   const requestSequence = useRef(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const finderRef = useRef<FileFinder | null>(null)
@@ -198,7 +200,7 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
       />
     )
   } else {
-    body = <CodeViewer path={path} content={state.file.content} finderRef={finderRef} />
+    body = <CodeViewer path={path} content={state.file.content} finderRef={finderRef} wrap={wrap} />
   }
 
   return (
@@ -281,6 +283,24 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
               Source
             </Button>
           </div>
+        )}
+        {/* Source, not the Markdown preview: only text shown as code has lines to wrap. */}
+        {state.status === 'ready' && !state.file.tooLarge && !state.file.binary && state.file.content !== null && !(markdown && !showSource) && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn('shrink-0', wrap && 'bg-active text-fg')}
+            aria-pressed={wrap}
+            onClick={() => {
+              setWrap(!wrap)
+              saveCodeWrap(!wrap)
+            }}
+            title={wrap ? 'Long lines wrap: click to scroll sideways instead' : 'Wrap long lines'}
+            aria-label="Wrap long lines"
+            data-testid="file-viewer-wrap"
+          >
+            <WrapText className="h-3.5 w-3.5" />
+          </Button>
         )}
         {onPlace && (
           <Button

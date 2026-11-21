@@ -2470,6 +2470,9 @@ cannot be reached there. File drops do not copy file contents or stage clipboard
 Open a Markdown file from the Files tree to preview it, or switch to Source to read its code.
 The preview is a centered column by default; the width control beside Preview and Source makes it fill the
 whole page instead, and the choice is remembered for every file.
+Source (any file shown as code, and Markdown in Source) wraps long lines at the viewer's width instead of scrolling
+sideways; the wrap button in the header turns that off and on, and the choice is remembered for every file
+(`mde.code-viewer-wrap`, CodeMirror's `lineWrapping`).
 Right-clicking rendered Markdown or a source preview offers **Copy** and **Select all**.
 Copy uses the selected text; Select all selects the file contents without the viewer toolbar or
 surrounding app. Source selections cover the full document, including lines outside the viewport.

@@ -90,14 +90,19 @@ interface CodeViewerProps {
    * CodeMirror's own search panel. Read once, when the view is made.
    */
   finderRef?: MutableRefObject<FileFinder | null>
+  /** Breaks long lines at the view's width instead of scrolling sideways. */
+  wrap?: boolean
 }
 
-export function CodeViewer({ path, content, finderRef }: CodeViewerProps): JSX.Element {
+export function CodeViewer({ path, content, finderRef, wrap = false }: CodeViewerProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageRef = useRef(new Compartment())
   const fontRef = useRef(new Compartment())
   const modeRef = useRef(new Compartment())
+  const wrapRef = useRef(new Compartment())
+  const wrapNow = useRef(wrap)
+  wrapNow.current = wrap
 
   useEffect(() => {
     const host = hostRef.current
@@ -124,7 +129,8 @@ export function CodeViewer({ path, content, finderRef }: CodeViewerProps): JSX.E
           modeRef.current.of(viewerTheme(dark)),
           fontRef.current.of(fontTheme(family)),
           syntaxHighlighting(viewerHighlight),
-          languageRef.current.of([])
+          languageRef.current.of([]),
+          wrapRef.current.of(wrapNow.current ? EditorView.lineWrapping : [])
         ]
       })
     })
@@ -155,6 +161,10 @@ export function CodeViewer({ path, content, finderRef }: CodeViewerProps): JSX.E
     if (!view) return
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } })
   }, [content])
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: wrapRef.current.reconfigure(wrap ? EditorView.lineWrapping : []) })
+  }, [wrap])
 
   useEffect(() => {
     let cancelled = false

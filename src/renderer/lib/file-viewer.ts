@@ -61,3 +61,22 @@ export function formatFileSize(bytes: number): string {
 
 /** Mirrors the main-process read limit for display. */
 export const MAX_FILE_VIEW_LABEL = '2 MB'
+
+export const CODE_WRAP_STORAGE_KEY = 'mde.code-viewer-wrap'
+
+/** Whether the file viewer's source breaks long lines: on unless turned off, and on when unreadable. */
+export function getCodeWrap(): boolean {
+  try {
+    return localStorage.getItem(CODE_WRAP_STORAGE_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+export function saveCodeWrap(on: boolean): void {
+  try {
+    localStorage.setItem(CODE_WRAP_STORAGE_KEY, on ? 'on' : 'off')
+  } catch {
+    // A restricted storage environment keeps the choice for this session only.
+  }
+}
