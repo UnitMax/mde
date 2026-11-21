@@ -469,6 +469,11 @@ Terminal tab, the bottom panel or the shown floating window), to the pane last u
 which checks that a pane's screen is on the page and not hidden); with no terminal to be seen it stays in the box. So
 F9 switches between the box and a visible terminal. The box on screen listens through `lib/inbox-composer-focus.ts`.
 
+F10 switches the right-hand sidebar between docked and the floating menu card (`useInboxView.setSidebarFloating`),
+caught the same way and under the same `inbox-composer-key:active` flag (sent to the renderer as
+`inbox-sidebar:toggle`), so a terminal never sees it and on Windows it never opens the window menu. A collapsed
+sidebar is shown again in the other mode; an open dialog ignores the key.
+
 Ctrl-click (or Command-click on macOS) selects threads across the list and the Working and Snoozed sections without opening them.
 The open thread joins the selection when visible. The context menu of a selected thread applies its pin,
 read, snooze and park actions to all selected threads, using the clicked thread's current state to choose the action.

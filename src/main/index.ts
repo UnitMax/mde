@@ -113,7 +113,7 @@ const ptyManager = new PtyManager({
   }
 }, terminalDirectories, () => app.getLocale())
 /**
- * The mini window's key (F12), the floating terminal's (F11) and the Inbox message box's (F9), which work whichever
+ * The mini window's key (F12), the floating terminal's (F11) and the Inbox message box's (F9) and sidebar's (F10), which work whichever
  * page has the keyboard: the window's, or a page of the MDE browser. True when the key was taken.
  */
 function windowKey(input: Electron.Input): boolean {
@@ -133,6 +133,8 @@ function windowKey(input: Electron.Input): boolean {
       // From a page of the MDE browser, the keyboard has to come back to the window before the box can have it.
       mainWindow?.webContents.focus()
       mainWindow?.webContents.send(IpcEvents.inboxComposerFocus)
+    } else if (composerAction === 'sidebar') {
+      mainWindow?.webContents.send(IpcEvents.inboxSidebarToggle)
     }
     return true
   }

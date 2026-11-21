@@ -9,8 +9,16 @@ describe('getComposerKeyAction', () => {
     expect(getComposerKeyAction({ ...key, key: 'Unidentified' }, true)).toBe('focus')
   })
 
-  it('leaves F9 alone outside the Inbox', () => {
+  it('switches the sidebar on F10 while the Inbox is on screen', () => {
+    expect(getComposerKeyAction({ ...key, key: 'F10', code: 'F10' }, true)).toBe('sidebar')
+    expect(getComposerKeyAction({ ...key, key: 'Unidentified', code: 'F10' }, true)).toBe('sidebar')
+    expect(getComposerKeyAction({ ...key, key: 'F10', code: 'F10', isAutoRepeat: true }, true)).toBe('ignore')
+    expect(getComposerKeyAction({ ...key, key: 'F10', code: 'F10', shift: true }, true)).toBeNull()
+  })
+
+  it('leaves F9 and F10 alone outside the Inbox', () => {
     expect(getComposerKeyAction(key, false)).toBeNull()
+    expect(getComposerKeyAction({ ...key, key: 'F10', code: 'F10' }, false)).toBeNull()
   })
 
   it('swallows auto-repeat so a held key never reaches a shell', () => {

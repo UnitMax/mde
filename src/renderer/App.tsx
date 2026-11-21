@@ -42,6 +42,7 @@ import { startToasts } from '@/lib/toast-controller'
 import { Toaster } from '@/components/Toaster'
 import { useInboxBrowser } from '@/store/inbox-browser'
 import { useWorkspace } from '@/store/workspace'
+import { useInboxView } from '@/store/inbox-view'
 import { useFancyBackgroundOn } from '@/store/fancy-mode'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
@@ -697,8 +698,17 @@ export function App(): JSX.Element {
       // After the covers are gone, so nothing hands the keyboard elsewhere as it closes.
       requestAnimationFrame(requestInboxComposerFocus)
     })
+    // F10 switches the right-hand sidebar between docked and the floating menu card. A hidden sidebar comes back
+    // in the other mode, so the key always shows what it did.
+    const stopSidebar = api.onSidebarToggle(() => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      const view = useInboxView.getState()
+      view.setSidebarFloating(!view.sidebarFloating)
+      if (useWorkspace.getState().fileTreeCollapsed) useWorkspace.getState().toggleFileTree()
+    })
     return () => {
       stop()
+      stopSidebar()
       void api.setActive(false)
     }
   }, [composerKeyActive, inboxRootId])

@@ -247,7 +247,8 @@ const api: RendererApi = {
   },
   inboxComposerKey: {
     setActive: (active) => ipcRenderer.invoke(IpcChannels.inboxComposerKeyActive, { active }),
-    onFocus: (listener) => subscribe<void>(IpcEvents.inboxComposerFocus, () => listener())
+    onFocus: (listener) => subscribe<void>(IpcEvents.inboxComposerFocus, () => listener()),
+    onSidebarToggle: (listener) => subscribe<void>(IpcEvents.inboxSidebarToggle, () => listener())
   },
   browser: {
     state: () => ipcRenderer.invoke(IpcChannels.browserState),

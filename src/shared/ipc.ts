@@ -316,6 +316,7 @@ export const IpcEvents = {
   floatingTerminalToggle: 'floating-terminal:toggle',
   /** F9 was pressed while the Inbox is on screen: put the keyboard in the message box. */
   inboxComposerFocus: 'inbox-composer:focus',
+  inboxSidebarToggle: 'inbox-sidebar:toggle',
   /** Ctrl+W (Cmd+W) was pressed while a file viewer is open: close it. */
   fileViewerClose: 'file-viewer:close',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
@@ -857,10 +858,12 @@ export interface RendererApi {
     onToggle(listener: () => void): () => void
   }
   inboxComposerKey: {
-    /** Says whether the Inbox is on screen, so the main process hands F9 to it instead of letting it through. */
+    /** Says whether the Inbox is on screen, so the main process hands F9 and F10 to it instead of letting them through. */
     setActive(active: boolean): Promise<void>
     /** F9 was pressed while it is: put the keyboard in the message box. */
     onFocus(listener: () => void): () => void
+    /** F10 was pressed while it is: switch the right-hand sidebar between docked and floating. */
+    onSidebarToggle(listener: () => void): () => void
   }
   /** The MDE browser in the Inbox sidebar; see `src/shared/browser.ts`. */
   browser: {
