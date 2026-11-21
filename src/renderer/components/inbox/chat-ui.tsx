@@ -200,7 +200,8 @@ export function ActivityRow({
   const line = (
     <>
       <Glyph icon={icon} status={status} failed={failed} className={iconClassName} />
-      <span className={cn('shrink-0', bad ? 'text-danger' : quiet ? 'text-fg-subtle' : 'text-fg-muted', (active || shimmer) && 'chat-shimmer')}>{verb}</span>
+      {/* Without a subject the verb is the whole line (a note's text): it wraps rather than run past the column. */}
+      <span className={cn(subject === undefined || subject === null ? 'min-w-0 break-words' : 'shrink-0', bad ? 'text-danger' : quiet ? 'text-fg-subtle' : 'text-fg-muted', (active || shimmer) && 'chat-shimmer')}>{verb}</span>
       {subject !== undefined && subject !== null && (
         <>
           {' '}

@@ -136,6 +136,10 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  /* Where a vertical and a horizontal scrollbar meet: Chromium paints it white unless told otherwise. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
     background: var(--color-line-strong);
     border: 2px solid transparent;
