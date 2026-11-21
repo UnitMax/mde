@@ -241,7 +241,7 @@ function folderOf(id: string, directory: string, extra: Partial<InboxFolder> = {
   return { id, name: directory.split('/').at(-1) ?? id, directory, target: wsl, createdAt: 1, lastUsedAt: 1, ...extra }
 }
 
-function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; composer?: InboxComposerState; branch?: string | null; terminal?: 'running' | 'waiting' | 'none' | Error; reading?: TerminalReading | Error } = {}) {
+function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; composer?: InboxComposerState; branch?: string | null; terminal?: 'running' | 'waiting' | 'none' | Error; reading?: TerminalReading | Error; owners?: Record<string, string | Error> } = {}) {
   let now = 100_000
   const threads = new Map((options.threads ?? []).map((item) => [item.id, item]))
   const folders = [...(options.folders ?? [folderOf('fld_app', '/home/me/app')])]
@@ -249,10 +249,18 @@ function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; comp
   const added: string[] = []
   const terminals: McpTerminalRequest[] = []
   const reads: { ref: string; lines: number }[] = []
+  const lookups: string[] = []
   const host: MdeMcpHost = {
     available: () => true,
     targetAllowed: (target) => target.kind === 'wsl',
     thread: (id) => threads.get(id),
+    // A subagent's session, by the thread it runs under.
+    threadOfSession: async (_target, sessionId) => {
+      lookups.push(sessionId)
+      const owner = options.owners?.[sessionId]
+      if (owner instanceof Error) throw owner
+      return owner ? threads.get(owner) ?? null : null
+    },
     folders: () => folders,
     composer: () => options.composer ?? {},
     addFolder: async (_target, directory) => {
@@ -270,6 +278,7 @@ function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; comp
         directory: folder.directory,
         folderId: folder.id,
         spawnedBy: threadOptions.parentId ? { threadId: threadOptions.parentId } : {},
+        ...(request.permissionMode && request.permissionMode !== 'default' ? { permissionMode: request.permissionMode } : {}),
         ...(request.worktree ? { worktree: { repository: folder.directory, root: '/wt/1', branch: request.worktree.branch ?? 'mde/1', base: request.worktree.base } } : {}),
       })
       threads.set(made.id, made)
@@ -292,7 +301,7 @@ function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; comp
     instance.handle({ version: 1, token: 't', target: wsl, cwd: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app', tool: 'create_thread', arguments: args, ...extra })
   const openTerminal = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) => call(args, { tool: 'open_terminal', ...extra })
   const readTerminal = (args: Record<string, unknown>) => call(args, { tool: 'read_terminal' })
-  return { host, created, added, terminals, reads, call, openTerminal, readTerminal, folders, advance: (ms: number) => { now += ms } }
+  return { host, created, added, terminals, reads, lookups, call, openTerminal, readTerminal, folders, advance: (ms: number) => { now += ms } }
 }
 
 describe('MDE MCP open_terminal', () => {
@@ -378,6 +387,60 @@ describe('MDE MCP tools', () => {
     const response = await call({ prompt: 'Write the tests' }, { sessionId: 'ses_parent' })
     expect(response).toMatchObject({ ok: true, data: { threadId: 'ses_new1', directory: '/home/me/app', project: 'app' } })
     expect(created).toEqual([{ request: { folderId: 'fld_app', text: 'Write the tests', agent: 'plan', model: parentModel }, options: { parentId: 'ses_parent' } }])
+  })
+
+  it('gives the new thread its caller’s permission mode, whatever the mode', async () => {
+    for (const mode of ['read-only', 'ask', 'auto-edit', 'full', 'full-web-asks'] as const) {
+      const { call, created } = tools({ threads: [thread('ses_parent', { permissionMode: mode })], composer: { model } })
+      const response = await call({ prompt: 'Look up the docs' }, { sessionId: 'ses_parent' })
+      expect(created[0]?.request.permissionMode).toBe(mode)
+      expect(response).toMatchObject({ ok: true, text: expect.stringContaining('the same permissions as this thread') })
+    }
+  })
+
+  it('leaves the permission mode to the OpenCode settings for a caller on default permissions or no Inbox thread', async () => {
+    const { call, created } = tools({ threads: [thread('ses_parent')], owners: {}, composer: { model } })
+    expect(await call({ prompt: 'Hi' }, { sessionId: 'ses_parent' })).toMatchObject({ ok: true, data: { permissions: 'Default permissions' } })
+    await call({ prompt: 'Hi' }, { sessionId: 'ses_tui' })
+    await call({ prompt: 'Hi' })
+    expect(created.map((item) => item.request.permissionMode)).toEqual([undefined, undefined, undefined])
+    expect(created.map((item) => item.options)).toEqual([{ parentId: 'ses_parent' }, {}, {}])
+  })
+
+  it('counts a subagent’s thread as the caller: its mode, its folder and its place in the chain', async () => {
+    const other = folderOf('fld_lib', '/home/me/lib')
+    const parent = thread('ses_parent', { permissionMode: 'full-web-asks', directory: '/home/me/lib', folderId: 'fld_lib' })
+    const { call, created, lookups } = tools({ threads: [parent], folders: [folderOf('fld_app', '/home/me/app'), other], owners: { ses_sub: 'ses_parent' }, composer: { model } })
+    const response = await call({ prompt: 'Search the web' }, { sessionId: 'ses_sub' })
+    expect(response).toMatchObject({ ok: true, data: { directory: '/home/me/lib', permissions: 'Full access, web asks' } })
+    expect(lookups).toEqual(['ses_sub'])
+    expect(created[0]).toMatchObject({ request: { folderId: 'fld_lib', permissionMode: 'full-web-asks' }, options: { parentId: 'ses_parent' } })
+  })
+
+  it('does not start a thread blind when MDE cannot tell which thread a session belongs to', async () => {
+    const { call, created } = tools({ owners: { ses_sub: new Error('OpenCode is not answering') }, composer: { model } })
+    expect(await call({ prompt: 'Hi' }, { sessionId: 'ses_sub' })).toMatchObject({ ok: false, error: expect.stringContaining('could not tell which thread') })
+    expect(created).toEqual([])
+  })
+
+  it('does not take a thread of another OpenCode as the caller', async () => {
+    const elsewhere = thread('ses_parent', { permissionMode: 'ask', target: { kind: 'wsl', distro: 'Debian' } })
+    const { call, created, lookups } = tools({ threads: [elsewhere], composer: { model } })
+    await call({ prompt: 'Hi' }, { sessionId: 'ses_parent' })
+    expect(created[0]).toMatchObject({ options: {} })
+    expect(created[0]?.request.permissionMode).toBeUndefined()
+    expect(lookups).toEqual([])
+  })
+
+  it(`counts a subagent’s calls toward its thread’s chain of ${MDE_MCP_MAX_DEPTH} levels`, async () => {
+    const chain = [
+      thread('ses_a'),
+      thread('ses_b', { spawnedBy: { threadId: 'ses_a' } }),
+      thread('ses_c', { spawnedBy: { threadId: 'ses_b' } }),
+      thread('ses_d', { spawnedBy: { threadId: 'ses_c' } }),
+    ]
+    const { call } = tools({ threads: chain, owners: { ses_sub: 'ses_d' }, composer: { model } })
+    expect(await call({ prompt: 'Hi' }, { sessionId: 'ses_sub' })).toMatchObject({ ok: false, error: expect.stringContaining('levels deep') })
   })
 
   it('falls back to the bridge’s working directory and the page’s choices when the caller is not an Inbox thread', async () => {

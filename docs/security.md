@@ -223,7 +223,9 @@ the validated `chat:*` channels.
   `PATCH /api/session/{sessionID}` with `{ permissions }` (an empty list for `default`). `chat:create` takes the
   same optional name and sends its rules with `POST /api/session`. A mode can loosen what the OpenCode
   configuration asks about or denies, so it is the person's choice in the composer and nothing else can set it:
-  an agent that starts a thread through the MDE MCP cannot pass one, and those threads use the configuration.
+  an agent that starts a thread through the MDE MCP cannot pass one. Such a thread takes the mode of the Inbox
+  thread that asked for it (its own or a subagent's call, see "MDE MCP boundary"), and without one uses the
+  configuration.
   The `chat:compact` channel accepts only a recorded thread ID and sends
   `POST /api/session/{sessionID}/compact` with the fixed body `{ delivery: 'queue' }`; the renderer cannot
   supply the delivery or any other field. OpenCode answers at once and summarizes in the background, so
@@ -664,8 +666,18 @@ place where something other than the window can ask the main process to act, so 
 - **Limits.** One request per connection, at most 1 MB, read within 10 s; at most 16 connections at once;
   agents may start at most 10 threads a minute in all, and a chain of agent-started threads stops at three
   levels (`spawnedBy`). The listener runs only where the Inbox does (macOS and Windows) and is closed on quit.
+- **The caller's permissions follow the work.** A thread an agent starts takes the permission mode of the
+  Inbox thread that asked, so handing a job to a new thread does not escape what the person chose for the
+  caller (web fetch and search asking under "Full access, web asks", for example). A subagent's call counts
+  as its thread's: the calling session is followed up its chain of parents (`InboxChatService.threadOfSession`,
+  at most four levels) to a recorded thread of the same OpenCode, which also gives the call that thread's
+  folder and place in the three-level chain. If OpenCode cannot be asked about the session, `create_thread`
+  refuses rather than start the thread on the configuration. A caller that is no Inbox thread (an OpenCode
+  started outside MDE, for example) already works under the configuration, and so does its thread. The mode
+  is copied when the thread starts: changing the caller's mode later does not change it, and the new thread
+  shows its own mode in its chip. The tool's answer names the mode.
 - **Same checks as the window.** `create_thread` refuses unknown arguments and checks the prompt (length,
-  control characters), agent name, `provider/model`, mode and worktree branch with the rules the IPC
+  control characters), agent name, `provider/model` and worktree branch with the rules the IPC
   validator and `worktreeBranchProblem` use. A directory must be a plain absolute path (or a
   `\\wsl.localhost\<distro>` path in the caller's distro); an unknown one goes through the same
   resolve-and-check (`checkedInboxFolderPlace`) as **Add project**, so it must be an existing directory on the

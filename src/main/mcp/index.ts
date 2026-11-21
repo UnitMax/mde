@@ -35,6 +35,7 @@ export async function startMdeMcp(options: MdeMcpOptions): Promise<McpListener |
     available: options.available,
     targetAllowed: (target) => options.platform === 'win32' ? target.kind === 'wsl' : target.kind === 'native',
     thread: (id) => store.get(id),
+    threadOfSession: (target, sessionId) => chat.threadOfSession(target, sessionId),
     folders: () => store.folders(),
     composer: () => store.composer(),
     addFolder: async (target, directory) => {

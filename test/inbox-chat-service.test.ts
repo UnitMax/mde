@@ -1772,6 +1772,16 @@ describe('Inbox chat service', () => {
       service.stop()
     })
 
+    it('tells which thread a session works for, through its subagents, and only in the thread\'s own OpenCode', async () => {
+      const { service, folder } = await started()
+      expect((await service.threadOfSession(folder.target, 'ses_new'))?.id).toBe('ses_new')
+      expect((await service.threadOfSession(folder.target, 'ses_child'))?.id).toBe('ses_new')
+      expect((await service.threadOfSession(folder.target, 'ses_grand'))?.id).toBe('ses_new')
+      expect(await service.threadOfSession(folder.target, 'ses_stranger')).toBeNull()
+      expect(await service.threadOfSession({ kind: 'wsl', distro: 'Elsewhere' }, 'ses_new')).toBeNull()
+      service.stop()
+    })
+
     it('passes a subagent\'s request events on to its thread', async () => {
       const { service, events, store } = await started()
       const emit = (type: string, data: Record<string, unknown>) =>

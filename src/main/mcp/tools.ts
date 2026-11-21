@@ -8,6 +8,7 @@ import {
   type MdeMcpRequest,
   type MdeMcpResponse,
 } from '@shared/mde-mcp'
+import { threadPermissionModeInfo } from '@shared/permission-modes'
 import { PROMPT_CONTROL_CHARACTERS, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
 import {
   isTerminalRef,
@@ -60,6 +61,11 @@ export interface MdeMcpHost {
   /** Whether threads for this OpenCode can be started here: WSL on Windows, native on macOS. */
   targetAllowed(target: OpenCodeTarget): boolean
   thread(id: string): InboxThread | undefined
+  /**
+   * The Inbox thread an OpenCode session belongs to: itself, or the thread a subagent's session runs under. Null
+   * for a session that is no thread's. Throws when OpenCode cannot be asked.
+   */
+  threadOfSession(target: OpenCodeTarget, sessionId: string): Promise<InboxThread | null>
   folders(): InboxFolder[]
   composer(): InboxComposerState
   /**
@@ -178,11 +184,15 @@ export class MdeMcpTools {
     return { ok: true, text: JSON.stringify({ projects }, null, 2), data: { projects } }
   }
 
-  /** The calling thread, when it is an Inbox thread of the same OpenCode. */
-  private parent(request: MdeMcpRequest): InboxThread | undefined {
+  /**
+   * The calling thread, when the caller is an Inbox thread of the same OpenCode or one of its subagents: a
+   * subagent works for its thread, so what it starts counts as the thread's.
+   */
+  private async parent(request: MdeMcpRequest): Promise<InboxThread | undefined> {
     if (!request.sessionId) return undefined
     const thread = this.host.thread(request.sessionId)
-    return thread && serviceTargetKey(thread.target) === serviceTargetKey(request.target) ? thread : undefined
+    if (thread) return serviceTargetKey(thread.target) === serviceTargetKey(request.target) ? thread : undefined
+    return (await this.host.threadOfSession(request.target, request.sessionId)) ?? undefined
   }
 
   /** How many agent-started threads lead up to `thread`: 0 for one a person started. */
@@ -227,7 +237,13 @@ export class MdeMcpTools {
     const baseText = worktreeArgs ? optionalText(worktreeArgs, 'base', 256) : undefined
     if (agentText && !AGENT_ID.test(agentText)) throw new ToolError('`agent` is not an agent name.')
 
-    const parent = this.parent(request)
+    let parent: InboxThread | undefined
+    try {
+      parent = await this.parent(request)
+    } catch {
+      // Without its caller the thread would lose the caller's permission mode, so it is not started blind.
+      throw new ToolError('MDE could not tell which thread is asking, so it did not start the thread. Try again.')
+    }
     if (this.depth(parent) + 1 > MDE_MCP_MAX_DEPTH) {
       throw new ToolError(`Threads started by agents may only go ${MDE_MCP_MAX_DEPTH} levels deep, and this one is already at the limit.`)
     }
@@ -256,10 +272,14 @@ export class MdeMcpTools {
       worktree = { base, ...(branch ? { branch } : {}) }
     }
 
+    // The new thread works for its caller, so it may do no more without asking than the caller may. Agents cannot
+    // choose a mode: a thread with no Inbox caller runs under the OpenCode configuration, as its caller does.
+    const permissionMode = parent?.permissionMode
+
     // Counted before the work starts, so calls arriving together cannot all slip under the limit.
     this.spawns.push(now)
     const thread = await this.host.create(
-      { folderId: folder.id, text: prompt, agent, model, ...(worktree ? { worktree } : {}) },
+      { folderId: folder.id, text: prompt, agent, model, ...(permissionMode ? { permissionMode } : {}), ...(worktree ? { worktree } : {}) },
       parent ? { parentId: parent.id } : {},
     )
     const data = {
@@ -267,14 +287,18 @@ export class MdeMcpTools {
       title: thread.customTitle ?? thread.title,
       project: folder.name,
       directory: thread.directory,
+      permissions: threadPermissionModeInfo(thread.permissionMode ?? 'default').label,
       ...(thread.worktree ? { worktree: { branch: thread.worktree.branch, base: thread.worktree.base } } : {}),
     }
     if (thread.sendError) {
       return { ok: false, error: `MDE started thread ${thread.id} in ${thread.directory}, but could not send it the prompt. Its prompt is kept as a draft in MDE.` }
     }
+    const permissions = thread.permissionMode
+      ? `It has the same permissions as this thread (${data.permissions}).`
+      : 'Its permissions are the OpenCode settings.'
     return {
       ok: true,
-      text: `Started thread ${thread.id} in ${thread.directory}${thread.worktree ? ` (new worktree on branch ${thread.worktree.branch})` : ''}. It works on its own; the person follows it in MDE.\n${JSON.stringify(data, null, 2)}`,
+      text: `Started thread ${thread.id} in ${thread.directory}${thread.worktree ? ` (new worktree on branch ${thread.worktree.branch})` : ''}. It works on its own; the person follows it in MDE. ${permissions}\n${JSON.stringify(data, null, 2)}`,
       data,
     }
   }
@@ -302,7 +326,8 @@ export class MdeMcpTools {
     }
 
     const target = request.target
-    const parent = this.parent(request)
+    // The caller only names the pane's origin and its default directory here, so a failed lookup is no reason to refuse.
+    const parent = await this.parent(request).catch(() => undefined)
     const directory = directoryText
       ? directoryArgument(target, directoryText)
       : parent?.directory ?? callerDirectory(target, request.cwd)

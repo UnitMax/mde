@@ -1337,6 +1337,16 @@ export class InboxChatService {
   }
 
   /**
+   * The recorded thread a session of `target` belongs to (itself, or the thread a subagent's session runs under), or
+   * null for a session that is no thread's. Throws when OpenCode cannot be asked.
+   */
+  async threadOfSession(target: OpenCodeTarget, sessionId: string): Promise<InboxThread | null> {
+    const owner = await this.sessionOwner(target, sessionId)
+    const thread = owner ? this.dependencies.store.get(owner.threadId) : undefined
+    return thread && serviceTargetKey(thread.target) === serviceTargetKey(target) ? thread : null
+  }
+
+  /**
    * The recorded thread a session belongs to: itself, or the thread at the top of its chain of parents (at most a
    * few subagents deep), with the session's own title. Null for a session that is no recorded thread's.
    */

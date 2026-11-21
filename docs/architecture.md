@@ -292,9 +292,12 @@ Tools:
 
 - `list_projects`: the Inbox projects of the caller's OpenCode (name, directory, and the worktree's branch
   and base for a worktree project).
-- `create_thread({ prompt, directory?, agent?, model?, mode?, worktree? })`: starts a thread and returns its
+- `create_thread({ prompt, directory?, agent?, model?, worktree? })`: starts a thread and returns its
   ID, title, project and directory at once. OpenCode sends the calling session in each call's `_meta`, so the
-  thread whose agent asked (the parent) is known when it is an Inbox thread. Defaults: the parent's directory
+  thread whose agent asked (the parent) is known when it is an Inbox thread or one of its subagents (followed
+  up the session's parents with `InboxChatService.threadOfSession`). The new thread takes the parent's
+  permission mode; agents cannot choose one, and without a parent the configuration decides. The answer names
+  the mode. Defaults: the parent's directory
   (else the bridge's working directory), preferring the parent's project when several match; the parent's
   model (else the new-thread page's); the page's agent (else `build`). A directory that is not a
   project yet is checked like **Add project** and added without becoming the page's choice. `worktree: {}`
@@ -2131,7 +2134,8 @@ step since OpenCode reads the rules at every check; a subagent already running k
 menu says so while the agent works, stays open while the change is on its way and shows the reason when it is
 refused. A fork is given its original's mode the same way after `session.fork`; if that fails it is recorded on the
 default. `inbox.json` keeps only the mode's name (`permissionMode`, absent for the default), for the chips; a bad one
-is dropped. Threads an agent starts through the MDE MCP always use the configuration.
+is dropped. A thread an agent starts through the MDE MCP takes the mode of the thread that asked (copied when it
+starts), and uses the configuration when no Inbox thread asked.
 
 **Composer dock.** `ComposerDock` is the tray tucked behind the top edge of the message box (the thread's and the
 new-thread page's), matching the worktree strip below the new-thread box. It holds rows that draw themselves or

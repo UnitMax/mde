@@ -67,7 +67,7 @@ export const MDE_MCP_TOOLS: McpToolDefinition[] = [
       'the new thread works on its own and the person sees it in MDE. Use it to hand off independent work.',
       'It runs in the same directory as this thread unless `directory` names another one (a folder MDE does not',
       'know yet becomes a new project), or `worktree` asks for a new Git worktree so its file changes stay apart.',
-      'It uses this thread\'s model unless `model` is given.',
+      'It uses this thread\'s model unless `model` is given, and always has this thread\'s permissions.',
     ].join(' '),
     inputSchema: {
       type: 'object',
