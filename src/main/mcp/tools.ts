@@ -63,7 +63,7 @@ export interface MdeMcpHost {
   thread(id: string): InboxThread | undefined
   /**
    * The Inbox thread an OpenCode session belongs to: itself, or the thread a subagent's session runs under. Null
-   * for a session that is no thread's. Throws when OpenCode cannot be asked.
+   * only for a session whose chain of parents ends without reaching a thread; throws when that cannot be told.
    */
   threadOfSession(target: OpenCodeTarget, sessionId: string): Promise<InboxThread | null>
   folders(): InboxFolder[]
@@ -186,12 +186,17 @@ export class MdeMcpTools {
 
   /**
    * The calling thread, when the caller is an Inbox thread of the same OpenCode or one of its subagents: a
-   * subagent works for its thread, so what it starts counts as the thread's.
+   * subagent works for its thread, so what it starts counts as the thread's. Undefined only for a caller known to
+   * be outside the Inbox; throws when that cannot be told, including a call that names no session.
    */
   private async parent(request: MdeMcpRequest): Promise<InboxThread | undefined> {
-    if (!request.sessionId) return undefined
+    // OpenCode names the calling session in every call, so a call without one did not come the usual way.
+    if (!request.sessionId) throw new Error('The call names no session.')
     const thread = this.host.thread(request.sessionId)
-    if (thread) return serviceTargetKey(thread.target) === serviceTargetKey(request.target) ? thread : undefined
+    if (thread) {
+      if (serviceTargetKey(thread.target) !== serviceTargetKey(request.target)) throw new Error('The session is a thread of another OpenCode.')
+      return thread
+    }
     return (await this.host.threadOfSession(request.target, request.sessionId)) ?? undefined
   }
 
@@ -241,8 +246,9 @@ export class MdeMcpTools {
     try {
       parent = await this.parent(request)
     } catch {
-      // Without its caller the thread would lose the caller's permission mode, so it is not started blind.
-      throw new ToolError('MDE could not tell which thread is asking, so it did not start the thread. Try again.')
+      // A thread whose caller cannot be told would run under the configuration instead of the caller's permission
+      // mode, so it is not started. Only a caller known to be outside the Inbox gets the configuration.
+      throw new ToolError('MDE could not tell which thread is asking, so it cannot tell which permissions the new thread should have, and did not start it.')
     }
     if (this.depth(parent) + 1 > MDE_MCP_MAX_DEPTH) {
       throw new ToolError(`Threads started by agents may only go ${MDE_MCP_MAX_DEPTH} levels deep, and this one is already at the limit.`)

@@ -671,9 +671,14 @@ place where something other than the window can ask the main process to act, so 
   caller (web fetch and search asking under "Full access, web asks", for example). A subagent's call counts
   as its thread's: the calling session is followed up its chain of parents (`InboxChatService.threadOfSession`,
   at most four levels) to a recorded thread of the same OpenCode, which also gives the call that thread's
-  folder and place in the three-level chain. If OpenCode cannot be asked about the session, `create_thread`
-  refuses rather than start the thread on the configuration. A caller that is no Inbox thread (an OpenCode
-  started outside MDE, for example) already works under the configuration, and so does its thread. The mode
+  folder and place in the three-level chain. Only a caller whose chain of sessions ends without reaching a
+  thread (an OpenCode session started outside MDE, for example) is outside the Inbox; it already works under
+  the configuration, and so does its thread. When the caller cannot be told, `create_thread` refuses rather
+  than start the thread on the configuration: a call that names no session (OpenCode names it in every call),
+  a chain longer than four parents, a session OpenCode cannot read or will not answer about, or a thread of
+  another OpenCode. `open_terminal` goes on without a caller, which there only labels the pane. The session
+  is what OpenCode says, not proof: an agent allowed to run commands could run the bridge itself with any
+  session, but such an agent could also reach the web or start OpenCode directly. The mode
   is copied when the thread starts: changing the caller's mode later does not change it, and the new thread
   shows its own mode in its chip. The tool's answer names the mode.
 - **Same checks as the window.** `create_thread` refuses unknown arguments and checks the prompt (length,

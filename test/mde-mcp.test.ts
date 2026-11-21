@@ -298,7 +298,8 @@ function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; comp
   }
   const instance = new MdeMcpTools(host)
   const call = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) =>
-    instance.handle({ version: 1, token: 't', target: wsl, cwd: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app', tool: 'create_thread', arguments: args, ...extra })
+    // Unless a test says otherwise, the caller is an OpenCode session outside the Inbox (its chain ends without a thread).
+    instance.handle({ version: 1, token: 't', target: wsl, cwd: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app', tool: 'create_thread', arguments: args, sessionId: 'ses_tui', ...extra })
   const openTerminal = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) => call(args, { tool: 'open_terminal', ...extra })
   const readTerminal = (args: Record<string, unknown>) => call(args, { tool: 'read_terminal' })
   return { host, created, added, terminals, reads, lookups, call, openTerminal, readTerminal, folders, advance: (ms: number) => { now += ms } }
@@ -417,18 +418,30 @@ describe('MDE MCP tools', () => {
     expect(created[0]).toMatchObject({ request: { folderId: 'fld_lib', permissionMode: 'full-web-asks' }, options: { parentId: 'ses_parent' } })
   })
 
-  it('does not start a thread blind when MDE cannot tell which thread a session belongs to', async () => {
-    const { call, created } = tools({ owners: { ses_sub: new Error('OpenCode is not answering') }, composer: { model } })
-    expect(await call({ prompt: 'Hi' }, { sessionId: 'ses_sub' })).toMatchObject({ ok: false, error: expect.stringContaining('could not tell which thread') })
+  it('does not start a thread when MDE cannot tell which thread a session belongs to', async () => {
+    const { call, created } = tools({
+      owners: { ses_down: new Error('OpenCode is not answering'), ses_deep: new Error('MDE cannot tell which thread this session belongs to.') },
+      composer: { model },
+    })
+    for (const sessionId of ['ses_down', 'ses_deep']) {
+      expect(await call({ prompt: 'Hi' }, { sessionId })).toMatchObject({ ok: false, error: expect.stringContaining('cannot tell which permissions') })
+    }
     expect(created).toEqual([])
   })
 
-  it('does not take a thread of another OpenCode as the caller', async () => {
+  it('does not start a thread for a call that names no session, but still opens a terminal', async () => {
+    const { call, created, openTerminal, terminals } = tools({ composer: { model } })
+    expect(await call({ prompt: 'Hi' }, { sessionId: undefined })).toMatchObject({ ok: false, error: expect.stringContaining('could not tell which thread') })
+    expect(created).toEqual([])
+    expect(await openTerminal({}, { sessionId: undefined })).toMatchObject({ ok: true })
+    expect(terminals[0]?.parent).toBeUndefined()
+  })
+
+  it('does not take a thread of another OpenCode as the caller, nor start one on the configuration for it', async () => {
     const elsewhere = thread('ses_parent', { permissionMode: 'ask', target: { kind: 'wsl', distro: 'Debian' } })
     const { call, created, lookups } = tools({ threads: [elsewhere], composer: { model } })
-    await call({ prompt: 'Hi' }, { sessionId: 'ses_parent' })
-    expect(created[0]).toMatchObject({ options: {} })
-    expect(created[0]?.request.permissionMode).toBeUndefined()
+    expect(await call({ prompt: 'Hi' }, { sessionId: 'ses_parent' })).toMatchObject({ ok: false })
+    expect(created).toEqual([])
     expect(lookups).toEqual([])
   })
 

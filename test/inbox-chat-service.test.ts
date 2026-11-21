@@ -1739,7 +1739,9 @@ describe('Inbox chat service', () => {
             return id === 'ses_child' ? session('ses_child', 'ses_new', 'Write hello.txt file')
               : id === 'ses_grand' ? session('ses_grand', 'ses_child', 'Look around')
                 : id === 'ses_stranger' ? session('ses_stranger', 'ses_elsewhere')
-                  : id === 'ses_elsewhere' ? session('ses_elsewhere') : null
+                  : id === 'ses_elsewhere' ? session('ses_elsewhere')
+                    // A chain of subagents longer than MDE follows: ses_l4 → ses_l3 → … → ses_l0 → ses_new.
+                    : id?.startsWith('ses_l') ? session(id, Number(id.slice(5)) === 0 ? 'ses_new' : `ses_l${Number(id.slice(5)) - 1}`) : null
           }
           default: return null
         }
@@ -1772,13 +1774,17 @@ describe('Inbox chat service', () => {
       service.stop()
     })
 
-    it('tells which thread a session works for, through its subagents, and only in the thread\'s own OpenCode', async () => {
+    it('tells which thread a session works for, through its subagents, and refuses to guess when the chain cannot be told', async () => {
       const { service, folder } = await started()
       expect((await service.threadOfSession(folder.target, 'ses_new'))?.id).toBe('ses_new')
       expect((await service.threadOfSession(folder.target, 'ses_child'))?.id).toBe('ses_new')
       expect((await service.threadOfSession(folder.target, 'ses_grand'))?.id).toBe('ses_new')
+      expect((await service.threadOfSession(folder.target, 'ses_l2'))?.id).toBe('ses_new')
+      // Only a chain that ends without a thread is outside the Inbox; one that cannot be told is not.
       expect(await service.threadOfSession(folder.target, 'ses_stranger')).toBeNull()
-      expect(await service.threadOfSession({ kind: 'wsl', distro: 'Elsewhere' }, 'ses_new')).toBeNull()
+      await expect(service.threadOfSession(folder.target, 'ses_l4')).rejects.toThrow('cannot tell which thread')
+      await expect(service.threadOfSession(folder.target, 'ses_missing')).rejects.toThrow()
+      await expect(service.threadOfSession({ kind: 'wsl', distro: 'Elsewhere' }, 'ses_new')).rejects.toThrow('cannot tell which thread')
       service.stop()
     })
 

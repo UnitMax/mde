@@ -144,6 +144,13 @@ const SKILL_ATTEMPTS = 4
 const MCP_ATTEMPTS = 6
 /** How many parents up a subagent's session is followed to find its thread (a subagent of a subagent…). */
 const SUBAGENT_DEPTH = 4
+
+/**
+ * Whose a session is: a recorded thread's (the session itself, or the thread at the top of its chain of parents),
+ * `outside` when its chain ends at a session that is no thread, or `unknown` when the chain could not be followed
+ * there (too long, an unreadable session, a thread of another OpenCode).
+ */
+type SessionOwner = { threadId: string; title: string | null } | 'outside' | 'unknown'
 const MCP_RETRY_MS = 750
 /**
  * OpenCode refuses to revert a conversation that is running, and an interrupt takes a moment to
@@ -290,10 +297,10 @@ export class InboxChatService {
   private readonly subagentCalls = new Map<string, string>()
   /**
    * The recorded thread each other session belongs to by its chain of parents (a subagent's, a subagent's subagent's),
-   * with the session's title, or null for a session that is no thread's. Keyed by target and session; a session's
-   * parent never changes, so an answer is kept.
+   * with the session's title; `outside` for a session whose chain ends without one, `unknown` when the chain could
+   * not be followed to its end. Keyed by target and session; a session's parent never changes, so an answer is kept.
    */
-  private readonly sessionOwners = new Map<string, Promise<{ threadId: string; title: string | null } | null>>()
+  private readonly sessionOwners = new Map<string, Promise<SessionOwner>>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
   /** Places (service + directory) whose MCP list has been answered once, so an empty one is believed. */
   private readonly mcpSettled = new Set<string>()
@@ -1338,24 +1345,33 @@ export class InboxChatService {
 
   /**
    * The recorded thread a session of `target` belongs to (itself, or the thread a subagent's session runs under), or
-   * null for a session that is no thread's. Throws when OpenCode cannot be asked.
+   * null for a session whose chain of parents ends without reaching a thread. Throws when that cannot be told: the
+   * chain is too long, a session cannot be read, or OpenCode cannot be asked.
    */
   async threadOfSession(target: OpenCodeTarget, sessionId: string): Promise<InboxThread | null> {
-    const owner = await this.sessionOwner(target, sessionId)
-    const thread = owner ? this.dependencies.store.get(owner.threadId) : undefined
-    return thread && serviceTargetKey(thread.target) === serviceTargetKey(target) ? thread : null
+    const owner = await this.sessionPlace(target, sessionId)
+    if (owner === 'outside') return null
+    const thread = owner === 'unknown' ? undefined : this.dependencies.store.get(owner.threadId)
+    if (!thread || serviceTargetKey(thread.target) !== serviceTargetKey(target)) throw new Error('MDE cannot tell which thread this session belongs to.')
+    return thread
   }
 
   /**
    * The recorded thread a session belongs to: itself, or the thread at the top of its chain of parents (at most a
-   * few subagents deep), with the session's own title. Null for a session that is no recorded thread's.
+   * few subagents deep), with the session's own title. Null for a session that is no recorded thread's, or whose
+   * thread cannot be told.
    */
-  private sessionOwner(target: OpenCodeTarget, sessionId: string): Promise<{ threadId: string; title: string | null } | null> {
+  private async sessionOwner(target: OpenCodeTarget, sessionId: string): Promise<{ threadId: string; title: string | null } | null> {
+    const owner = await this.sessionPlace(target, sessionId)
+    return typeof owner === 'object' && this.dependencies.store.get(owner.threadId) ? owner : null
+  }
+
+  private sessionPlace(target: OpenCodeTarget, sessionId: string): Promise<SessionOwner> {
     if (this.dependencies.store.get(sessionId)) return Promise.resolve({ threadId: sessionId, title: null })
     const key = `${serviceTargetKey(target)}\n${sessionId}`
     const known = this.sessionOwners.get(key)
-    if (known) return known.then((owner) => (owner && this.dependencies.store.get(owner.threadId) ? owner : null))
-    const lookup = (async () => {
+    if (known) return known
+    const lookup = (async (): Promise<SessionOwner> => {
       let title: string | null = null
       let current = sessionId
       for (let depth = 0; depth < SUBAGENT_DEPTH; depth += 1) {
@@ -1363,14 +1379,15 @@ export class InboxChatService {
           await this.dependencies.client.request(target, 'session.get', { params: { sessionID: current } }),
           current,
         )
-        if (!session) return null
+        if (!session) return 'unknown'
         if (depth === 0) title = session.title
-        if (!session.parentId) return null
+        if (!session.parentId) return 'outside'
         const thread = this.dependencies.store.get(session.parentId)
-        if (thread) return serviceTargetKey(thread.target) === serviceTargetKey(target) ? { threadId: thread.id, title } : null
+        if (thread) return serviceTargetKey(thread.target) === serviceTargetKey(target) ? { threadId: thread.id, title } : 'unknown'
         current = session.parentId
       }
-      return null
+      // The chain goes on past where it is followed, so it may still lead to a thread.
+      return 'unknown'
     })()
     this.sessionOwners.set(key, lookup)
     // A failed read is not an answer: the next request asks again.

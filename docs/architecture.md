@@ -296,8 +296,9 @@ Tools:
   ID, title, project and directory at once. OpenCode sends the calling session in each call's `_meta`, so the
   thread whose agent asked (the parent) is known when it is an Inbox thread or one of its subagents (followed
   up the session's parents with `InboxChatService.threadOfSession`). The new thread takes the parent's
-  permission mode; agents cannot choose one, and without a parent the configuration decides. The answer names
-  the mode. Defaults: the parent's directory
+  permission mode; agents cannot choose one, and for a caller whose sessions lead to no thread the
+  configuration decides. A call whose caller cannot be told (no session, a chain past four parents, an
+  unreadable session) is refused, since its thread's permissions cannot be. The answer names the mode. Defaults: the parent's directory
   (else the bridge's working directory), preferring the parent's project when several match; the parent's
   model (else the new-thread page's); the page's agent (else `build`). A directory that is not a
   project yet is checked like **Add project** and added without becoming the page's choice. `worktree: {}`
@@ -2135,7 +2136,8 @@ menu says so while the agent works, stays open while the change is on its way an
 refused. A fork is given its original's mode the same way after `session.fork`; if that fails it is recorded on the
 default. `inbox.json` keeps only the mode's name (`permissionMode`, absent for the default), for the chips; a bad one
 is dropped. A thread an agent starts through the MDE MCP takes the mode of the thread that asked (copied when it
-starts), and uses the configuration when no Inbox thread asked.
+starts), uses the configuration when the caller is known to be outside the Inbox, and is not started when the
+caller cannot be told.
 
 **Composer dock.** `ComposerDock` is the tray tucked behind the top edge of the message box (the thread's and the
 new-thread page's), matching the worktree strip below the new-thread box. It holds rows that draw themselves or
