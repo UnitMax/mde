@@ -121,6 +121,8 @@ const OPTIONS_TTL_MS = 60_000
 const FILE_PICKER_LIMIT = 40
 /** How many files the Ctrl+P search lists at most. */
 const FILE_SEARCH_LIMIT = 80
+/** The one case a permission request is not answered in MDE: OpenCode sent targets MDE cannot read. */
+const PERMISSION_UNREADABLE = 'MDE cannot read this permission request. Reject it here, or answer it in an OpenCode terminal.'
 /** The most entries of one folder the `@` picker looks at, and asks Git about. */
 const FOLDER_LIST_LIMIT = 1000
 /**
@@ -1382,7 +1384,11 @@ export class InboxChatService {
     if (request.decision !== 'reject') {
       const answer = await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: sessionId } })
       const permission = parsePermissions(answer).find((entry) => entry.id === request.requestId)
-      if (!permission || permission.incomplete) throw new Error('Review this permission request in an OpenCode terminal, or reject it here.')
+      if (!permission) throw new Error('This permission request is no longer open.')
+      if (permission.incomplete) throw new Error(PERMISSION_UNREADABLE)
+      if (request.decision === 'always' && permission.saveIncomplete) throw new Error('MDE cannot show what Always allow would save. Allow it once, or reject it.')
+      // What the card showed is what is approved: a request that changed since must be looked at again.
+      if (request.revision !== permission.revision) throw new Error('This permission request changed. Check it again before you answer.')
     }
     await this.dependencies.client.request(thread.target, 'session.permission.reply', {
       params: { sessionID: sessionId, requestID: request.requestId },

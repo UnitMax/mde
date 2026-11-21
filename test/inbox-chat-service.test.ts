@@ -10,6 +10,10 @@ import { SUGGEST_PREAMBLE, SUGGEST_TIMEOUT_MS } from '../src/main/inbox/suggesti
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
 import { OpenCodeServiceError, SERVICE_REQUEST_TIMEOUT_MS } from '../src/main/opencode/service/client'
+import { parsePermissions } from '../src/main/opencode/service/parse'
+
+/** The revision MDE gives a permission request, as a card would send it back. */
+const revisionOf = (request: Record<string, unknown>): string => parsePermissions({ data: [request] })[0]!.revision
 
 const wsl = { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }
 const model = { id: 'model-1', providerId: 'provider-1' }
@@ -1644,13 +1648,14 @@ describe('Inbox chat service', () => {
   })
 
   it('replies to permissions and questions with checked IDs', async () => {
+    const request = { id: 'per_1', action: 'read', resources: ['file'] }
     const { service, folder, calls } = setup({
       'session.create': { data: { id: 'ses_new' } },
-      'session.permission.list': { data: [{ id: 'per_1', action: 'read', resources: ['file'] }] },
+      'session.permission.list': { data: [request] },
     })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
     calls.length = 0
-    await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'always' })
+    await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'always', revision: revisionOf(request) })
     await service.replyForm({ threadId: 'ses_new', formId: 'frm_1', answer: { q0: 'Red' } })
     expect(calls).toEqual([
       { operation: 'session.permission.list', request: { params: { sessionID: 'ses_new' } } },
@@ -1660,16 +1665,51 @@ describe('Inbox chat service', () => {
     service.stop()
   })
 
-  it('refuses incomplete approvals in main while allowing rejection', async () => {
+  it('refuses unreadable approvals in main while allowing rejection', async () => {
+    const request = { id: 'per_1', action: 'read', resources: ['file', null] }
     const { service, folder, calls } = setup({
       'session.create': { data: { id: 'ses_new' } },
-      'session.permission.list': { data: [{ id: 'per_1', action: 'read', resources: Array(51).fill('file') }] },
+      'session.permission.list': { data: [request] },
     })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
     calls.length = 0
-    await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'once' })).rejects.toThrow('Review this permission')
+    await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'once', revision: revisionOf(request) })).rejects.toThrow('cannot read this permission request')
     expect(calls.some((call) => call.operation === 'session.permission.reply')).toBe(false)
     await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'reject' })
+    expect(calls.at(-1)?.operation).toBe('session.permission.reply')
+    service.stop()
+  })
+
+  it('allows once but refuses Always allow when what it would save is unreadable', async () => {
+    const request = { id: 'per_1', action: 'bash', resources: ['ls'], save: ['ls *', 42] }
+    const { service, folder, calls } = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.permission.list': { data: [request] },
+    })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    calls.length = 0
+    await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'always', revision: revisionOf(request) })).rejects.toThrow('cannot show what Always allow would save')
+    expect(calls.some((call) => call.operation === 'session.permission.reply')).toBe(false)
+    await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'once', revision: revisionOf(request) })
+    expect(calls.at(-1)).toMatchObject({ operation: 'session.permission.reply', request: { body: { decision: 'once' } } })
+    service.stop()
+  })
+
+  it('refuses to allow a request that changed after the card showed it, or without saying what was shown', async () => {
+    const shown = { id: 'per_1', action: 'bash', resources: ['git status'], save: ['git status *'] }
+    const changed = { ...shown, save: [...Array(20).fill('git status *'), '*'] }
+    const { service, folder, calls } = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.permission.list': { data: [changed] },
+    })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    calls.length = 0
+    for (const decision of ['once', 'always'] as const) {
+      await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision, revision: revisionOf(shown) })).rejects.toThrow('changed')
+      await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision })).rejects.toThrow('changed')
+    }
+    expect(calls.some((call) => call.operation === 'session.permission.reply')).toBe(false)
+    await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'always', revision: revisionOf(changed) })
     expect(calls.at(-1)?.operation).toBe('session.permission.reply')
     service.stop()
   })
@@ -1711,8 +1751,8 @@ describe('Inbox chat service', () => {
       const { service } = await started()
       const requests = await service.requests('ses_new')
       expect(requests.permissions).toEqual([
-        { id: 'per_child', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
-        { id: 'per_grand', action: 'shell', resources: ['ls'], save: ['ls *'], subagent: { sessionId: 'ses_grand', title: 'Look around' } },
+        { id: 'per_child', action: 'edit', resources: ['hello.txt'], save: ['*'], revision: expect.stringMatching(/^[0-9a-f]{64}$/), subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
+        { id: 'per_grand', action: 'shell', resources: ['ls'], save: ['ls *'], revision: expect.stringMatching(/^[0-9a-f]{64}$/), subagent: { sessionId: 'ses_grand', title: 'Look around' } },
       ])
       expect(requests.forms).toEqual([{ id: 'frm_child', title: 'Pick', fields: [], unsupported: true, subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } }])
       service.stop()
@@ -1720,7 +1760,8 @@ describe('Inbox chat service', () => {
 
     it('answers a subagent\'s request in its session, and only one that belongs to the thread', async () => {
       const { service, calls } = await started()
-      await service.replyPermission({ threadId: 'ses_new', requestId: 'per_child', decision: 'always', sessionId: 'ses_child' })
+      await service.replyPermission({ threadId: 'ses_new', requestId: 'per_child', decision: 'always', sessionId: 'ses_child',
+        revision: revisionOf({ id: 'per_child', action: 'edit', resources: ['hello.txt'], save: ['*'] }) })
       expect(calls.at(-1)).toEqual({ operation: 'session.permission.reply', request: { params: { sessionID: 'ses_child', requestID: 'per_child' }, body: { decision: 'always' } } })
       await service.replyForm({ threadId: 'ses_new', formId: 'frm_child', answer: { q0: 'x' }, sessionId: 'ses_child' })
       expect(calls.at(-1)?.request.params).toEqual({ sessionID: 'ses_child', formID: 'frm_child' })

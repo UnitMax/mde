@@ -649,8 +649,19 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
 
     replyPermission: async (threadId, requestId, decision) => {
       // A subagent's request is answered in the subagent's session.
-      const sessionId = get().threads[threadId]?.requests.permissions.find((item) => item.id === requestId)?.subagent?.sessionId
-      await window.api.chat.replyPermission({ threadId, requestId, decision, ...(sessionId ? { sessionId } : {}) })
+      const permission = get().threads[threadId]?.requests.permissions.find((item) => item.id === requestId)
+      const sessionId = permission?.subagent?.sessionId
+      try {
+        await window.api.chat.replyPermission({
+          threadId, requestId, decision,
+          ...(permission && decision !== 'reject' ? { revision: permission.revision } : {}),
+          ...(sessionId ? { sessionId } : {}),
+        })
+      } catch (error) {
+        // The request may have changed or gone: show it as it is now, beside the error.
+        void get().refreshRequests(threadId)
+        throw error
+      }
       // "Always allow" saved an approval for the project; the event says so too, but not before this returns.
       if (decision === 'always') void useInboxSavedPermissions.getState().load(threadId)
       patchThread(threadId, (thread) => ({

@@ -463,7 +463,7 @@ describe('a conversation in compact mode', () => {
 
   it('leaves active permission and question requests outside the collapsed activity', async () => {
     const answer: ChatRequests = {
-      permissions: [{ id: 'per_active', action: 'shell', resources: ['python3 server.py'] }],
+      permissions: [{ id: 'per_active', revision: 'rev-per_active', action: 'shell', resources: ['python3 server.py'] }],
       forms: [{ id: 'form_active', title: 'Which port?', unsupported: false, fields: [{ key: 'port', type: 'string', title: 'Port', required: true, options: [], custom: true }] }],
     }
     api.chat.requests.mockResolvedValueOnce(answer)

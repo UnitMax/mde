@@ -326,7 +326,7 @@ describe('what the goal is doing, as the card says it', () => {
   it('says the agent waits for an answer when a permission or a question is open', async () => {
     current = goal()
     page = { messages: conversation, older: null, running: true, pending: [] }
-    requests = { permissions: [{ id: 'per_1', action: 'bash', resources: ['npm test'] }], forms: [] }
+    requests = { permissions: [{ id: 'per_1', revision: 'rev-per_1', action: 'bash', resources: ['npm test'] }], forms: [] }
     await render()
     await vi.waitFor(() => expect(card()!.dataset.phase).toBe('attention'))
     expect(text('chat-goal-status')).toBe('Waiting for your answer')

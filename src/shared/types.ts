@@ -714,9 +714,14 @@ export interface ChatPermission {
   action: string
   resources: string[]
   message?: string
+  /** MDE cannot read the request's targets (malformed or past its limits): it can only be rejected. */
   incomplete?: boolean
-  /** The patterns "Always allow" saves for the project (`git status *`, or `*` for every edit). */
+  /** The patterns "Always allow" saves for the project (`git status *`, or `*` for every edit), all of them. */
   save?: string[]
+  /** MDE cannot read what "Always allow" would save: only that choice is unavailable. */
+  saveIncomplete?: boolean
+  /** A fingerprint of what the card shows; an approval carries it, and main refuses one for a changed request. */
+  revision: string
   /** Set when a subagent of the thread asks: its session, where the answer goes, and its title (the task). */
   subagent?: ChatRequestSubagent
 }
@@ -970,6 +975,8 @@ export interface ChatPermissionReplyRequest {
   threadId: string
   requestId: string
   decision: 'once' | 'always' | 'reject'
+  /** The `revision` of the request as the card showed it; required to allow. */
+  revision?: string
   /** The subagent session that asked, when it was not the thread itself. */
   sessionId?: string
 }

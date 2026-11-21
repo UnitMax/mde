@@ -265,10 +265,15 @@ the validated `chat:*` channels.
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
   request times out after 30 seconds. Redirects are rejected.
-- **Permission approvals.** Incomplete, malformed, overlong or visually ambiguous
-  resource lists disable approval in the card (line breaks and tabs are allowed, so multi-line
-  shell commands can be approved; other control, zero-width and bidi characters are not). Main re-reads the request before
-  granting and refuses incomplete or missing scopes; rejection remains available.
+- **Permission approvals.** A card shows a request whole: every target (up to 200 of up to 32 KiB) and every
+  pattern Always allow would save (up to 500 of up to 4 KiB), nothing cut. Control, zero-width, bidi, tag and
+  variation characters are shown as marked `U+XXXX` codes, with a warning, instead of being refused; line breaks
+  and tabs in targets show as they are. Only targets MDE cannot read (not text, blank, or past the limits)
+  leave just Reject; a save list it cannot read turns off Always allow alone, so Allow once still works.
+  `parsePermissions` gives each request a `revision`, a SHA-256 of what the card shows (action, targets, save
+  patterns, message); the card sends it with an approval, and main re-reads the request and refuses an
+  approval whose revision does not match, so a request that changed after it was shown is never approved
+  unseen. The renderer then reads the requests again and the card shows the current one.
 - **Event streams.** SSE limits count full multiline UTF-8 events and cancel
   oversized streams. Aggregate resource budgets remain an open hardening area.
 - **Responses.** Every response and event is parsed into MDE's own types; unknown

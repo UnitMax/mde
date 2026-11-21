@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { GOAL_OBJECTIVE_LIMIT } from '@shared/goal'
 import { isViewCall, isViewTool } from '@shared/view-tool'
 import { VIEW_INPUT_LIMIT } from '@shared/view-spec'
@@ -822,6 +823,15 @@ export function parseActiveSessions(value: unknown): Set<string> {
   return ids
 }
 
+/** Hard limits on a permission request, against a broken or hostile answer. Past one, MDE says so rather than cutting. */
+export const PERMISSION_LIMITS = { resources: 200, resourceLength: 32_768, save: 500, saveLength: 4096 }
+
+/**
+ * Permission requests, kept whole: every target and every pattern "Always allow" would save, invisible characters
+ * included (the card shows them as markers). A request whose targets MDE cannot read or that passes the limits is
+ * `incomplete` (only rejecting is offered); a save list MDE cannot read is `saveIncomplete` (Allow once still is).
+ * `revision` fingerprints what the card shows, so an approval is refused if the request changed after it was seen.
+ */
 export function parsePermissions(value: unknown): ChatPermission[] {
   const permissions: ChatPermission[] = []
   for (const item of list(data(value, 'a permission list'))) {
@@ -829,29 +839,33 @@ export function parsePermissions(value: unknown): ChatPermission[] {
     const id = short(request?.id)
     const action = short(request?.action, 200)
     if (!request || !id || !/^per_[A-Za-z0-9_-]{1,200}$/.test(id) || !action) continue
-    const rawResources = list(request.resources)
-    const incomplete = !Array.isArray(request.resources) || rawResources.length > 50 ||
-      rawResources.some((resource) => typeof resource !== 'string' || !resource.trim() || resource.length > 4096 ||
-        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(resource)) ||
+    const resources = readable(request.resources, PERMISSION_LIMITS.resources, PERMISSION_LIMITS.resourceLength)
+    const save = request.save === undefined ? [] : readable(request.save, PERMISSION_LIMITS.save, PERMISSION_LIMITS.saveLength)
+    const incomplete = !resources ||
       (request.message !== undefined && (typeof request.message !== 'string' || request.message.length > 4000))
-    const resources = rawResources
-      .map((resource) => body(resource, 4096).text.trim())
-      .filter(Boolean)
-      .slice(0, 50)
     const message = body(request.message, 4000).text.trim()
-    const save = list(request.save)
-      .filter((pattern): pattern is string => typeof pattern === 'string' && Boolean(short(pattern, 4096)))
-      .slice(0, 20)
+    const saveIncomplete = !save
+    const revision = createHash('sha256')
+      .update(JSON.stringify([action, resources, save, message]))
+      .digest('hex')
     permissions.push({
       id,
       action,
-      resources,
+      resources: resources ?? [],
+      revision,
       ...(message ? { message } : {}),
       ...(incomplete ? { incomplete: true } : {}),
-      ...(save.length > 0 ? { save } : {}),
+      ...(saveIncomplete ? { saveIncomplete: true } : {}),
+      ...(save && save.length > 0 ? { save } : {}),
     })
   }
   return permissions
+}
+
+/** A list of non-blank strings within the limits, unchanged; null when any entry or the list breaks them. */
+function readable(value: unknown, count: number, length: number): string[] | null {
+  if (!Array.isArray(value) || value.length > count) return null
+  return value.every((entry) => typeof entry === 'string' && entry.trim() !== '' && entry.length <= length) ? value as string[] : null
 }
 
 /** The approvals OpenCode saved for a project ("Always allow"), oldest first; malformed entries are left out. */

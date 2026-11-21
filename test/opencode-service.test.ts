@@ -39,6 +39,7 @@ import {
   parseModels,
   parsePendingMessages,
   parsePermissions,
+  PERMISSION_LIMITS,
   parseProviderNames,
   parsePromptAnswer,
   parseSessionRevert,
@@ -847,7 +848,7 @@ describe('OpenCode service parsing', () => {
     expect(parsePermissions({ data: [
       { id: 'per_1', sessionID: 'ses_1', action: 'read', resources: ['.env'], save: ['*'] },
       { id: 'bad', action: 'read', resources: [] },
-    ] })).toEqual([{ id: 'per_1', action: 'read', resources: ['.env'], save: ['*'] }])
+    ] })).toEqual([{ id: 'per_1', action: 'read', resources: ['.env'], save: ['*'], revision: expect.stringMatching(/^[0-9a-f]{64}$/) }])
 
     const question = fixture('question.jsonl').trim().split('\n').map(parseServiceEvent)
       .find((event) => event?.type === 'form.created')!
@@ -868,19 +869,57 @@ describe('OpenCode service parsing', () => {
     expect(external?.unsupported).toBe(true)
   })
 
-  it('marks incomplete permission scopes so they cannot be approved', () => {
-    for (const resources of [Array(51).fill('visible'), ['x'.repeat(4097)], ['safe', null], ['spoof\u202efile']]) {
-      expect(parsePermissions({ data: [{ id: 'per_1', action: 'read', resources }] })[0]?.incomplete).toBe(true)
+  it('marks permission requests MDE cannot read, and only those', () => {
+    const parse = (request: Record<string, unknown>) => parsePermissions({ data: [{ id: 'per_1', action: 'read', ...request }] })[0]!
+    for (const resources of [Array(PERMISSION_LIMITS.resources + 1).fill('visible'), ['x'.repeat(PERMISSION_LIMITS.resourceLength + 1)], ['safe', null], ['  '], 'file']) {
+      expect(parse({ resources }).incomplete).toBe(true)
+    }
+    // Many targets, long ones and invisible characters are shown whole, not refused.
+    const many = Array.from({ length: PERMISSION_LIMITS.resources }, (_, index) => `file-${index}`)
+    expect(parse({ resources: many })).toMatchObject({ resources: many })
+    expect(parse({ resources: many }).incomplete).toBeUndefined()
+    for (const resource of ['spoof\u202efile', 'zero\u200bwidth', 'x'.repeat(5000)]) {
+      const permission = parse({ resources: [resource] })
+      expect(permission.incomplete).toBeUndefined()
+      expect(permission.resources).toEqual([resource])
     }
   })
 
-  it('lets multi-line commands be approved and shows them whole', () => {
+  it('keeps every pattern Always allow would save, and marks a save list it cannot read', () => {
+    const parse = (save: unknown) => parsePermissions({ data: [{ id: 'per_1', action: 'bash', resources: ['ls'], save }] })[0]!
+    // The 21st pattern used to be dropped without a word; a `*` there is the whole point.
+    const save = [...Array.from({ length: 20 }, (_, index) => `cmd${index} *`), '*']
+    expect(parse(save)).toMatchObject({ save })
+    expect(parse(save).saveIncomplete).toBeUndefined()
+    expect(parse(['ls\u202e *']).save).toEqual(['ls\u202e *'])
+    for (const bad of [Array(PERMISSION_LIMITS.save + 1).fill('ls *'), ['ls *', 42], ['x'.repeat(PERMISSION_LIMITS.saveLength + 1)], [''], 'ls *']) {
+      const permission = parse(bad)
+      expect(permission.saveIncomplete).toBe(true)
+      expect(permission.save).toBeUndefined()
+      expect(permission.incomplete).toBeUndefined()
+    }
+    expect(parse(undefined).saveIncomplete).toBeUndefined()
+  })
+
+  it('gives each request a revision that changes with anything the card shows', () => {
+    const base = { id: 'per_1', action: 'bash', resources: ['ls'], save: ['ls *'], message: 'List' }
+    const revision = (request: Record<string, unknown>) => parsePermissions({ data: [request] })[0]!.revision
+    expect(revision(base)).toMatch(/^[0-9a-f]{64}$/)
+    expect(revision({ ...base, metadata: { other: 1 } })).toBe(revision(base))
+    for (const change of [{ action: 'edit' }, { resources: ['ls -a'] }, { save: ['ls *', '*'] }, { save: undefined }, { message: 'Other' }]) {
+      expect(revision({ ...base, ...change })).not.toBe(revision(base))
+    }
+  })
+
+  it('lets multi-line commands and control characters be approved and shows them whole', () => {
     const command = "cat <<'EOF' > notes.txt\n\tfirst line\r\nsecond line\nEOF"
     const [permission] = parsePermissions({ data: [{ id: 'per_1', action: 'bash', resources: [command] }] })
     expect(permission?.incomplete).toBeUndefined()
     expect(permission?.resources).toEqual([command])
     for (const resource of ['bell\u0007', 'escape\u001b[31m', 'form\u000cfeed']) {
-      expect(parsePermissions({ data: [{ id: 'per_1', action: 'bash', resources: [resource] }] })[0]?.incomplete).toBe(true)
+      const [shown] = parsePermissions({ data: [{ id: 'per_1', action: 'bash', resources: [resource] }] })
+      expect(shown?.incomplete).toBeUndefined()
+      expect(shown?.resources).toEqual([resource])
     }
   })
 

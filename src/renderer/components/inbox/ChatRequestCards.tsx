@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Bot, LoaderCircle, MessageCircleQuestion, ShieldAlert } from 'lucide-react'
 import type { ChatForm, ChatFormField, ChatPermission, ChatRequestSubagent } from '@shared/types'
-import { alwaysAllowHint } from '@/lib/saved-permissions'
+import { alwaysAllowHint, hasHiddenCharacters, visibleSegments } from '@/lib/saved-permissions'
 import { Button } from '@/components/ui/button'
 import { formAnswer, initialFormDraft, permissionTitle, type FormDraft } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -54,6 +54,7 @@ export function PermissionCard({
 }): JSX.Element {
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const hidden = hasHiddenCharacters(permission.resources, true) || hasHiddenCharacters(permission.save ?? [], false)
   const reply = async (decision: 'once' | 'always' | 'reject'): Promise<void> => {
     setPending(decision)
     setError(null)
@@ -72,12 +73,13 @@ export function PermissionCard({
       {...(permission.subagent ? { subagent: permission.subagent } : {})}
     >
       {permission.message && <p className="mb-2 text-[13px] text-fg-muted">{permission.message}</p>}
-      {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot show this permission request completely. Review it in an OpenCode terminal, or reject it here.</p>}
+      {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot read this permission request. Reject it here, or answer it in an OpenCode terminal.</p>}
+      {hidden && <p role="alert" data-testid="chat-permission-hidden" className="mb-2 text-[13px] text-warn">This request contains invisible characters. Each one is shown as a marked code such as U+202E.</p>}
       {permission.resources.length > 0 && (
-        <ul className="mb-3 flex flex-col gap-0.5">
-          {permission.resources.map((resource) => (
-            <li key={resource} className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-bg px-2 py-1 font-mono text-[12px] text-fg-muted">
-              {resource}
+        <ul className={cn('mb-3 flex flex-col gap-0.5', permission.resources.length > 8 && 'max-h-72 overflow-auto')} data-testid="chat-permission-resources">
+          {permission.resources.map((resource, index) => (
+            <li key={index} className="max-h-48 shrink-0 overflow-auto whitespace-pre-wrap break-all rounded bg-bg px-2 py-1 font-mono text-[12px] text-fg-muted">
+              <VisibleText text={resource} multiline />
             </li>
           ))}
         </ul>
@@ -87,7 +89,7 @@ export function PermissionCard({
           {pending === 'once' && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
           Allow once
         </Button>
-        <Button size="sm" variant="secondary" disabled={pending !== null || permission.incomplete} onClick={() => void reply('always')}>
+        <Button size="sm" variant="secondary" disabled={pending !== null || permission.incomplete || permission.saveIncomplete} onClick={() => void reply('always')}>
           {pending === 'always' && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
           Always allow
         </Button>
@@ -96,30 +98,66 @@ export function PermissionCard({
           Reject
         </Button>
       </div>
+      {permission.saveIncomplete && !permission.incomplete && (
+        <p data-testid="chat-permission-save-unreadable" className="mt-2 text-[12px] leading-snug text-fg-subtle">
+          Always allow is off: MDE cannot read what it would save. Allow once still works.
+        </p>
+      )}
       <AlwaysAllowHint permission={permission} />
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}
     </Card>
   )
 }
 
+/** Text with each hidden character shown as a marked `U+XXXX` code. */
+function VisibleText({ text, multiline = false }: { text: string; multiline?: boolean }): JSX.Element {
+  return (
+    <>
+      {visibleSegments(text, multiline).map((segment, index) => segment.hidden
+        ? <span key={index} title="Invisible character" className="mx-px rounded-sm border border-warn/60 px-0.5 text-[0.85em] text-warn">{segment.code}</span>
+        : <span key={index}>{segment.text}</span>)}
+    </>
+  )
+}
+
+/** Up to this many saved patterns are listed inline in the sentence; more get a list of their own. */
+const INLINE_PATTERNS = 5
+
 /** What "Always allow" would save, said before it is chosen: it is for the whole project, and may be every such call. */
 function AlwaysAllowHint({ permission }: { permission: ChatPermission }): JSX.Element | null {
   const hint = alwaysAllowHint(permission.action, permission.save)
-  if (!hint || permission.incomplete) return null
+  if (!hint || permission.incomplete || permission.saveIncomplete) return null
+  const code = (pattern: string): JSX.Element => (
+    <code className="inbox-code-font rounded bg-bg px-1 text-[11.5px] text-fg-muted"><VisibleText text={pattern} /></code>
+  )
+  if (hint.broad) {
+    return (
+      <p data-testid="chat-permission-always-hint" data-broad className="mt-2 text-[12px] leading-snug text-warn">
+        Always allow covers <strong className="font-semibold">every {hint.noun}</strong> in this project from now on, in all its threads, not just this one.
+        {' '}You can remove it under Permissions in the sidebar.
+      </p>
+    )
+  }
+  if (hint.patterns.length > INLINE_PATTERNS) {
+    return (
+      <div data-testid="chat-permission-always-hint" className="mt-2 text-[12px] leading-snug text-fg-subtle">
+        <p>Always allow saves these {hint.patterns.length} patterns for this project, in all its threads. You can remove them under Permissions in the sidebar.</p>
+        <ul className="mt-1 flex max-h-40 flex-col gap-0.5 overflow-auto" data-testid="chat-permission-always-patterns">
+          {hint.patterns.map((pattern, index) => <li key={index} className="break-all">{code(pattern)}</li>)}
+        </ul>
+      </div>
+    )
+  }
   return (
-    <p data-testid="chat-permission-always-hint" data-broad={hint.broad || undefined} className={cn('mt-2 text-[12px] leading-snug', hint.broad ? 'text-warn' : 'text-fg-subtle')}>
-      {hint.broad
-        ? <>Always allow covers <strong className="font-semibold">every {hint.noun}</strong> in this project from now on, in all its threads, not just this one.</>
-        : <>
-            Always allow saves{' '}
-            {hint.patterns.map((pattern, index) => (
-              <span key={pattern}>
-                {index > 0 && ', '}
-                <code className="inbox-code-font rounded bg-bg px-1 text-[11.5px] text-fg-muted">{pattern}</code>
-              </span>
-            ))}{' '}
-            for this project, in all its threads.
-          </>}
+    <p data-testid="chat-permission-always-hint" className="mt-2 text-[12px] leading-snug text-fg-subtle">
+      Always allow saves{' '}
+      {hint.patterns.map((pattern, index) => (
+        <span key={index}>
+          {index > 0 && ', '}
+          {code(pattern)}
+        </span>
+      ))}{' '}
+      for this project, in all its threads.
       {' '}You can remove it under Permissions in the sidebar.
     </p>
   )

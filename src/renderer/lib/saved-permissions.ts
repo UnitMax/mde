@@ -93,3 +93,36 @@ export function alwaysAllowHint(action: string, save: readonly string[] | undefi
   const noun = NOUNS[action] ?? `use of ${action}`
   return { broad: save.includes('*'), noun, patterns: save.filter((pattern) => pattern !== '*') }
 }
+
+/**
+ * Characters that show as nothing or reorder what is around them (controls, zero-width and bidi marks, tag and
+ * variation characters). A permission card shows each as a `U+XXXX` marker, so what is approved is what is seen.
+ */
+const HIDDEN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]|\r(?!\n)/u
+const HIDDEN_ALL = new RegExp(HIDDEN.source, 'gu')
+const LINE_BREAKS = /[\n\t\r]/u
+
+export type VisibleSegment = { text: string; hidden?: false } | { text: string; hidden: true; code: string }
+
+/**
+ * Splits text into what shows and markers for hidden characters. `multiline` keeps newlines, tabs and CRLF (a
+ * multi-line command); otherwise (a saved pattern) they are hidden characters too.
+ */
+export function visibleSegments(text: string, multiline: boolean): VisibleSegment[] {
+  const pattern = multiline ? HIDDEN_ALL : new RegExp(`${HIDDEN.source}|${LINE_BREAKS.source}`, 'gu')
+  const segments: VisibleSegment[] = []
+  let last = 0
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > last) segments.push({ text: text.slice(last, match.index) })
+    const code = `U+${match[0].codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`
+    segments.push({ text: match[0], hidden: true, code })
+    last = match.index + match[0].length
+  }
+  if (last < text.length) segments.push({ text: text.slice(last) })
+  return segments
+}
+
+/** Whether any text of a permission request holds a character `visibleSegments` would show as a marker. */
+export function hasHiddenCharacters(texts: readonly string[], multiline: boolean): boolean {
+  return texts.some((text) => visibleSegments(text, multiline).some((segment) => segment.hidden))
+}

@@ -1202,7 +1202,7 @@ describe('Inbox conversation', () => {
 
     it('shows an edit that waits for permission with the change it asks for', async () => {
       page = { running: true, older: null, messages: [assistant(edit({ status: 'running', patches: undefined, output: undefined }))] }
-      requests = { permissions: [{ id: 'per_1', action: 'edit', resources: ['src/auth.ts'] }], forms: [] }
+      requests = { permissions: [{ id: 'per_1', revision: 'rev-per_1', action: 'edit', resources: ['src/auth.ts'] }], forms: [] }
       const view = await render()
       await vi.waitFor(() => expect(card(view)).not.toBeNull())
       await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).not.toBeNull())
@@ -1469,7 +1469,7 @@ describe('Inbox conversation', () => {
 
   it('answers permission requests and questions inline', async () => {
     requests = {
-      permissions: [{ id: 'per_1', action: 'read', resources: ['.env'] }],
+      permissions: [{ id: 'per_1', revision: 'rev-per_1', action: 'read', resources: ['.env'] }],
       forms: [{
         id: 'frm_1', title: 'Questions', unsupported: false,
         fields: [{ key: 'q0', type: 'string', title: 'Beverage', required: false, custom: true,
@@ -1482,7 +1482,7 @@ describe('Inbox conversation', () => {
     expect(view.textContent).toContain('Permission: Read a file')
     expect(view.textContent).toContain('.env')
     await act(async () => button(view, 'Allow once').click())
-    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once' })
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once', revision: 'rev-per_1' })
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).toBeNull())
 
     const question = view.querySelector<HTMLElement>('[data-testid="chat-question-frm_1"]')!
@@ -1499,8 +1499,8 @@ describe('Inbox conversation', () => {
   it('shows which subagent asks, answers in its session, and says what Always allow saves', async () => {
     requests = {
       permissions: [
-        { id: 'per_1', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
-        { id: 'per_2', action: 'shell', resources: ['git status --short'], save: ['git status *'] },
+        { id: 'per_1', revision: 'rev-per_1', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
+        { id: 'per_2', revision: 'rev-per_2', action: 'shell', resources: ['git status --short'], save: ['git status *'] },
       ],
       forms: [{ id: 'frm_1', title: 'Pick one', unsupported: false, subagent: { sessionId: 'ses_child' },
         fields: [{ key: 'q0', type: 'string', title: 'Colour', required: false, custom: true, options: [] }] }],
@@ -1518,7 +1518,7 @@ describe('Inbox conversation', () => {
     expect(own.querySelector('[data-testid="chat-request-subagent"]')).toBeNull()
     expect(own.querySelector('[data-testid="chat-permission-always-hint"]')?.textContent).toContain('Always allow saves git status * for this project')
     await act(async () => button(fromChild, 'Allow once').click())
-    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once', sessionId: 'ses_child' })
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once', revision: 'rev-per_1', sessionId: 'ses_child' })
     const question = view.querySelector<HTMLElement>('[data-testid="chat-question-frm_1"]')!
     expect(question.textContent).toContain('Subagent asks')
     const input = question.querySelector<HTMLInputElement>('input')!
@@ -1528,6 +1528,51 @@ describe('Inbox conversation', () => {
     })
     await act(async () => button(question, 'Send answer').click())
     expect(api.chat.replyForm).toHaveBeenCalledWith({ threadId: 'ses_one', formId: 'frm_1', answer: { q0: 'Blue' }, sessionId: 'ses_child' })
+  })
+
+  it('shows every pattern and hidden character, and keeps Allow once when Always allow cannot be shown', async () => {
+    const many = Array.from({ length: 20 }, (_, index) => `cmd${index} *`)
+    requests = {
+      permissions: [
+        // A `*` after twenty narrow patterns still makes the card warn about every command.
+        { id: 'per_star', revision: 'rev-star', action: 'shell', resources: ['cmd0'], save: [...many, '*'] },
+        { id: 'per_many', revision: 'rev-many', action: 'shell', resources: ['cmd0'], save: many },
+        { id: 'per_hidden', revision: 'rev-hidden', action: 'shell', resources: ['rm safe\u202etxt.exe'], save: ['ls\u200b *'] },
+        { id: 'per_nosave', revision: 'rev-nosave', action: 'shell', resources: ['ls'], saveIncomplete: true },
+      ],
+      forms: [],
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_nosave"]')).not.toBeNull())
+    const card = (id: string) => view.querySelector<HTMLElement>(`[data-testid="chat-permission-${id}"]`)!
+    expect(card('per_star').querySelector('[data-testid="chat-permission-always-hint"]')?.getAttribute('data-broad')).toBe('true')
+    const listed = card('per_many').querySelectorAll('[data-testid="chat-permission-always-patterns"] li')
+    expect(Array.from(listed).map((item) => item.textContent)).toEqual(many)
+    const hidden = card('per_hidden')
+    expect(hidden.querySelector('[data-testid="chat-permission-hidden"]')).not.toBeNull()
+    expect(hidden.querySelector('[data-testid="chat-permission-resources"]')?.textContent).toBe('rm safeU+202Etxt.exe')
+    expect(hidden.querySelector('[data-testid="chat-permission-always-hint"]')?.textContent).toContain('lsU+200B *')
+    expect(card('per_many').querySelector('[data-testid="chat-permission-hidden"]')).toBeNull()
+    const nosave = card('per_nosave')
+    expect(button(nosave, 'Always allow').disabled).toBe(true)
+    expect(button(nosave, 'Allow once').disabled).toBe(false)
+    expect(nosave.querySelector('[data-testid="chat-permission-save-unreadable"]')).not.toBeNull()
+    await act(async () => button(nosave, 'Allow once').click())
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_nosave', decision: 'once', revision: 'rev-nosave' })
+  })
+
+  it('reads the requests again when an answer is refused, so a changed request shows as it is now', async () => {
+    requests = { permissions: [{ id: 'per_1', revision: 'rev-old', action: 'shell', resources: ['ls'], save: ['ls *'] }], forms: [] }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).not.toBeNull())
+    requests = { permissions: [{ id: 'per_1', revision: 'rev-new', action: 'shell', resources: ['ls'], save: ['ls *', '*'] }], forms: [] }
+    api.chat.replyPermission.mockRejectedValueOnce(new Error('This permission request changed. Check it again before you answer.'))
+    const reads = api.chat.requests.mock.calls.length
+    await act(async () => button(view, 'Always allow').click())
+    await vi.waitFor(() => expect(api.chat.requests.mock.calls.length).toBeGreaterThan(reads))
+    const card = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_1"]')!
+    await vi.waitFor(() => expect(card.querySelector('[data-testid="chat-permission-always-hint"]')?.getAttribute('data-broad')).toBe('true'))
+    expect(card.textContent).toContain('This permission request changed')
   })
 
   it('refetches when the service reports changes and unsubscribes on leave', async () => {

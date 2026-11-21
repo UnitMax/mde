@@ -1304,6 +1304,10 @@ per session). The answer goes to the subagent's session, and main refuses a sess
 Their events (`permission.asked` and the rest) are passed on to the thread, so it needs input and notifies as if its
 own agent had asked. A permission card says what Always allow would save: the request's patterns for the whole
 project, in every thread, and, in the warning colour, when that is `*`, every call of the kind (a file edit saves `*`).
+Every pattern is shown (more than five get a scrolling list of their own), and invisible characters in targets
+and patterns show as marked `U+XXXX` codes (`visibleSegments` in `lib/saved-permissions.ts`). An approval carries
+the request's `revision`; main refuses it if the request changed since, and the card is read again (see
+**Permission approvals** in `docs/security.md`).
 While the thread works and the box is empty, the send button becomes Stop. A
 follow-up switches the session's agent or model first only when you changed them. The renderer
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes

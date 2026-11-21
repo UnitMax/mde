@@ -354,6 +354,7 @@ export const ipcPayloadValidators = {
     threadId: opencodeSessionId,
     requestId: (value) => typeof value === 'string' && /^per_[A-Za-z0-9_-]{1,200}$/.test(value),
     decision: oneOf('once', 'always', 'reject'),
+    revision: optional((value) => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)),
     sessionId: optional(opencodeSessionId),
   }),
   [IpcChannels.chatSavedPermissions]: chatThread,
