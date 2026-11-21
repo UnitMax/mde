@@ -1307,7 +1307,8 @@ project, in every thread, and, in the warning colour, when that is `*`, every ca
 Every pattern is shown, spaces kept as they are (more than five get a scrolling list of their own; under the `*`
 warning the full list still follows), and invisible characters in targets
 and patterns show as marked `U+XXXX` codes (`visibleSegments` in `lib/saved-permissions.ts`). An approval carries
-the request's `revision`; main refuses it if the request changed since, and the card is read again (see
+the `revision` the card showed; main refuses it if the request changed since, and the card is read again. A card
+whose request changes while open says so until it closes and holds its approve buttons off for 1.5 s (see
 **Permission approvals** in `docs/security.md`).
 While the thread works and the box is empty, the send button becomes Stop. A
 follow-up switches the session's agent or model first only when you changed them. The renderer

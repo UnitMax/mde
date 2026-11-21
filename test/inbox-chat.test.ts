@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxGitInfo, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { cancelScheduledRefreshes, useInboxChat } from '../src/renderer/store/inbox-chat'
+import { PERMISSION_CHANGE_HOLD_MS } from '../src/renderer/components/inbox/ChatRequestCards'
 import { useModelFavorites } from '../src/renderer/store/model-favorites'
 import { useToasts } from '../src/renderer/store/toasts'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -1600,7 +1601,41 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(api.chat.requests.mock.calls.length).toBeGreaterThan(reads))
     const card = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_1"]')!
     await vi.waitFor(() => expect(card.querySelector('[data-testid="chat-permission-always-hint"]')?.getAttribute('data-broad')).toBe('true'))
-    expect(card.textContent).toContain('This permission request changed')
+    expect(card.querySelector('[data-testid="chat-permission-changed"]')?.textContent).toContain('This request changed while it was open')
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'always', revision: 'rev-old' })
+  })
+
+  it('holds approval briefly after an open card changes, and keeps saying it changed', async () => {
+    requests = { permissions: [{ id: 'per_1', revision: 'rev-old', action: 'read', resources: ['notes.txt'], save: ['notes.txt'] }], forms: [] }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).not.toBeNull())
+    const card = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_1"]')!
+    expect(card.querySelector('[data-testid="chat-permission-changed"]')).toBeNull()
+    expect(button(card, 'Allow once').disabled).toBe(false)
+    requests = { permissions: [{ id: 'per_1', revision: 'rev-new', action: 'read', resources: ['notes.txt'], save: ['*'] }], forms: [] }
+    const changedAt = Date.now()
+    await act(async () => { await useInboxChat.getState().refreshRequests('ses_one') })
+    await vi.waitFor(() => expect(card.querySelector('[data-testid="chat-permission-changed"]')).not.toBeNull())
+    expect(button(card, 'Allow once').disabled).toBe(true)
+    expect(button(card, 'Always allow').disabled).toBe(true)
+    expect(button(card, 'Reject').disabled).toBe(false)
+    await vi.waitFor(() => expect(button(card, 'Allow once').disabled).toBe(false), { timeout: PERMISSION_CHANGE_HOLD_MS + 1500 })
+    expect(Date.now() - changedAt).toBeGreaterThanOrEqual(PERMISSION_CHANGE_HOLD_MS - 50)
+    expect(button(card, 'Always allow').disabled).toBe(false)
+    // The approve buttons come back; the notice stays.
+    expect(card.querySelector('[data-testid="chat-permission-changed"]')?.textContent).toContain('Check it again')
+    await act(async () => button(card, 'Allow once').click())
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once', revision: 'rev-new' })
+  })
+
+  it('answers with the revision the card showed, not the store\'s newer copy', async () => {
+    requests = { permissions: [{ id: 'per_1', revision: 'rev-new', action: 'read', resources: ['a'] }], forms: [] }
+    await render()
+    await vi.waitFor(() => expect(useInboxChat.getState().threads.ses_one?.requests.permissions[0]?.revision).toBe('rev-new'))
+    await useInboxChat.getState().replyPermission('ses_one', 'per_1', 'always', 'rev-seen')
+    expect(api.chat.replyPermission).toHaveBeenLastCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'always', revision: 'rev-seen' })
+    await useInboxChat.getState().replyPermission('ses_one', 'per_1', 'reject', 'rev-seen')
+    expect(api.chat.replyPermission).toHaveBeenLastCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'reject' })
   })
 
   it('refetches when the service reports changes and unsubscribes on leave', async () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bot, LoaderCircle, MessageCircleQuestion, ShieldAlert } from 'lucide-react'
 import type { ChatForm, ChatFormField, ChatPermission, ChatRequestSubagent } from '@shared/types'
 import { alwaysAllowHint, hasHiddenCharacters, visibleSegments } from '@/lib/saved-permissions'
@@ -44,22 +44,44 @@ function Card({
   )
 }
 
+/**
+ * How long Allow once and Always allow stay off after an open card's request changed, so a click already on its way
+ * cannot approve what was on screen too briefly to read. Reject stays available.
+ */
+export const PERMISSION_CHANGE_HOLD_MS = 1500
+
 /** Asks the user to allow or reject something the agent wants to do. */
 export function PermissionCard({
   permission,
   onReply,
 }: {
   permission: ChatPermission
-  onReply: (decision: 'once' | 'always' | 'reject') => Promise<void>
+  /** The decision, and the `revision` of the request as this card showed it when clicked. */
+  onReply: (decision: 'once' | 'always' | 'reject', revision: string) => Promise<void>
 }): JSX.Element {
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Set once the request changes while the card is open, and kept: the person should know what they read is not
+  // what is asked now. Approving is held off briefly after each change.
+  const [changed, setChanged] = useState(false)
+  const [holding, setHolding] = useState(false)
+  const shown = useRef(permission.revision)
+  useEffect(() => {
+    if (shown.current === permission.revision) return
+    shown.current = permission.revision
+    setChanged(true)
+    setHolding(true)
+    // The banner says it better than a refused answer's error would.
+    setError(null)
+    const timer = setTimeout(() => setHolding(false), PERMISSION_CHANGE_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [permission.revision])
   const hidden = hasHiddenCharacters(permission.resources, true) || hasHiddenCharacters(permission.save ?? [], false)
   const reply = async (decision: 'once' | 'always' | 'reject'): Promise<void> => {
     setPending(decision)
     setError(null)
     try {
-      await onReply(decision)
+      await onReply(decision, permission.revision)
     } catch (reason) {
       setError(ipcErrorMessage(reason, 'Could not send the answer.'))
       setPending(null)
@@ -78,6 +100,11 @@ export function PermissionCard({
           {permission.messageShortened && <p className="mt-1 text-[12px] text-fg-subtle">MDE shortened this explanation; what is asked is shown in full below.</p>}
         </div>
       )}
+      {changed && (
+        <p role="alert" data-testid="chat-permission-changed" className="mb-2 rounded border border-warn/60 bg-warn/10 px-2 py-1 text-[13px] font-medium text-warn">
+          This request changed while it was open. Check it again before you answer.
+        </p>
+      )}
       {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot read this permission request. Reject it here, or answer it in an OpenCode terminal.</p>}
       {hidden && <p role="alert" data-testid="chat-permission-hidden" className="mb-2 text-[13px] text-warn">This request contains invisible characters. Each one is shown as a marked code such as U+202E.</p>}
       {permission.resources.length > 0 && (
@@ -90,11 +117,11 @@ export function PermissionCard({
         </ul>
       )}
       <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" disabled={pending !== null || permission.incomplete} onClick={() => void reply('once')}>
+        <Button size="sm" disabled={pending !== null || holding || permission.incomplete} onClick={() => void reply('once')}>
           {pending === 'once' && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
           Allow once
         </Button>
-        <Button size="sm" variant="secondary" disabled={pending !== null || permission.incomplete || permission.saveIncomplete} onClick={() => void reply('always')}>
+        <Button size="sm" variant="secondary" disabled={pending !== null || holding || permission.incomplete || permission.saveIncomplete} onClick={() => void reply('always')}>
           {pending === 'always' && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
           Always allow
         </Button>

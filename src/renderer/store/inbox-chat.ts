@@ -194,7 +194,8 @@ interface InboxChatStore {
    * carries OpenCode's reason (there is no goal to pause, say) and means nothing changed.
    */
   setGoal: (threadId: string, request: DistributiveOmit<ChatGoalRequest, 'threadId'>) => Promise<void>
-  replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
+  /** `revision` is the request as the card showed it when clicked, not the store's copy, which may be newer. */
+  replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject', revision: string) => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
   applyEvent: (event: ChatEvent) => void
 }
@@ -647,14 +648,13 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       void get().refreshGoal(threadId)
     },
 
-    replyPermission: async (threadId, requestId, decision) => {
+    replyPermission: async (threadId, requestId, decision, revision) => {
       // A subagent's request is answered in the subagent's session.
-      const permission = get().threads[threadId]?.requests.permissions.find((item) => item.id === requestId)
-      const sessionId = permission?.subagent?.sessionId
+      const sessionId = get().threads[threadId]?.requests.permissions.find((item) => item.id === requestId)?.subagent?.sessionId
       try {
         await window.api.chat.replyPermission({
           threadId, requestId, decision,
-          ...(permission && decision !== 'reject' ? { revision: permission.revision } : {}),
+          ...(decision !== 'reject' ? { revision } : {}),
           ...(sessionId ? { sessionId } : {}),
         })
       } catch (error) {

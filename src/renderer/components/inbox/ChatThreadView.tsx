@@ -615,7 +615,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             <PermissionCard
               key={permission.id}
               permission={permission}
-              onReply={(decision) => replyPermission(thread.id, permission.id, decision)}
+              onReply={(decision, revision) => replyPermission(thread.id, permission.id, decision, revision)}
             />
           ))}
           {requests?.forms.map((form) => (

@@ -272,9 +272,14 @@ the validated `chat:*` channels.
   leave just Reject; a save list it cannot read turns off Always allow alone, so Allow once still works. The
   request's message only explains it and never blocks an answer: past 32 KiB it is cut, and the card says so.
   `parsePermissions` gives each request a `revision`, a SHA-256 of what the card shows (action, targets, save
-  patterns, message); the card sends it with an approval, and main re-reads the request and refuses an
-  approval whose revision does not match, so a request that changed after it was shown is never approved
-  unseen. The renderer then reads the requests again and the card shows the current one.
+  patterns, message). The card sends the revision it showed when clicked (not the store's copy, which may be
+  newer); main re-reads the request immediately before sending the approval and refuses one whose revision
+  does not match, and the renderer reads the requests again so the card shows the current one. When an open
+  card's request changes, the card says so for as long as it stays open and holds Allow once and Always allow
+  off for 1.5 s, so a click already on its way cannot approve what was on screen too briefly to read; Reject
+  stays available. OpenCode takes the reply in a separate call after that check and checks no revision
+  itself, so a request changed between the two would still be approved: only OpenCode keeping request IDs
+  immutable closes that gap (not observed to happen, not verified either way).
 - **Event streams.** SSE limits count full multiline UTF-8 events and cancel
   oversized streams. Aggregate resource budgets remain an open hardening area.
 - **Responses.** Every response and event is parsed into MDE's own types; unknown
