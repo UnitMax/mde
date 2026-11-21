@@ -117,6 +117,18 @@ keypress. That adds no authority script does not already have, since the rendere
 terminals through `pty:write`, but it is recorded here so that a future change to the renderer's
 trust does not overlook it.
 
+Text pasted into a terminal is checked before it reaches the program (`src/renderer/terminal/paste-review.ts`).
+Keyboard paste, the right-click Paste item and middle-click selection paste all pass the same check.
+Ordinary text goes straight through. A paste is held, and shown in the pane with Paste and Cancel, when it has a line break
+and the program has not turned on bracketed paste, or when it has a control character other than tab and line
+breaks, or an invisible or text-direction character (the set permission cards mark, in
+`src/renderer/lib/hidden-characters.ts`; a joiner or variation selector is let through only where it builds an emoji, never after a letter), whatever the
+program has turned on. Those characters are marked
+where they occur. Control characters are held even under bracketed paste because xterm passes an escape character
+through unchanged, so a pasted `ESC [ 201 ~` would end the bracket and let the rest run. Paths inserted by a file drop
+are quoted by MDE and do not pass this check. Paste checks again when clicked: if the program changed while the box
+stood and the text now carries a danger the box did not name, the box is shown again with it instead of pasting.
+
 Errors identify the rejected channel or sender without including the payload,
 which may contain terminal input or secrets. The boundary rejects oversized
 requests rather than silently truncating them. Electron deserializes messages

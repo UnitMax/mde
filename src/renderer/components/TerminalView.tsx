@@ -43,8 +43,10 @@ import {
 import {
   subscribeOsc52,
   type Osc52Notice,
-  type Osc52Prompt
+  type Osc52Prompt,
+  type PastePrompt
 } from '@/terminal/osc52-notices'
+import { pastePromptReasons } from '@/terminal/paste-review'
 import { terminalMenuOnRightClick } from '@/terminal/clipboard'
 import { terminalSizeAction } from '@/terminal/terminal-compat'
 import { viewportSettle } from '@/terminal/viewport-settle'
@@ -167,6 +169,7 @@ export function TerminalSurface({
   const [dropNotice, setDropNotice] = useState<string | null>(null)
   const [clipboardNotice, setClipboardNotice] = useState<string | null>(null)
   const [osc52Prompt, setOsc52Prompt] = useState<Osc52Prompt | null>(null)
+  const [pastePrompt, setPastePrompt] = useState<PastePrompt | null>(null)
   const [launchError, setLaunchError] = useState<string | null>(null)
   const [launchAttempt, setLaunchAttempt] = useState(0)
   const setStatus = useWorkspace((state) => state.setStatus)
@@ -211,6 +214,14 @@ export function TerminalSurface({
         setOsc52Prompt(null)
         return
       }
+      if (event.kind === 'paste-prompt') {
+        setPastePrompt(event.prompt)
+        return
+      }
+      if (event.kind === 'paste-prompt-cleared') {
+        setPastePrompt(null)
+        return
+      }
       announceClipboard(osc52NoticeMessage(event.notice))
     })
 
@@ -218,6 +229,7 @@ export function TerminalSurface({
       unsubscribe()
       window.clearTimeout(clipboardNoticeTimerRef.current)
       setOsc52Prompt(null)
+      setPastePrompt(null)
       setClipboardNotice(null)
     }
   }, [pane.terminalId])
@@ -505,7 +517,7 @@ export function TerminalSurface({
           <span className="text-xs font-normal text-fg-muted">Paste into this terminal</span>
         </div>
       )}
-      {(dropNotice || clipboardNotice || osc52Prompt) && (
+      {(dropNotice || clipboardNotice || osc52Prompt || pastePrompt) && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-col gap-2">
           {dropNotice && (
             <div
@@ -524,6 +536,46 @@ export function TerminalSurface({
               data-testid="terminal-osc52-notice"
             >
               {clipboardNotice}
+            </div>
+          )}
+          {pastePrompt && (
+            <div
+              className="pointer-events-auto rounded-md border border-line-strong bg-panel px-3 py-2 text-xs text-fg-muted shadow-lg"
+              role="alertdialog"
+              aria-label="Check this paste"
+              data-testid="terminal-paste-prompt"
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return
+                event.preventDefault()
+                event.stopPropagation()
+                pastePrompt.cancel()
+              }}
+            >
+              <p className="font-medium text-fg">Check this paste before it reaches the terminal</p>
+              <div
+                className="mt-1 max-h-48 overflow-auto whitespace-pre rounded border border-line bg-elevated px-2 py-1 font-mono text-fg-subtle"
+                data-testid="terminal-paste-preview"
+              >
+                {pastePrompt.review.lines.map((line, index) => (
+                  <div key={index}>
+                    {line.length === 0 ? '\u00a0' : line.map((segment, part) => segment.marked
+                      ? <mark key={part} className="rounded-sm bg-danger/20 px-0.5 text-danger">{segment.text}</mark>
+                      : <span key={part}>{segment.text}</span>)}
+                  </div>
+                ))}
+                {pastePrompt.review.truncated && <div>…</div>}
+              </div>
+              {pastePromptReasons(pastePrompt.review).map((reason) => (
+                <p key={reason} className="mt-1 font-medium text-danger">{reason}</p>
+              ))}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => pastePrompt.paste()} data-testid="terminal-paste-confirm">
+                  Paste
+                </Button>
+                <Button size="sm" variant="ghost" autoFocus onClick={() => pastePrompt.cancel()} data-testid="terminal-paste-cancel">
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
           {osc52Prompt && (

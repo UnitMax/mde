@@ -16,6 +16,7 @@ import {
 } from './osc52'
 import { noteTerminalInput } from './command-events'
 import { emitOsc52, type Osc52GrantScope } from './osc52-notices'
+import { pasteReview, type PasteHazard, type PasteReview } from './paste-review'
 import { createRendererLease } from './renderer-lease'
 import {
   getTerminalSettings,
@@ -311,6 +312,78 @@ function createSession(
     return false
   })
 
+  // --- Paste review ------------------------------------------------------
+  // Every paste that reaches the program from the user, by keyboard, the
+  // right-click menu or middle-click, goes through `pasteText` or the native
+  // paste event below. See `./paste-review` for what is held back.
+  type PendingPaste = { text: string; token: number; hazards: readonly PasteHazard[] }
+  let pastePending: PendingPaste | null = null
+  let pasteToken = 0
+
+  const clearPastePrompt = (): PendingPaste | null => {
+    const pending = pastePending
+    if (!pending) return null
+    pastePending = null
+    emitOsc52(terminalId, { kind: 'paste-prompt-cleared' })
+    return pending
+  }
+
+  /** The user's answer. The token makes a replaced prompt's buttons inert. */
+  const resolvePastePrompt = (token: number, paste: boolean): void => {
+    if (pastePending?.token !== token) return
+    const pending = clearPastePrompt()
+    if (!pending || !container.isConnected) return
+    // The answer was a click on the prompt, so the keyboard goes back to the terminal.
+    term.focus()
+    if (!paste) return
+    // The program may have changed while the prompt stood (an editor quit back to a shell that does not mark pasted
+    // text). A danger the prompt did not name asks again instead of pasting.
+    const now = pasteReview(pending.text, term.modes.bracketedPasteMode)
+    if (now && now.hazards.some((hazard) => !pending.hazards.includes(hazard))) {
+      holdPaste(pending.text, now)
+      return
+    }
+    term.paste(pending.text)
+  }
+
+  const holdPaste = (text: string, review: PasteReview): void => {
+    // One slot per terminal: a new paste replaces the one still waiting.
+    clearPastePrompt()
+    const token = ++pasteToken
+    pastePending = { text, token, hazards: review.hazards }
+    emitOsc52(terminalId, {
+      kind: 'paste-prompt',
+      prompt: {
+        review,
+        paste: () => resolvePastePrompt(token, true),
+        cancel: () => resolvePastePrompt(token, false)
+      }
+    })
+  }
+
+  /** Pastes at once, or holds the text and asks. Returns whether it was held. */
+  const reviewPaste = (text: string): boolean => {
+    const review = pasteReview(text, term.modes.bracketedPasteMode)
+    if (!review) return false
+    holdPaste(text, review)
+    return true
+  }
+
+  const pasteText = (text: string): void => {
+    if (!reviewPaste(text)) term.paste(text)
+  }
+
+  // Keyboard and menu paste arrive as the browser's paste event on xterm's
+  // textarea. Captured on the way down, before xterm's own listener sends it.
+  const onPaste = (event: ClipboardEvent): void => {
+    noteUserInput()
+    const text = event.clipboardData?.getData('text/plain') ?? ''
+    if (!text || !reviewPaste(text)) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  container.addEventListener('paste', onPaste, true)
+
   const onAuxClick = (event: MouseEvent): void => {
     noteUserInput()
     if (event.button !== 1) return
@@ -326,7 +399,7 @@ function createSession(
     event.preventDefault()
     event.stopPropagation()
     term.focus()
-    term.paste(selection)
+    pasteText(selection)
   }
   container.addEventListener('auxclick', onAuxClick)
 
@@ -371,7 +444,9 @@ function createSession(
       container.removeEventListener('pointerdown', noteUserInput, true)
       container.removeEventListener('pointerup', noteUserInput, true)
       container.removeEventListener('copy', onCopy, true)
+      container.removeEventListener('paste', onPaste, true)
       resolveOsc52Prompt(osc52Token, null)
+      clearPastePrompt()
       localSelectionDisposable?.dispose()
       localPrimarySelection.clear(terminalId)
       osc52Disposable.dispose()

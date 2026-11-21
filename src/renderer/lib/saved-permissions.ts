@@ -1,4 +1,5 @@
 import type { ChatSavedPermission } from '@shared/types'
+import { HIDDEN_CHARACTER_CLASS } from './hidden-characters'
 
 /** What kind of tool a saved approval is for; the sidebar picks the icon by it. */
 export type SavedPermissionKind = 'shell' | 'edit' | 'read' | 'outside' | 'web' | 'mcp' | 'code' | 'other'
@@ -94,11 +95,8 @@ export function alwaysAllowHint(action: string, save: readonly string[] | undefi
   return { broad: save.includes('*'), noun, patterns: save.filter((pattern) => pattern !== '*') }
 }
 
-/**
- * Characters that show as nothing or reorder what is around them (controls, zero-width and bidi marks, tag and
- * variation characters). A permission card shows each as a `U+XXXX` marker, so what is approved is what is seen.
- */
-const HIDDEN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]|\r(?!\n)/u
+/** A hidden character, or a carriage return that is not part of CRLF. A permission card marks each one. */
+const HIDDEN = new RegExp(`${HIDDEN_CHARACTER_CLASS}|\\r(?!\\n)`, 'u')
 const HIDDEN_ALL = new RegExp(HIDDEN.source, 'gu')
 const LINE_BREAKS = /[\n\t\r]/u
 

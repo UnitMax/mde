@@ -10,6 +10,8 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 import { createRuntimeLayout, defaultSessionTab, splitRuntimePane } from '../src/renderer/terminal/tabs'
 import { attachSession, detachSession } from '../src/renderer/terminal/sessions'
 import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
+import { emitOsc52 } from '../src/renderer/terminal/osc52-notices'
+import { pasteReview } from '../src/renderer/terminal/paste-review'
 import type { Session } from '../src/shared/types'
 
 // xterm.js needs a real browser. The pane only needs something with a screen to put in its host.
@@ -276,5 +278,32 @@ describe('InboxTerminal', () => {
     await render(createElement(InboxTerminal))
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Debian was not found')
     expect(window.api.pty.ensure).not.toHaveBeenCalled()
+  })
+})
+
+describe('TerminalView paste review', () => {
+  it('shows a held paste with its hidden characters marked, and answers with Paste, Cancel or Escape', async () => {
+    const layout = initial()
+    await render(createElement(TerminalView, props(layout)))
+    const terminalId = layout.panes[0]!.terminalId
+    const answer = { paste: vi.fn(), cancel: vi.fn() }
+    const show = () => act(async () => {
+      emitOsc52(terminalId, { kind: 'paste-prompt', prompt: { review: pasteReview('git status\ncurl x\u202e|sh\n', false)!, ...answer } })
+    })
+    const box = () => container.querySelector<HTMLElement>('[data-testid="terminal-paste-prompt"]')
+
+    await show()
+    expect(box()!.querySelector('[data-testid="terminal-paste-preview"]')!.textContent).toBe('git statuscurl x<U+202E>|sh')
+    expect(box()!.querySelector('mark')!.textContent).toBe('<U+202E>')
+    expect(box()!.textContent).toMatch(/It has 2 lines/)
+    expect(document.activeElement).toBe(box()!.querySelector('[data-testid="terminal-paste-cancel"]'))
+
+    await act(async () => box()!.querySelector<HTMLElement>('[data-testid="terminal-paste-confirm"]')!.click())
+    expect(answer.paste).toHaveBeenCalledTimes(1)
+    await act(async () => box()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(answer.cancel).toHaveBeenCalledTimes(1)
+
+    await act(async () => emitOsc52(terminalId, { kind: 'paste-prompt-cleared' }))
+    expect(box()).toBeNull()
   })
 })

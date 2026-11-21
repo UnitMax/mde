@@ -351,7 +351,9 @@ Clipboard history managers and operating-system clipboard synchronization can re
 Paste asks the operating system to paste into the focused terminal or message box. The renderer's
 paste handlers can read that content; pasted Inbox text and images can be saved in the draft store,
 and sending transfers them to OpenCode. Terminal paste transfers text to the foreground terminal
-program, which may execute it or use the network. There is no periodic clipboard polling, but the
+program, which may execute it or use the network. A terminal paste that could run as typed commands or contains hidden
+characters is first shown in the terminal pane and sent only when you choose Paste; the check runs in the window and
+sends nothing anywhere. There is no periodic clipboard polling, but the
 paste bridge does not enforce a user gesture independently of the renderer. Send to current thread
 and Send to new thread place selected terminal text into a message box or terminal without using the
 system clipboard; text placed in an Inbox message box can become a persistent unsent draft.

@@ -2405,6 +2405,14 @@ new-thread page, say how they take text in `src/renderer/lib/inbox-thread-input.
 new-thread page while it is still opening waits up to three seconds for it. The menu is drawn by the
 shared `TerminalSurface`, and `TerminalSelectionActionsContext` is how a terminal offers more than Copy
 and Paste.
+Every paste into a terminal, by keyboard, menu or middle-click, is first checked by
+`src/renderer/terminal/paste-review.ts`. Text with a line break, while the program in the terminal has not turned on
+bracketed paste, is held in a box at the bottom of the pane, and so is text with control, invisible or text-direction
+characters, always. The box shows the text line by line, at most 12 lines and 1,200 characters, with each such
+character marked, says why it was held, and pastes it only on **Paste**; **Cancel**, which has the focus, and Escape
+drop it. If the program changed meanwhile and the text now carries a danger the box did not name (an editor quit
+back to a shell that runs pasted lines), **Paste** shows the box again instead. A new paste replaces one that is still waiting. Recent bash (5.1 and later) and zsh turn bracketed paste on by default,
+so multiline text pasted at their prompt goes straight through.
 On Linux, left-dragged text also becomes the desktop's separate PRIMARY selection, which middle-click
 pastes without changing the normal clipboard. WSL terminals on Windows provide the same middle-click
 workflow within MDE using an in-app transient selection, and so do terminals on macOS; native Windows

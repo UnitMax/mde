@@ -1,4 +1,5 @@
 import type { Osc52Decision, Osc52Preview } from './osc52'
+import type { PasteReview } from './paste-review'
 
 /**
  * A per-terminal channel from the xterm session layer, which is a plain module,
@@ -21,11 +22,21 @@ export interface Osc52Prompt {
   deny: () => void
 }
 
+/** A paste held back until the user has seen it (see `./paste-review`). */
+export interface PastePrompt {
+  review: PasteReview
+  paste: () => void
+  cancel: () => void
+}
+
 export type Osc52Event =
   | { kind: 'notice'; notice: Osc52Notice }
   | { kind: 'prompt'; prompt: Osc52Prompt }
   /** The pending request went away on its own (superseded, expired, or the pane closed). */
   | { kind: 'prompt-cleared' }
+  | { kind: 'paste-prompt'; prompt: PastePrompt }
+  /** The held paste was answered, replaced, or its pane closed. */
+  | { kind: 'paste-prompt-cleared' }
 
 type Osc52Listener = (event: Osc52Event) => void
 
