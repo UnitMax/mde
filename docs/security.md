@@ -583,6 +583,18 @@ which can be older than a current browser, so the boundary is what it loads rath
   and to the hosts in `<userData>/browser.json`, plus inline `data:`, `blob:` and `about:` content; everything else,
   including `file:` and URLs with a user name or password, is cancelled. A host is allowed by its exact name, on
   every port, never by wildcard; at most 100 are kept, and the file is checked again when read.
+- **Local addresses only from local pages.** A part of a page (a frame, script, image, `fetch`, WebSocket, worker or
+  service worker request, and every redirect of one) reaches a loopback address only when the origin that started
+  it is itself loopback: `requesterOf` (`src/main/browser.ts`) reads Chromium's `initiatorOrigin`, which a redirect
+  keeps from the first request, and a request Chromium started itself (no initiator) counts as the tab's page asking.
+  An opaque origin (a sandboxed frame, a `data:` page) or none known is not local. So a page from an allowed host
+  cannot use the person's local services (blind POSTs, readable responses where a dev server sends
+  `Access-Control-Allow-Origin: *`, unauthenticated WebSockets), and neither can an allowed host's frame inside a
+  local page. Chromium's own Local Network Access check did not stop this in Electron 45 when tried, so MDE does not
+  rely on it. The refused local host is named on the tab without **Allow**, since allowing cannot change it. Left
+  open: the tab itself may still go to a local page from any page (a link, `location`, a form or a new window), which
+  the person sees happen; and a host is checked by name, so an allowed host whose name later resolves to this machine
+  (DNS rebinding) is not caught.
 - **Asking first.** An address typed, opened from a link or reached by a redirect whose host is not allowed is not
   contacted: the tab shows "Allow <host>?" with **Go back** (the main button), **Allow and open** and **Open in
   system browser**. Hosts a page tried

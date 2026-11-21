@@ -24,6 +24,7 @@ import {
   type BrowserAction,
   type BrowserBounds,
   type BrowserHistoryEntry,
+  type BrowserRequester,
   type BrowserState,
   type BrowserTab,
 } from '@shared/browser'
@@ -94,6 +95,25 @@ export function withoutWebRTC(headers: Record<string, string[]> | undefined): Re
     value ? `${value.slice(0, end).trimEnd()};webrtc=block${value.slice(end)}` : BLOCK_WEBRTC_HEADER,
   ]
   return result
+}
+
+/** What the request filter reads of a request to tell who asked for it. */
+export interface RequestOrigin {
+  resourceType: string
+  /** The origin of the page, frame or worker that started the request, kept across redirects; absent when Chromium started it. */
+  initiatorOrigin?: string
+  webContents?: { getURL(): string; isDestroyed(): boolean }
+}
+
+/**
+ * Who asked for a request, for `classifyBrowserRequest`. A request Chromium started itself (a favicon, DevTools
+ * loading a source map) has no initiator and counts as the tab's page asking.
+ */
+export function requesterOf(details: RequestOrigin): BrowserRequester {
+  if (details.resourceType === 'mainFrame') return { topLevel: true }
+  if (details.initiatorOrigin !== undefined) return { topLevel: false, origin: details.initiatorOrigin }
+  const contents = details.webContents
+  return { topLevel: false, origin: contents && !contents.isDestroyed() ? contents.getURL() : null }
 }
 
 /** The least time between two pages handed to the system browser, so a page cannot open a flood of them. */
@@ -213,7 +233,7 @@ export class MdeBrowser {
         callback({})
         return
       }
-      const verdict = classifyBrowserRequest(details.url, this.allowed)
+      const verdict = classifyBrowserRequest(details.url, this.allowed, requesterOf(details))
       if (verdict.allow) {
         callback({})
         return

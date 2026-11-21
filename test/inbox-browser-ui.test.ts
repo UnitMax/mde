@@ -278,6 +278,20 @@ describe('Inbox Browser tab', () => {
     expect(byTestId('inbox-browser-refused')!.textContent).toContain('Refused 2 hosts: cdn.example.com, fonts.example.com')
   })
 
+  it('offers no Allow for a local host a page from another host was refused', async () => {
+    useInboxChanges.setState({ tab: 'browser' })
+    useInboxBrowser.setState({ state: state([tab({ blockedHosts: ['cdn.example.com', 'localhost'] })]) })
+    await sidebar()
+    await act(async () => void byTestId('inbox-browser-refused')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    const allow = document.querySelectorAll('[data-testid="inbox-browser-refused-allow"]')
+    expect(Array.from(allow, (item) => item.textContent)).toEqual(['cdn.example.comAllow'])
+    const local = document.querySelector<HTMLElement>('[data-testid="inbox-browser-refused-local"]')!
+    expect(local.textContent).toBe('localhostLocal pages only')
+    expect(local.getAttribute('aria-disabled')).toBe('true')
+    await act(async () => void local.click())
+    expect(api.allowHost).not.toHaveBeenCalled()
+  })
+
   it('lays the page over the panel, and takes it off, with no picture in its place, while something covers the panel', async () => {
     const rect = { x: 900, y: 80, left: 900, top: 80, right: 1260, bottom: 680, width: 360, height: 600, toJSON: () => ({}) }
     const original = HTMLElement.prototype.getBoundingClientRect

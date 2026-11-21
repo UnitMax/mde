@@ -6,8 +6,13 @@ import {
   isBrowserUrlAllowed,
   isHostAllowed,
   isLoopbackHost,
+  isLoopbackOrigin,
   normalizeAllowedHost,
+  type BrowserRequester,
 } from '../src/shared/browser'
+
+/** A part of a local dev page asking. */
+const local: BrowserRequester = { topLevel: false, origin: 'http://localhost:5173' }
 
 describe('MDE browser hosts', () => {
   it('counts only this machine as local', () => {
@@ -60,20 +65,49 @@ describe('MDE browser hosts', () => {
 
   it('decides each request before it is sent', () => {
     const allowed = ['staging.test']
-    expect(classifyBrowserRequest('http://localhost:5173/src/main.ts', allowed)).toEqual({ allow: true })
-    expect(classifyBrowserRequest('ws://localhost:5173/', allowed)).toEqual({ allow: true })
-    expect(classifyBrowserRequest('https://staging.test/api', allowed)).toEqual({ allow: true })
-    expect(classifyBrowserRequest('data:image/png;base64,AAAA', allowed)).toEqual({ allow: true })
-    expect(classifyBrowserRequest('blob:http://localhost:5173/1234', allowed)).toEqual({ allow: true })
-    expect(classifyBrowserRequest('about:blank', allowed)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('http://localhost:5173/src/main.ts', allowed, local)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('ws://localhost:5173/', allowed, local)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('https://staging.test/api', allowed, local)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('data:image/png;base64,AAAA', allowed, local)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('blob:http://localhost:5173/1234', allowed, local)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('about:blank', allowed, local)).toEqual({ allow: true })
     // A CDN, an analytics beacon, a sign-in redirect: refused, and named so the person can allow it.
-    expect(classifyBrowserRequest('https://cdn.example.com/lib.js', allowed)).toEqual({ allow: false, host: 'cdn.example.com' })
-    expect(classifyBrowserRequest('wss://socket.example.com/', allowed)).toEqual({ allow: false, host: 'socket.example.com' })
+    expect(classifyBrowserRequest('https://cdn.example.com/lib.js', allowed, local)).toEqual({ allow: false, host: 'cdn.example.com' })
+    expect(classifyBrowserRequest('wss://socket.example.com/', allowed, local)).toEqual({ allow: false, host: 'socket.example.com' })
     // Schemes the browser never loads are refused without a host to allow.
-    expect(classifyBrowserRequest('file:///etc/passwd', allowed)).toEqual({ allow: false, host: null })
-    expect(classifyBrowserRequest('ftp://staging.test/x', allowed)).toEqual({ allow: false, host: null })
-    expect(classifyBrowserRequest('http://user:pw@localhost/', allowed)).toEqual({ allow: false, host: null })
-    expect(classifyBrowserRequest('nonsense', allowed)).toEqual({ allow: false, host: null })
+    expect(classifyBrowserRequest('file:///etc/passwd', allowed, local)).toEqual({ allow: false, host: null })
+    expect(classifyBrowserRequest('ftp://staging.test/x', allowed, local)).toEqual({ allow: false, host: null })
+    expect(classifyBrowserRequest('http://user:pw@localhost/', allowed, local)).toEqual({ allow: false, host: null })
+    expect(classifyBrowserRequest('nonsense', allowed, local)).toEqual({ allow: false, host: null })
+  })
+
+  it('counts only web origins on this machine as local', () => {
+    for (const origin of ['http://localhost:5173', 'https://app.localhost', 'http://127.0.0.1:8080', 'http://[::1]:3000', 'http://localhost:3000/page']) {
+      expect(isLoopbackOrigin(origin), origin).toBe(true)
+    }
+    for (const origin of ['null', '', null, undefined, 'https://staging.test', 'http://192.168.1.5', 'file:///tmp/x', 'chrome-extension://abc', 'http://127.0.0.1.nip.io']) {
+      expect(isLoopbackOrigin(origin), String(origin)).toBe(false)
+    }
+  })
+
+  it('lets only local pages reach local addresses from within the page', () => {
+    const allowed = ['staging.test', '192.168.1.5']
+    const staging: BrowserRequester = { topLevel: false, origin: 'https://staging.test' }
+    // A page from an allowed host loads its own parts and those of other allowed hosts...
+    expect(classifyBrowserRequest('https://staging.test/api', allowed, staging)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('http://192.168.1.5/x', allowed, staging)).toEqual({ allow: true })
+    // ...but nothing on this machine, whatever the kind of request or the local name.
+    for (const url of ['http://localhost:11434/api/generate', 'ws://127.0.0.1:5173/', 'http://[::1]:8080/', 'http://app.localhost/', 'http://0.0.0.0:3000/']) {
+      expect(classifyBrowserRequest(url, allowed, staging), url).toEqual({ allow: false, host: new URL(url).hostname })
+    }
+    // A sandboxed frame, a data: page or no known origin counts as not local.
+    expect(classifyBrowserRequest('http://localhost:3000/', allowed, { topLevel: false, origin: 'null' })).toMatchObject({ allow: false })
+    expect(classifyBrowserRequest('http://localhost:3000/', allowed, { topLevel: false, origin: null })).toMatchObject({ allow: false })
+    // A local page reaches every local port, and the tab itself may open a local page whoever sent it there.
+    expect(classifyBrowserRequest('http://127.0.0.1:8080/api', allowed, local)).toEqual({ allow: true })
+    expect(classifyBrowserRequest('http://localhost:3000/', allowed, { topLevel: true })).toEqual({ allow: true })
+    // A host that is not allowed stays refused for every requester.
+    expect(classifyBrowserRequest('https://cdn.example.com/x', allowed, { topLevel: true })).toEqual({ allow: false, host: 'cdn.example.com' })
   })
 
   it('says whether a link may open in the MDE browser', () => {

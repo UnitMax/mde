@@ -41,7 +41,14 @@ vi.mock('electron', () => electron)
 import { MdeBrowser } from '../src/main/browser'
 import type { BrowserState } from '../src/shared/browser'
 
-type RequestHandler = (details: { url: string; webContentsId?: number; resourceType: string }, callback: (response: { cancel?: boolean }) => void) => void
+interface RequestDetails {
+  url: string
+  webContentsId?: number
+  resourceType: string
+  initiatorOrigin?: string
+  webContents?: { getURL(): string; isDestroyed(): boolean }
+}
+type RequestHandler = (details: RequestDetails, callback: (response: { cancel?: boolean }) => void) => void
 type HeadersHandler = (
   details: { responseHeaders?: Record<string, string[]> },
   callback: (response: { responseHeaders?: Record<string, string[]> }) => void,
@@ -105,10 +112,18 @@ async function enabledBrowser(): Promise<MdeBrowser> {
   return browser
 }
 
-/** Runs one request of a page through the session's filter; true when it was let through. */
-function request(url: string, contentsId: number | undefined, resourceType = 'script'): boolean {
+/**
+ * Runs one request of a page through the session's filter; true when it was let through. Asked for by a local dev
+ * page unless another origin (or, with `extra`, none) is given.
+ */
+function request(
+  url: string,
+  contentsId: number | undefined,
+  resourceType = 'script',
+  extra: Partial<RequestDetails> = { initiatorOrigin: 'http://localhost:3000' },
+): boolean {
   let cancelled: boolean | undefined
-  session.requestHandler!({ url, webContentsId: contentsId, resourceType }, (response) => { cancelled = response.cancel === true })
+  session.requestHandler!({ url, webContentsId: contentsId, resourceType, ...extra }, (response) => { cancelled = response.cancel === true })
   return cancelled === false
 }
 
@@ -214,6 +229,34 @@ describe('MDE browser (main process)', () => {
     expect(browser.state().tabs[0]!.blocked).toEqual({ url: 'https://login.example.com/sso', host: 'login.example.com' })
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(sent.at(-1)?.tabs[0]?.blocked?.host).toBe('login.example.com')
+  })
+
+  it('keeps local addresses out of reach of pages from allowed hosts, but not out of the tab', async () => {
+    const browser = await enabledBrowser()
+    await browser.allowHost('staging.test')
+    browser.open('https://staging.test/app')
+    const contents = electron.views[0]!.webContents
+    const staging = { initiatorOrigin: 'https://staging.test' }
+    expect(request('https://staging.test/api', contents.id, 'xhr', staging)).toBe(true)
+    // A fetch, a socket, a frame, a redirect of its own address to a local one: all refused before anything is sent.
+    expect(request('http://localhost:11434/api/generate', contents.id, 'xhr', staging)).toBe(false)
+    expect(request('ws://127.0.0.1:5173/', contents.id, 'webSocket', staging)).toBe(false)
+    expect(request('http://[::1]:8080/', contents.id, 'subFrame', staging)).toBe(false)
+    // A sandboxed frame of the page has an opaque origin.
+    expect(request('http://localhost:3000/', contents.id, 'image', { initiatorOrigin: 'null' })).toBe(false)
+    // A request Chromium starts itself counts as the tab's page asking.
+    const page = { getURL: () => 'https://staging.test/app', isDestroyed: () => false }
+    expect(request('http://localhost:3000/favicon.ico', contents.id, 'other', { webContents: page })).toBe(false)
+    expect(request('http://localhost:3000/favicon.ico', contents.id, 'other', {
+      webContents: { getURL: () => 'http://localhost:3000/', isDestroyed: () => false },
+    })).toBe(true)
+    expect(request('http://localhost:3000/x', contents.id, 'other', {})).toBe(false)
+    // The refused local hosts are named on the tab; the page itself stays.
+    const tab = browser.state().tabs[0]!
+    expect(tab.blockedHosts).toEqual(['localhost', '127.0.0.1', '[::1]'])
+    expect(tab.blocked).toBeNull()
+    // The tab itself may still go to a local page, whoever sent it there.
+    expect(request('http://localhost:3000/', contents.id, 'mainFrame', staging)).toBe(true)
   })
 
   it('allows a host for good, opens the refused page and reloads pages that were refused it, without switching tabs', async () => {

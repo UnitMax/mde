@@ -405,7 +405,9 @@ not install an application-wide firewall or independently verify the actual sock
 The MDE browser in the Inbox sidebar loads the pages you open in it. Its pages can connect only to local
 addresses (`localhost` and its subdomains, `127.0.0.0/8`, `[::1]`, `0.0.0.0`) and to the hosts you allowed in
 Settings → Browser or from its "Allow this host?" page; every other request a page makes, including scripts,
-fonts, analytics, WebSockets and redirects, is cancelled before it is sent and named on the tab. Allowed hosts
+fonts, analytics, WebSockets and redirects, is cancelled before it is sent and named on the tab. Only a local page
+can reach local addresses from within the page: a page from an allowed host cannot send requests to the services on
+your machine, though a link on it can still open a local page in the tab. Allowed hosts
 receive whatever the page sends them, as in any browser. A link, redirect or new window to another host is not
 contacted: the tab asks whether to allow the host, and the address reaches your system browser only if you choose
 **Open in system browser** there (or **Open link in system browser** when right-clicking a link); a page cannot hand

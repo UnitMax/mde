@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { matchBrowserHistory, type BrowserTab } from '@shared/browser'
+import { isLoopbackHost, matchBrowserHistory, type BrowserTab } from '@shared/browser'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -454,7 +454,10 @@ function BlockedPage({ tab }: { tab: BrowserTab }): JSX.Element {
   )
 }
 
-/** Hosts the page tried to reach and was refused, each of which can be allowed (which reloads the page). */
+/**
+ * Hosts the page tried to reach and was refused, each of which can be allowed (which reloads the page); a local host
+ * refused to a page from another host cannot.
+ */
 function RefusedHosts({ tab }: { tab: BrowserTab }): JSX.Element | null {
   const store = useInboxBrowser()
   if (tab.blockedHosts.length === 0) return null
@@ -475,12 +478,25 @@ function RefusedHosts({ tab }: { tab: BrowserTab }): JSX.Element | null {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-w-[22rem]">
-        {tab.blockedHosts.map((host) => (
-          <DropdownMenuItem key={host} data-testid="inbox-browser-refused-allow" onSelect={() => void store.allowHost(host)}>
-            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{host}</span>
-            <span className="shrink-0 text-[11px] text-fg-subtle">Allow</span>
-          </DropdownMenuItem>
-        ))}
+        {tab.blockedHosts.map((host) =>
+          // A local host is refused because the page is not a local one, which allowing cannot change.
+          isLoopbackHost(host) ? (
+            <DropdownMenuItem
+              key={host}
+              disabled
+              data-testid="inbox-browser-refused-local"
+              title="Only local pages may reach local addresses, so this page cannot reach your machine's services"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{host}</span>
+              <span className="shrink-0 text-[11px] text-fg-subtle">Local pages only</span>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem key={host} data-testid="inbox-browser-refused-allow" onSelect={() => void store.allowHost(host)}>
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{host}</span>
+              <span className="shrink-0 text-[11px] text-fg-subtle">Allow</span>
+            </DropdownMenuItem>
+          ),
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

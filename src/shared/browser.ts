@@ -1,7 +1,8 @@
 /**
  * The MDE browser: tabs in the Inbox sidebar for the web apps being developed. It opens local addresses
  * (localhost, 127.0.0.0/8, ::1) and the hosts the person allowed one by one, and nothing else: the main process
- * refuses every other request the page makes, before any connection.
+ * refuses every other request the page makes, before any connection. Only local pages may reach local addresses
+ * from within the page; a page from an allowed host can still be left for a local one.
  */
 
 /** How many tabs the browser keeps open at once. */
@@ -162,6 +163,22 @@ export function isBrowserUrlAllowed(value: string, allowed: readonly string[]): 
   return host !== null && isHostAllowed(host, allowed)
 }
 
+/**
+ * Whether a web origin (`http://localhost:5173`, as Chromium reports one) or a whole address is on this machine. An
+ * opaque origin (`null`, a sandboxed frame or a data: page) is not.
+ */
+export function isLoopbackOrigin(value: string | null | undefined): boolean {
+  const url = value ? parse(value) : null
+  return url !== null && WEB_PROTOCOLS.has(url.protocol) && isLoopbackHost(url.hostname)
+}
+
+/**
+ * Who a request is for: the tab's own page load (typed, a link, a script sending the tab elsewhere), or a part of a
+ * page (a script, an image, a fetch, a frame, a worker's request), asked for by `origin`: the page or frame that
+ * started it, kept across redirects. Null when no origin is known, which counts as not local.
+ */
+export type BrowserRequester = { topLevel: true } | { topLevel: false; origin: string | null }
+
 export type BrowserRequestVerdict =
   | { allow: true }
   /** `host` is set when the request went to a web host that may be allowed; null for a scheme the browser never loads. */
@@ -170,14 +187,18 @@ export type BrowserRequestVerdict =
 /**
  * Decides one request of a page in the browser, before it is sent: web and socket requests go only to allowed
  * hosts, inline content (data:, blob:, about:) needs no host, and every other scheme (file:, ftp:, custom
- * protocols) is refused.
+ * protocols) is refused. A local address is reached as a page of the tab, or from a local page; a page from any
+ * other host cannot send its parts there, so the local services stay out of its reach. Such a refusal names the
+ * local host, which allowing cannot change.
  */
-export function classifyBrowserRequest(value: string, allowed: readonly string[]): BrowserRequestVerdict {
+export function classifyBrowserRequest(value: string, allowed: readonly string[], from: BrowserRequester): BrowserRequestVerdict {
   const url = parse(value)
   if (!url) return { allow: false, host: null }
   if (INLINE_PROTOCOLS.has(url.protocol)) return { allow: true }
   if (!WEB_PROTOCOLS.has(url.protocol) && !SOCKET_PROTOCOLS.has(url.protocol)) return { allow: false, host: null }
   if (url.username || url.password || !url.hostname) return { allow: false, host: null }
   const host = url.hostname.toLowerCase()
-  return isHostAllowed(host, allowed) ? { allow: true } : { allow: false, host }
+  if (!isHostAllowed(host, allowed)) return { allow: false, host }
+  if (isLoopbackHost(host) && !from.topLevel && !isLoopbackOrigin(from.origin)) return { allow: false, host }
+  return { allow: true }
 }
