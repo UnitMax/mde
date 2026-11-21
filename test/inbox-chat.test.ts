@@ -1070,7 +1070,7 @@ describe('Inbox conversation', () => {
     expect(view.querySelector('[data-testid="chat-subagent-call_starting"]')?.textContent).not.toContain('Model unavailable')
   })
 
-  it('stops a running thread and sends follow-ups with a changed agent only', async () => {
+  it('stops a running thread and sends follow-ups with the agent and model the box shows', async () => {
     page = {
       running: true, older: null,
       messages: [{ kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true, parts: [] }],
@@ -1084,7 +1084,7 @@ describe('Inbox conversation', () => {
     await type(messageInput(view), 'Thanks')
     // This mock still reports the thread as working after the Stop, so the follow-up is a steering one.
     await act(async () => button(view, 'Steer').click())
-    await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks', attachmentIds: [], draftRevision: 1, delivery: 'steer' }))
+    await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks', attachmentIds: [], draftRevision: 1, delivery: 'steer', agent: 'build', model: options.defaultModel }))
   })
 
   describe('file changes', () => {

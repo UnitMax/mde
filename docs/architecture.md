@@ -1943,6 +1943,15 @@ until a message before the cut is in view, which also makes the count complete; 
 stops it. Reverted messages are only hidden in MDE; this is also what shows a revert made in a
 terminal.
 
+A revert does not undo an agent or model switch: sending a message in Plan and reverting it leaves
+the session in Plan (with its "You are in Plan mode" reminder, which sits before the reverted
+message), even though the last reply still shown is Build's. So every message, and a goal set from
+the box, carries the agent and model the box shows, never only when they differ from the last
+reply shown, and `applyChoice` compares them with the session itself (`session.get`) and switches
+only what differs. When the next message commits the revert, OpenCode deletes the switch marker it
+wrote after the cut, then adds its "You are NO LONGER in Plan mode" reminder again when the agent
+starts, which can cost the model one extra short reply.
+
 The note has a **Redo** button (`chat:redo`, `InboxChatService.redo`). It sends
 `DELETE /api/session/{sessionID}/revert`, which clears the staged revert and makes OpenCode put the
 files back as they were when the revert was staged, so any edit you made to those files since then

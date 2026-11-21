@@ -368,7 +368,7 @@ describe('/goal in the message box', () => {
       const high = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')).find((item) => item.textContent === 'High')!
       await act(async () => high.click())
       await submit(container, '/goal finish the migration')
-      expect(setGoal).toHaveBeenCalledExactlyOnceWith({ threadId: 'ses_one', action: 'set', objective: 'finish the migration', model: { ...model, variant: 'high' } })
+      expect(setGoal).toHaveBeenCalledExactlyOnceWith({ threadId: 'ses_one', action: 'set', objective: 'finish the migration', agent: 'build', model: { ...model, variant: 'high' } })
     } finally {
       api.chat.options.mockResolvedValue(defaults)
     }
@@ -384,7 +384,7 @@ describe('/goal in the message box', () => {
   it('sets the goal from the objective, sends nothing to the agent as a message, and empties the box', async () => {
     const container = await render()
     await submit(container, '/goal make every test pass')
-    expect(setGoal).toHaveBeenCalledExactlyOnceWith({ threadId: 'ses_one', action: 'set', objective: 'make every test pass' })
+    expect(setGoal).toHaveBeenCalledExactlyOnceWith({ threadId: 'ses_one', action: 'set', objective: 'make every test pass', agent: 'build', model })
     expect(send).not.toHaveBeenCalled()
     expect(messageInput(container).state.doc.toString()).toBe('')
   })
@@ -442,7 +442,7 @@ describe('/goal in the message box', () => {
     expect(byId('chat-send-pill')).toBeNull()
     expect((byId('chat-send') as HTMLElement).dataset.command).toBe('goal')
     await pressMessageKey(messageInput(container), 'Enter')
-    expect(setGoal).toHaveBeenCalledWith({ threadId: 'ses_one', action: 'set', objective: 'finish the migration' })
+    expect(setGoal).toHaveBeenCalledWith({ threadId: 'ses_one', action: 'set', objective: 'finish the migration', agent: 'build', model })
     expect(send).not.toHaveBeenCalled()
   })
 })

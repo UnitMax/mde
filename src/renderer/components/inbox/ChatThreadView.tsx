@@ -32,7 +32,7 @@ import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { hoverScrollbar } from '@/lib/hover-scrollbar'
 import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRepeatedRunFailures, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRepeatedRunFailures, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -469,10 +469,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     return setGoal(thread.id, {
       action: 'set',
       objective: change.objective,
-      ...(agent && agent !== latest?.agent ? { agent } : {}),
-      ...(model && !sameModelRef(model, latest?.model) ? { model } : {}),
+      ...(agent ? { agent } : {}),
+      ...(model ? { model } : {}),
     })
-  }, [agent, latest?.agent, latest?.model, model, setGoal, thread.id])
+  }, [agent, model, setGoal, thread.id])
   const commands = useMemo(
     () => slashCommands({
       ask: (question) => askAside(thread.id, question),
@@ -723,8 +723,11 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             stickRef.current = true
             await send(thread.id, text, {
               ...attachments,
-              ...(agent && agent !== latest?.agent ? { agent } : {}),
-              ...(model && !sameModelRef(model, latest?.model) ? { model } : {}),
+              // Always what the box shows: the service switches only when the session differs. The last reply shown is no
+              // guide, because a revert hides replies but does not undo a switch (a revert past a Plan message leaves
+              // the session in Plan, while the reply before it was Build's).
+              ...(agent ? { agent } : {}),
+              ...(model ? { model } : {}),
             })
           }}
         />
