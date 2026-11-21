@@ -55,7 +55,8 @@ describe('terminal settings', () => {
       wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode',
-      linkClick: 'system' as const
+      linkClick: 'system' as const,
+      searchParkedThreads: false
     })
   })
 
@@ -77,7 +78,8 @@ describe('terminal settings', () => {
       wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode',
-      linkClick: 'system' as const
+      linkClick: 'system' as const,
+      searchParkedThreads: false
     })
     expect(
       resolveTerminalSettings(
@@ -101,7 +103,8 @@ describe('terminal settings', () => {
       wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode',
-      linkClick: 'system' as const
+      linkClick: 'system' as const,
+      searchParkedThreads: false
     })
     expect(
       resolveTerminalSettings(
@@ -114,7 +117,8 @@ describe('terminal settings', () => {
       wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode',
-      linkClick: 'system' as const
+      linkClick: 'system' as const,
+      searchParkedThreads: false
     })
   })
 
@@ -167,7 +171,8 @@ describe('terminal settings', () => {
       wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode',
-      linkClick: 'system' as const
+      linkClick: 'system' as const,
+      searchParkedThreads: false
     })
   })
 
@@ -185,7 +190,8 @@ describe('terminal settings', () => {
       wslResourceMeter: false,
       osc52Policy: 'ask' as const,
       openCodeExecutable: 'opencode',
-      linkClick: 'system' as const
+      linkClick: 'system' as const,
+      searchParkedThreads: false
     }
 
     saveTerminalSettings(settings)

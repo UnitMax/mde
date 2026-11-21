@@ -31,6 +31,8 @@ export interface TerminalSettings {
    * may open (local ones and the allowed hosts; others still go to the system browser).
    */
   linkClick: BrowserLinkClick
+  /** Whether search over all Inbox threads (Ctrl+Shift+F) also reads parked threads. */
+  searchParkedThreads: boolean
 }
 
 export interface TerminalFontOption {
@@ -85,7 +87,8 @@ export function defaultTerminalSettings(
     wslResourceMeter: false,
     osc52Policy: 'notify',
     openCodeExecutable: DEFAULT_OPENCODE_EXECUTABLE,
-    linkClick: 'system'
+    linkClick: 'system',
+    searchParkedThreads: false
   }
 }
 
@@ -132,7 +135,9 @@ export function resolveTerminalSettings(
     osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy,
     openCodeExecutable:
       typeof record.openCodeExecutable === 'string' ? record.openCodeExecutable : fallback.openCodeExecutable,
-    linkClick: isBrowserLinkClick(record.linkClick) ? record.linkClick : fallback.linkClick
+    linkClick: isBrowserLinkClick(record.linkClick) ? record.linkClick : fallback.linkClick,
+    searchParkedThreads:
+      typeof record.searchParkedThreads === 'boolean' ? record.searchParkedThreads : fallback.searchParkedThreads
   }
 }
 

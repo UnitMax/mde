@@ -140,14 +140,15 @@ which stores them in OpenCode's own data and forwards them to the model provider
 OpenCode does in a terminal.
 
 The Inbox's search over all threads (Ctrl+Shift+F) is the exception to opening a thread to read it: while
-the search overlay is open (and for a while after, until the threads change), the main process reads the
-user and assistant text of every thread's messages from the service, newest thread first, and keeps that
-text in memory so that searching is fast. Tool calls, reasoning and command output are not retained in
+the search overlay is open, the main process reads the user and assistant text of the messages of every
+thread that is not parked (parked threads too only when Settings → OpenCode → Search parked threads is on)
+from the service, newest thread first, and keeps that text in memory so that searching is fast, up to a
+fixed total; older threads past it are not read. Tool calls, reasoning and command output are not retained in
 the search index, although message pages containing them reach the main process before it extracts
 user and assistant text. The index is never intentionally written to disk or logged, is sent only to
 the renderer as short snippets of the matches, and is dropped when a thread is removed or MDE quits.
-Once started, indexing can continue after the search overlay closes; the main process caches the text
-for later searches.
+Reading stops about 30 seconds after the search overlay closes; the main process keeps the text read so
+far for later searches.
 
 Subagent cards also read the selected model and variant from their child sessions through the same
 local service. These details stay in memory; MDE does not read the child conversation's messages

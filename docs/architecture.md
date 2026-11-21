@@ -1407,8 +1407,14 @@ copies as usual; Cmd+C on a Mac only ever copies.
 
 **Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only, opens an overlay like the session switcher (`InboxSearchDialog`). The
 conversations live in OpenCode, so the main process reads them (`main/inbox/search.ts`, `InboxSearch`):
-every thread, archived and terminal ones too, newest first, three at a time, all pages of messages (up to
-2 MB of text per thread), keeping only the user's text and the agent's text parts in memory. A thread is
+every thread that is not parked (parked ones too only with Settings → OpenCode → Search parked threads,
+sent as `includeParked`; text read of them is dropped once they are left out again), newest first, three at
+a time, all pages of messages, keeping only the user's text and the agent's text parts in memory. A thread
+holds at most 2,000,000 characters, its newest, and all threads together at most 50,000,000
+(`SEARCH_MAX_TOTAL_CHARS`): the threads with the most recent activity have it first, a thread is given
+only what the newer ones have not used, and older threads past it are not read, or let go again when a
+newer one grows, and are reported as `leftOut` ("N older threads not searched (memory limit)"). Reading
+stops once nobody has asked for 30 s (the overlay closed) and goes on with the next question. A thread is
 read again when it has had activity since, a working one after 5 s, and one that could not be read after
 30 s. `chat:search` answers synchronously with what is read so far plus `indexed` / `total`; the overlay
 asks once when it opens with an empty query (to start the reading) and again, debounced, as the person
@@ -2771,7 +2777,10 @@ the same store.
 Prompt bodies and prompt/message-list responses allow 32 MiB; other transport limits stay the
 same. Oversized history pages retry the same cursor with successively smaller page sizes down
 to one message. Main-process parsing discards full file data before IPC, returning filename,
-MIME, size, and bounded raster thumbnails (160 pixels per side, at most 180,000 URL characters).
+MIME, size, and bounded raster thumbnails (160 pixels per side, at most 180,000 URL characters). A
+thumbnail is made only of a PNG or JPEG whose header gives a size of at most 50 million pixels
+(`main/image-size.ts`), read before decoding, since a small file can claim enough pixels to need gigabytes
+once decoded.
 Copies are removed on send, attachment removal, and owner deletion, with startup orphan cleanup.
 Limits are 10 files / 20 MiB per draft and 200 MiB across saved attachments. Folders are rejected;
 unsupported file contents are handled by OpenCode and the selected model.

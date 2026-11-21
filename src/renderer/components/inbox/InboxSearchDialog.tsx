@@ -7,6 +7,7 @@ import { ipcErrorMessage } from '@/lib/ipc-error'
 import { sessionAge } from '@/lib/inbox'
 import { searchRows, type InboxSearchRow } from '@/lib/inbox-search'
 import { cn } from '@/lib/utils'
+import { getTerminalSettings } from '@/terminal/terminal-settings'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxFind } from '@/store/inbox-find'
 import { useWorkspace } from '@/store/workspace'
@@ -47,7 +48,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
     let timer: number | undefined
     const ask = async (): Promise<void> => {
       try {
-        const next = await window.api.chat.search({ query: asked })
+        const next = await window.api.chat.search({ query: asked, includeParked: getTerminalSettings().searchParkedThreads })
         if (stopped) return
         setAnswer(next)
         setError(null)
@@ -97,6 +98,8 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
   }
 
   const reading = answer !== null && answer.indexed < answer.total
+  const parked = getTerminalSettings().searchParkedThreads
+  const leftOut = answer?.leftOut ? `${answer.leftOut} older ${answer.leftOut === 1 ? 'thread' : 'threads'} not searched (memory limit)` : ''
   const threadCount = new Set(rows.map((row) => row.thread.id)).size
   const status = !asked
     ? ''
@@ -105,6 +108,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
       : rows.length === 0
         ? ''
         : `${threadCount} ${threadCount === 1 ? 'thread' : 'threads'}${answer?.truncated ? ' (more not shown)' : ''}`
+  const statusLine = asked && !reading ? [status, leftOut].filter(Boolean).join(' · ') : status
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -162,7 +166,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
           {error ? (
             <p role="alert" className="px-2 py-8 text-center text-xs text-danger">{error}</p>
           ) : !asked ? (
-            <p className="px-2 py-8 text-center text-xs text-fg-subtle">Type to search what you and the agents wrote in every thread.</p>
+            <p className="px-2 py-8 text-center text-xs text-fg-subtle">Type to search what you and the agents wrote in every thread{parked ? '' : ' that is not parked'}.</p>
           ) : rows.length === 0 ? (
             <p data-testid="inbox-search-empty" className="px-2 py-8 text-center text-xs text-fg-subtle">
               {reading || answer === null ? 'Searching…' : 'No thread has that text.'}
@@ -211,7 +215,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
           <span>↑↓ to navigate · Enter to open · Esc to close</span>
           <span aria-live="polite" data-testid="inbox-search-status" className="flex items-center gap-1.5">
             {reading && asked && rows.length > 0 && <LoaderCircle aria-hidden className="h-3 w-3 animate-spin motion-reduce:animate-none" />}
-            {status}
+            {statusLine}
           </span>
         </div>
       </DialogContent>

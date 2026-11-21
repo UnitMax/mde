@@ -9,6 +9,13 @@ const PAGE_SIZE = 50
 /** A thread is read back at most this many pages, and at most this much text, newest first. */
 const MAX_PAGES = 40
 const MAX_THREAD_CHARS = 2_000_000
+/**
+ * The most text held for all threads together. The threads with the most recent activity have it first; older ones
+ * past it are not read, and are reported as left out.
+ */
+export const SEARCH_MAX_TOTAL_CHARS = 50_000_000
+/** Reading stops when nobody has asked for this long; the next question starts it again. */
+const IDLE_STOP_MS = 30_000
 /** Threads are read this many at a time. */
 const CONCURRENCY = 3
 /** A thread that is working has new text all the time, so what was read of it is read again after this long. */
@@ -44,6 +51,25 @@ interface ThreadText {
   failed: boolean
   /** Oldest first. */
   entries: Entry[]
+  /** Characters in `entries`. */
+  size: number
+}
+
+function sizeOf(entries: readonly Entry[]): number {
+  return entries.reduce((total, entry) => total + entry.text.length, 0)
+}
+
+/** The newest entries that fit in `limit` characters; a single entry bigger than that keeps its end. */
+function newestWithin(entries: readonly Entry[], limit: number): Entry[] {
+  const kept: Entry[] = []
+  let size = 0
+  for (let index = entries.length - 1; index >= 0 && size < limit; index -= 1) {
+    const entry = entries[index]!
+    const room = limit - size
+    kept.unshift(entry.text.length <= room ? entry : { ...entry, text: entry.text.slice(entry.text.length - room) })
+    size += Math.min(entry.text.length, room)
+  }
+  return kept
 }
 
 function entriesOf(messages: readonly ChatMessage[]): Entry[] {
@@ -75,7 +101,7 @@ export function snippet(text: string, at: number, length: number): Pick<ChatSear
 }
 
 /**
- * Search over the text of every thread's messages: what the person and the agent wrote, not the tool calls. OpenCode
+ * Search over the text of every thread's messages (parked threads only when asked): what the person and the agent wrote, not the tool calls. OpenCode
  * keeps the conversations, so they are read from it, newest thread first, in the background, and the text is held in
  * memory only (never written to disk). A thread is read again when it has had activity since, so asking is cheap
  * once the threads are read. An answer has what is read so far; the renderer asks again until it is all read.
@@ -83,17 +109,21 @@ export function snippet(text: string, at: number, length: number): Pick<ChatSear
 export class InboxSearch {
   private readonly texts = new Map<string, ThreadText>()
   private reading = false
+  private includeParked = false
+  private lastAsked = 0
 
   constructor(private readonly dependencies: InboxSearchDependencies) {}
 
   search(request: ChatSearchRequest): ChatSearchResponse {
-    if (!this.dependencies.enabled()) return { results: [], indexed: 0, total: 0, truncated: false }
-    const threads = this.dependencies.store.list()
-    const known = new Set(threads.map((thread) => thread.id))
-    for (const id of this.texts.keys()) if (!known.has(id)) this.texts.delete(id)
+    if (!this.dependencies.enabled()) return { results: [], indexed: 0, total: 0, truncated: false, leftOut: 0 }
+    this.includeParked = request.includeParked === true
+    this.lastAsked = this.dependencies.now()
+    const threads = this.scope()
     this.read(threads)
 
     const query = request.query.trim()
+    const allowances = this.allowances(threads)
+    const leftOut = threads.filter((thread) => !this.texts.has(thread.id) && allowances.get(thread.id)! <= 0).length
     const indexed = threads.filter((thread) => this.texts.has(thread.id)).length
     const results: ChatSearchResult[] = []
     let truncated = false
@@ -108,7 +138,40 @@ export class InboxSearch {
         results.push(result)
       }
     }
-    return { results, indexed, total: threads.length, truncated }
+    return { results, indexed, total: threads.length - leftOut, truncated, leftOut }
+  }
+
+  /**
+   * The threads searched, the most recent activity first: parked ones only when asked for. Text of the others is
+   * let go, so leaving parked threads out also frees what was read of them.
+   */
+  private scope(): InboxThread[] {
+    const threads = this.dependencies.store.list().filter((thread) => this.includeParked || !thread.archived)
+    const known = new Set(threads.map((thread) => thread.id))
+    for (const id of this.texts.keys()) if (!known.has(id)) this.texts.delete(id)
+    return threads
+  }
+
+  /** How many characters each thread may hold: what the threads before it have not used of the total, up to the per-thread most. */
+  private allowances(threads: readonly InboxThread[]): Map<string, number> {
+    const allowances = new Map<string, number>()
+    let used = 0
+    for (const thread of threads) {
+      allowances.set(thread.id, Math.min(MAX_THREAD_CHARS, SEARCH_MAX_TOTAL_CHARS - used))
+      used += this.texts.get(thread.id)?.size ?? 0
+    }
+    return allowances
+  }
+
+  /** Lets go of the text of the oldest threads once the total is over: a newer thread read since has it first. */
+  private trim(threads: readonly InboxThread[]): void {
+    let used = 0
+    for (const thread of threads) {
+      const text = this.texts.get(thread.id)
+      if (!text) continue
+      if (used + text.size > SEARCH_MAX_TOTAL_CHARS) this.texts.delete(thread.id)
+      else used += text.size
+    }
   }
 
   private match(threadId: string, query: string): ChatSearchResult | null {
@@ -135,17 +198,38 @@ export class InboxSearch {
     return (thread.status === 'working' || thread.status === 'attention') && age >= WORKING_REREAD_MS
   }
 
-  /** Reads the threads whose text is missing or stale, a few at a time, until none is; a second call while reading only adds to the work. */
+  /** The threads whose text is missing or stale and that have room left in the total. */
+  private due(threads: readonly InboxThread[]): Array<{ thread: InboxThread; allowance: number }> {
+    const allowances = this.allowances(threads)
+    return threads
+      .map((thread) => ({ thread, allowance: allowances.get(thread.id)! }))
+      .filter(({ thread, allowance }) => allowance > 0 && this.stale(thread))
+  }
+
+  private idle(): boolean {
+    return this.dependencies.now() - this.lastAsked >= IDLE_STOP_MS
+  }
+
+  /**
+   * Reads the threads whose text is missing or stale, a few at a time, until none is or nobody has asked for a while
+   * (the search is closed); a second call while reading only adds to the work.
+   */
   private read(threads: readonly InboxThread[]): void {
-    if (this.reading || !threads.some((thread) => this.stale(thread))) return
+    if (this.reading || this.due(threads).length === 0) return
     this.reading = true
     void (async () => {
       try {
         for (;;) {
-          const queue = this.dependencies.store.list().filter((thread) => this.stale(thread))
-          if (queue.length === 0) return
+          const queue = this.due(this.scope()).map(({ thread }) => thread)
+          if (queue.length === 0 || this.idle()) return
           await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-            for (let thread = queue.shift(); thread; thread = queue.shift()) await this.readThread(thread)
+            for (let thread = queue.shift(); thread && !this.idle(); thread = queue.shift()) {
+              // What is left of the total is known only once the threads before it are read.
+              const allowance = this.allowances(this.scope()).get(thread.id) ?? 0
+              if (allowance <= 0) continue
+              await this.readThread(thread, allowance)
+              this.trim(this.scope())
+            }
           }))
         }
       } finally {
@@ -154,24 +238,25 @@ export class InboxSearch {
     })()
   }
 
-  private async readThread(thread: InboxThread): Promise<void> {
+  private async readThread(thread: InboxThread, allowance: number): Promise<void> {
     const stamp = thread.lastActivityAt
     try {
-      this.texts.set(thread.id, { stamp, at: this.dependencies.now(), failed: false, entries: await this.readMessages(thread) })
+      const entries = newestWithin(await this.readMessages(thread, allowance), allowance)
+      this.texts.set(thread.id, { stamp, at: this.dependencies.now(), failed: false, entries, size: sizeOf(entries) })
     } catch {
       // The service may be down or the thread gone; what was read before stays searchable, and a retry comes later.
-      const before = this.texts.get(thread.id)
-      this.texts.set(thread.id, { stamp, at: this.dependencies.now(), failed: true, entries: before?.entries ?? [] })
+      const entries = this.texts.get(thread.id)?.entries ?? []
+      this.texts.set(thread.id, { stamp, at: this.dependencies.now(), failed: true, entries, size: sizeOf(entries) })
     }
   }
 
-  private async readMessages(thread: InboxThread): Promise<Entry[]> {
+  private async readMessages(thread: InboxThread, allowance: number): Promise<Entry[]> {
     // Pages come newest first; each is put in front of the ones read before it.
     let entries: Entry[] = []
     let size = 0
     let cursor: string | undefined
     let pageSize = PAGE_SIZE
-    for (let pages = 0; pages < MAX_PAGES && size < MAX_THREAD_CHARS; pages += 1) {
+    for (let pages = 0; pages < MAX_PAGES && size < allowance; pages += 1) {
       let answer: unknown
       try {
         answer = await this.dependencies.client.request(thread.target, 'session.message.list', {
@@ -187,7 +272,7 @@ export class InboxSearch {
       }
       const page = parseMessagesPage(answer, false, pageSize)
       const found = entriesOf(page.messages)
-      size += found.reduce((total, entry) => total + entry.text.length, 0)
+      size += sizeOf(found)
       entries = [...found, ...entries]
       if (!page.older) break
       cursor = page.older

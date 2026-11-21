@@ -39,6 +39,7 @@ import type { McpListener } from './mcp/listener'
 import { checkedInboxFolderPlace } from './ipc'
 import { toWsl } from './wsl/paths'
 import { BROWSER_FILE, BROWSER_PARTITION, MdeBrowser } from './browser'
+import { mayPreviewImage } from './image-size'
 
 let mainWindow: BrowserWindow | null = null
 let inboxStore: InboxStore | null = null
@@ -279,6 +280,8 @@ if (bridgeLaunch) {
       onDirectory: (target, directory) => bridgeStandby?.use(target, directory)
     })
     const previewAttachment = (bytes: Buffer): string | undefined => {
+      // Decoding takes memory for every pixel, so the size the header gives is checked first.
+      if (!mayPreviewImage(bytes)) return undefined
       const image = nativeImage.createFromBuffer(bytes)
       if (image.isEmpty()) return undefined
       const size = image.getSize()

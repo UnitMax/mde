@@ -339,7 +339,8 @@ real-path containment checks, including in WSL. Renderer payloads cannot supply 
 file URLs, shell commands, or storage paths. Attachment contents are never logged.
 
 Draft files and their atomic index use private permissions on POSIX systems, and live under the
-app's user-data directory. They are not encrypted. Generated thumbnails are raster data URLs;
+app's user-data directory. They are not encrypted. Generated thumbnails are raster data URLs, made
+only of a PNG or JPEG whose header gives at most 50 million pixels, checked before decoding;
 remote image URLs and attachment HTML are never rendered. Existing CSP and renderer isolation
 remain unchanged. Prompt and history size allowances are restricted to the relevant fixed
 OpenCode operations; oversized history responses retry with smaller pages, never unbounded reads.

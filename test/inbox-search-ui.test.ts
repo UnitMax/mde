@@ -8,6 +8,7 @@ import { isInboxSearchShortcut, searchRows } from '../src/renderer/lib/inbox-sea
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useInboxFind } from '../src/renderer/store/inbox-find'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 
 const thread = (id: string, title: string, overrides: Partial<InboxThread> = {}): InboxThread => ({
   id, title, directory: '/home/me/app', target: { kind: 'native' }, branch: null, status: 'idle', createdAt: 1,
@@ -23,7 +24,7 @@ const answer = (overrides: Partial<ChatSearchResponse> = {}): ChatSearchResponse
     ] },
     { threadId: 'ses_b', hitCount: 1, hits: [{ messageId: 'msg_9', role: 'user', before: 'a ', match: 'needle', after: ' in b' }] },
   ],
-  indexed: 2, total: 2, truncated: false,
+  indexed: 2, total: 2, truncated: false, leftOut: 0,
   ...overrides,
 })
 
@@ -97,9 +98,27 @@ describe('the search over all threads', () => {
 
   it('starts the threads being read as it opens, and lists nothing until something is typed', async () => {
     await render()
-    await vi.waitFor(() => expect(search).toHaveBeenCalledWith({ query: '' }))
+    await vi.waitFor(() => expect(search).toHaveBeenCalledWith({ query: '', includeParked: false }))
     expect(rows()).toHaveLength(0)
-    expect(document.body.textContent).toContain('Type to search')
+    expect(document.body.textContent).toContain('in every thread that is not parked.')
+  })
+
+  it('asks for parked threads too when the setting is on', async () => {
+    localStorage.setItem(TERMINAL_SETTINGS_STORAGE_KEY, JSON.stringify({ searchParkedThreads: true }))
+    try {
+      await render()
+      await vi.waitFor(() => expect(search).toHaveBeenCalledWith({ query: '', includeParked: true }))
+      expect(document.body.textContent).toContain('in every thread.')
+    } finally {
+      localStorage.removeItem(TERMINAL_SETTINGS_STORAGE_KEY)
+    }
+  })
+
+  it('says how many older threads were not searched for lack of room', async () => {
+    search.mockImplementation(async () => answer({ leftOut: 7 }))
+    await render()
+    await type('needle')
+    await vi.waitFor(() => expect(q('[data-testid="inbox-search-status"]')?.textContent).toBe('2 threads · 7 older threads not searched (memory limit)'))
   })
 
   it('does nothing while closed', async () => {
@@ -112,7 +131,7 @@ describe('the search over all threads', () => {
     await type('needle')
     await vi.waitFor(() => expect(rows()).toHaveLength(3))
     // The list may be drawn from an earlier answer for a moment before the one for the new text is asked for.
-    await vi.waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'needle' }))
+    await vi.waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'needle', includeParked: false }))
     const text = document.body.textContent ?? ''
     expect(text).toContain('Fix login')
     expect(text).toContain('Release plan')

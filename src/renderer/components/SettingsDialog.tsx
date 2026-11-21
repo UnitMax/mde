@@ -421,6 +421,14 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                   )}
                 </div>
 
+                <SwitchRow
+                  checked={settings.searchParkedThreads}
+                  label="Search parked threads"
+                  description="Also read parked threads when you search all threads (Ctrl+Shift+F). They are left out by default, which keeps the search quicker and lighter on memory."
+                  testId="inbox-search-parked-setting"
+                  onClick={() => updateSettings({ searchParkedThreads: !settings.searchParkedThreads })}
+                />
+
                 <div className="space-y-2 rounded border border-line bg-panel p-3" data-testid="opencode-config-entry">
                   <div>
                     <h4 className="text-xs font-medium text-fg">OpenCode configuration</h4>

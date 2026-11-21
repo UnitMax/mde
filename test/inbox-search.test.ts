@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { InboxThread } from '../src/shared/types'
-import { InboxSearch, SEARCH_HITS_PER_THREAD, SEARCH_MAX_RESULTS, snippet } from '../src/main/inbox/search'
+import { InboxSearch, SEARCH_HITS_PER_THREAD, SEARCH_MAX_RESULTS, SEARCH_MAX_TOTAL_CHARS, snippet } from '../src/main/inbox/search'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
 
 const wsl = { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }
@@ -32,11 +32,11 @@ function setup(threads: InboxThread[], handler: Handler) {
     return result
   })
   const search = new InboxSearch({ client: { request }, store: { list: () => list }, enabled: () => true, now: () => now })
-  const settle = async (query = ''): Promise<ReturnType<InboxSearch['search']>> => {
-    let answer = search.search({ query })
+  const settle = async (query = '', includeParked = false): Promise<ReturnType<InboxSearch['search']>> => {
+    let answer = search.search({ query, includeParked })
     for (let tries = 0; answer.indexed < answer.total && tries < 50; tries += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0))
-      answer = search.search({ query })
+      answer = search.search({ query, includeParked })
     }
     return answer
   }
@@ -174,8 +174,61 @@ describe('InboxSearch', () => {
     expect(limits).toEqual(['50', '25'])
   })
 
+  it('leaves parked threads out unless asked for them, and lets go of their text when they are left out again', async () => {
+    const { settle, request } = setup([thread('ses_open'), thread('ses_parked', { archived: true })], () => ({ data: [user('msg_1', 'needle')] }))
+    expect(await settle('needle')).toMatchObject({ total: 1, results: [{ threadId: 'ses_open' }] })
+    expect(request.mock.calls.map((call) => call[2]?.params?.sessionID)).toEqual(['ses_open'])
+
+    expect((await settle('needle', true)).results.map((result) => result.threadId)).toEqual(['ses_open', 'ses_parked'])
+    expect(await settle('needle')).toMatchObject({ total: 1, results: [{ threadId: 'ses_open' }] })
+    // Asked for again, the parked thread is read again: its text was let go.
+    await settle('needle', true)
+    expect(request.mock.calls.map((call) => call[2]?.params?.sessionID)).toEqual(['ses_open', 'ses_parked', 'ses_parked'])
+  })
+
+  it('holds at most so much text for all threads, the newest first, and says how many older ones are left out', async () => {
+    // Each thread fills its own most (2,000,000 characters, in two messages of the most a message keeps), so the total fits 25.
+    const half = 'x'.repeat(1_000_000)
+    const threads = Array.from({ length: 30 }, (_, index) => thread(`ses_${index}`, { lastActivityAt: 10_000 - index }))
+    const { settle, request } = setup(threads, () => ({ data: [user('msg_2', `needle${half.slice(6)}`), user('msg_1', half)] }))
+    const answer = await settle('needle')
+    const held = SEARCH_MAX_TOTAL_CHARS / 2_000_000
+    expect(answer).toMatchObject({ indexed: held, total: held, leftOut: 30 - held })
+    expect(answer.results.map((result) => result.threadId)).toEqual(threads.slice(0, held).map((item) => item.id))
+    // Threads read side by side may each start before the others are counted; one read past the total is let go again.
+    expect(request.mock.calls.length).toBeLessThan(held + 3)
+  })
+
+  it('cuts the oldest messages of the thread that reaches the total, keeping its newest', async () => {
+    const half = 'x'.repeat(1_000_000)
+    const threads = Array.from({ length: 26 }, (_, index) => thread(`ses_${index}`, { lastActivityAt: 10_000 - index }))
+    const { settle } = setup(threads, (id) => id === 'ses_24'
+      ? { data: [user('msg_3', 'the newest needle'), user('msg_2', half), user('msg_1', `needle${half.slice(6)}`)] }
+      : { data: [user('msg_2', half), user('msg_1', half)] })
+    // The first 24 threads hold 48,000,000 characters; the 25th gets the 2,000,000 left, its newest message first.
+    const answer = await settle('needle')
+    expect(answer).toMatchObject({ indexed: 25, leftOut: 1 })
+    // Only its newest needle is held: the start of the oldest message, with the other needle, was cut away.
+    expect(answer.results).toEqual([expect.objectContaining({ threadId: 'ses_24', hitCount: 1, hits: [expect.objectContaining({ messageId: 'msg_3' })] })])
+  })
+
+  it('stops reading when nobody has asked for a while, and goes on with the next question', async () => {
+    const threads = Array.from({ length: 10 }, (_, index) => thread(`ses_${index}`, { lastActivityAt: 10_000 - index }))
+    let first = true
+    const { search, settle, request, advance } = setup(threads, () => {
+      // The search is closed while the first threads are being read.
+      if (first) advance(31_000)
+      first = false
+      return { data: [user('msg_1', 'needle')] }
+    })
+    search.search({ query: '' })
+    for (let tick = 0; tick < 10; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(request.mock.calls.length).toBeLessThanOrEqual(3)
+    expect((await settle('needle')).results).toHaveLength(10)
+  })
+
   it('is empty where the Inbox is not available', () => {
     const search = new InboxSearch({ client: { request: vi.fn() }, store: { list: () => [thread('ses_a')] }, enabled: () => false, now: () => 1 })
-    expect(search.search({ query: 'needle' })).toEqual({ results: [], indexed: 0, total: 0, truncated: false })
+    expect(search.search({ query: 'needle' })).toEqual({ results: [], indexed: 0, total: 0, truncated: false, leftOut: 0 })
   })
 })

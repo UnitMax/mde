@@ -877,6 +877,8 @@ export interface ChatMessagesRequest {
 /** Search over the text of all the Inbox's threads (Ctrl+Shift+F). */
 export interface ChatSearchRequest {
   query: string
+  /** Search parked threads too (a setting); they are left out by default. */
+  includeParked?: boolean
 }
 
 /** One message with the query in it: a stretch of its text around the first match, cut into the part before, the match and the part after. */
@@ -904,6 +906,8 @@ export interface ChatSearchResponse {
   total: number
   /** More threads matched than are listed. */
   truncated: boolean
+  /** Older threads not searched because the text of the newer ones fills the memory set aside for search. */
+  leftOut: number
 }
 
 export interface ChatSendRequest {
