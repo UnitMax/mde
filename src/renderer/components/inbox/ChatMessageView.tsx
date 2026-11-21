@@ -292,8 +292,8 @@ function AssistantMessage({
           body = <ActivityGroup items={block.items} directory={directory} models={models} live={block.live ?? (live && tail)} />
         } else {
           const { part, index } = block
-          if (part.kind === 'text') body = <ChatMarkdown text={part.text} />
-          else if (part.kind === 'reasoning') body = <ThoughtRow text={part.text} live={live && index === lastIndex} />
+          if (part.kind === 'text') body = <ChatMarkdown text={part.text} truncated={part.truncated} />
+          else if (part.kind === 'reasoning') body = <ThoughtRow text={part.text} truncated={part.truncated} live={live && index === lastIndex} />
           else body = <ToolCallView part={part} directory={directory} />
         }
         return <div key={key} className="min-w-0" {...flowAttrs(kind, kind, kind === 'step')}>{body}</div>

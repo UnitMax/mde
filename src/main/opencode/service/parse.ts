@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { CHAT_TEXT_LIMIT } from '@shared/chat-limits'
 import { GOAL_OBJECTIVE_LIMIT } from '@shared/goal'
 import { isViewCall, isViewTool } from '@shared/view-tool'
 import { VIEW_INPUT_LIMIT } from '@shared/view-spec'
@@ -40,8 +41,6 @@ import type {
 
 /** Each tool input or output is cut to this many characters. */
 export const CHAT_TOOL_TEXT_LIMIT = 64 * 1024
-/** Assistant text and reasoning are cut far later; they are what the user reads. */
-const CHAT_TEXT_LIMIT = 1024 * 1024
 const SHORT = 512
 const CONTROLS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g
 
@@ -451,7 +450,9 @@ function parsePart(value: unknown): ChatPart | null {
   const part = record(value)
   if (!part) return null
   if (part.type === 'text' || part.type === 'reasoning') {
-    return { kind: part.type, text: body(part.text, CHAT_TEXT_LIMIT).text }
+    // Assistant text and reasoning are cut far later than tool text; they are what the user reads.
+    const { text, truncated } = body(part.text, CHAT_TEXT_LIMIT)
+    return { kind: part.type, text, ...(truncated ? { truncated } : {}) }
   }
   if (part.type !== 'tool') return null
   const id = short(part.id)

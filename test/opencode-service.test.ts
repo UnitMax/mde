@@ -1,3 +1,4 @@
+import { CHAT_TEXT_LIMIT } from '../src/shared/chat-limits'
 import { readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -541,6 +542,19 @@ describe('OpenCode service parsing', () => {
     ])
     expect(parseMessage({ id: 'msg_1', type: 'assistant', model: { id: 'm', providerID: 'p' }, time: { created: 1 }, content: [] }))
       .not.toHaveProperty('tokens')
+  })
+
+  it('keeps the start of a reply or reasoning past the text limit and marks it cut', () => {
+    const long = 'a'.repeat(CHAT_TEXT_LIMIT + 10)
+    const message = parseMessage({
+      id: 'msg_1', type: 'assistant', model: { id: 'm', providerID: 'p' }, time: { created: 1 },
+      content: [{ type: 'reasoning', text: long }, { type: 'text', text: long }, { type: 'text', text: 'short' }],
+    })
+    expect(message?.kind === 'assistant' && message.parts).toEqual([
+      { kind: 'reasoning', text: long.slice(0, CHAT_TEXT_LIMIT), truncated: true },
+      { kind: 'text', text: long.slice(0, CHAT_TEXT_LIMIT), truncated: true },
+      { kind: 'text', text: 'short' },
+    ])
   })
 
   it('reads when a step finished, and nothing while it runs', () => {

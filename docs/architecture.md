@@ -1346,7 +1346,12 @@ ordered-list, task-list and table tokenizers, and the math block's start, are wr
 lines they need instead of all the rest of the text at every block, which made parsing quadratic in length
 (hundreds of KB of reasoning took seconds; now tens of milliseconds). While a reply streams, `ChatMarkdown`
 redraws it every 120 ms or four times as long as its last redraw took, whichever is longer, and the thinking
-row's preview reads lines from the end instead of splitting the whole text on every token.
+row's preview reads lines from the end instead of splitting the whole text on every token. One reply or
+stretch of reasoning is kept to 1,048,576 characters (`CHAT_TEXT_LIMIT`, `shared/chat-limits.ts`), both when
+a message is read from OpenCode (`parse.ts`) and while it streams (`appendLive` stops adding to a part at
+the limit), so an agent that writes without end cannot fill memory or make each redraw slower than the
+last. The start is kept, the part is marked `truncated`, and a note under it gives the exact limit and says
+that a reply that long usually means the agent went wrong, such as getting stuck repeating itself.
 
 **Timeline and scrolling.** From the second prompt on, a slim rail at the left edge of the
 conversation (the left, because the floating sidebar card takes the top right corner and would cover it) has one short mark for each of the user's prompts (`ChatTimeline`, with the pure

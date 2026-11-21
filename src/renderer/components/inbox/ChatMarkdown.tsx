@@ -1,5 +1,7 @@
 import { memo, useContext, useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { TriangleAlert } from 'lucide-react'
+import { CHAT_TEXT_LIMIT } from '@shared/chat-limits'
 import { ChatCodeBlock } from '@/components/inbox/ChatCodeBlock'
 import { ChatFileSourceContext } from '@/components/inbox/mcp-context'
 import { ChatFileLinks, type ChatFileSource } from '@/lib/chat-file-links'
@@ -27,11 +29,14 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   text,
   variant = 'message',
   label,
+  truncated = false,
 }: {
   text: string
   variant?: 'message' | 'reasoning'
   /** The accessible name of the text, for Markdown that is neither a message nor reasoning. */
   label?: string
+  /** The text was cut at `CHAT_TEXT_LIMIT`; a note under it says so. */
+  truncated?: boolean
 }): JSX.Element {
   // Read when the editor looks names up and when one is clicked, so a new source needs no new editor.
   const files = useContext(ChatFileSourceContext)
@@ -116,6 +121,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   }
 
   return (
+    <>
     <div
       className={cn(
         'min-w-0 break-words',
@@ -130,5 +136,24 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     >
       <EditorContent editor={editor} />
     </div>
+    {truncated && <TruncatedNote variant={variant} />}
+    </>
   )
 })
+
+/**
+ * Under a reply or reasoning cut at the limit. It names the exact limit, so that it reads as what it nearly always is:
+ * a sign that the agent went wrong, not that MDE lost text it should have shown.
+ */
+function TruncatedNote({ variant }: { variant: 'message' | 'reasoning' }): JSX.Element {
+  return (
+    <p role="note" data-testid="chat-text-truncated" className="mt-2 flex items-start gap-1.5 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1.5 text-[12px] text-fg-muted">
+      <TriangleAlert aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warn" />
+      <span>
+        {variant === 'reasoning' ? 'This reasoning' : 'This reply'} is longer than {CHAT_TEXT_LIMIT.toLocaleString('en-US')} characters
+        (1 MiB), the most MDE shows, so the rest is not shown. Ordinary replies are a few thousand characters; one this
+        long usually means something went wrong, such as an agent stuck repeating itself.
+      </span>
+    </p>
+  )
+}

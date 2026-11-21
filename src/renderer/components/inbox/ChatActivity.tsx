@@ -42,7 +42,7 @@ export function useHeldValue(value: string | null, holdMs: number): string | nul
  * latest finished heading, else the latest finished sentence, each held long enough to read and faded in rather than
  * typed over. Once it is done it says "Thought" and the heading it began with. Opened, it shows the reasoning as Markdown.
  */
-export function ThoughtRow({ text, live }: { text: string; live: boolean }): JSX.Element | null {
+export function ThoughtRow({ text, live, truncated }: { text: string; live: boolean; truncated?: boolean }): JSX.Element | null {
   const preview = useHeldValue(live ? reasoningPreview(text) : null, PREVIEW_HOLD_MS)
   if (!text.trim()) return null
   const subject = live ? preview : reasoningTitle(text)
@@ -53,7 +53,7 @@ export function ThoughtRow({ text, live }: { text: string; live: boolean }): JSX
       status={live ? 'running' : 'completed'}
       verb={live ? 'Thinking' : 'Thought'}
       subject={subject ? <span key={subject} className={cn(live ? 'chat-swap text-fg-subtle' : 'text-fg-muted')}>{subject}</span> : undefined}
-      detail={<ChatMarkdown text={text} variant="reasoning" />}
+      detail={<ChatMarkdown text={text} variant="reasoning" truncated={truncated} />}
     />
   )
 }
@@ -62,7 +62,7 @@ export function ThoughtRow({ text, live }: { text: string; live: boolean }): JSX
  * Words the agent wrote on its way through the work, inside a group of the compact layout: a row with what they began
  * with, opening onto all of them. Models often think out loud in their text, and this keeps it out of the way.
  */
-export function SaidRow({ text }: { text: string }): JSX.Element | null {
+export function SaidRow({ text, truncated }: { text: string; truncated?: boolean }): JSX.Element | null {
   if (!text.trim()) return null
   const headline = textHeadline(text)
   return (
@@ -71,7 +71,7 @@ export function SaidRow({ text }: { text: string }): JSX.Element | null {
       icon={MessageSquareText}
       verb="Said"
       subject={headline ? <span className="text-fg-muted">{headline}</span> : undefined}
-      detail={<ChatMarkdown text={text} />}
+      detail={<ChatMarkdown text={text} truncated={truncated} />}
     />
   )
 }
@@ -146,8 +146,8 @@ export function ActivityGroup({
     if (part.kind === 'note') return <NoteRow key={part.id} message={part} />
     // The thought being written is the last step. Text joins a group only in the compact layout.
     const key = `${messageId ?? ''}:${index}`
-    if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
-    return <ThoughtRow key={key} text={part.text} live={live && row.position === items.length - 1} />
+    if (part.kind === 'text') return <SaidRow key={key} text={part.text} truncated={part.truncated} />
+    return <ThoughtRow key={key} text={part.text} truncated={part.truncated} live={live && row.position === items.length - 1} />
   }
   if (single && rows[0]) return drawRow(rows[0])
   return (

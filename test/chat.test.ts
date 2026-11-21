@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CHAT_TEXT_LIMIT } from '../src/shared/chat-limits'
 import type { ChatForm, ChatMessage, ChatPart, ChatPendingMessage, ChatTokens } from '../src/shared/types'
 import {
   appendLive,
@@ -163,6 +164,23 @@ describe('live streaming', () => {
     expect(merged[1]).toMatchObject({ id: 'msg_b', agent: 'plan', parts: [{ kind: 'text', text: 'New' }] })
     expect(mergeLive(fetched, live).map((message) => message.id)).toEqual(['msg_a'])
     expect(mergeLive(fetched, [])).toBe(fetched)
+  })
+
+  it('stops a streamed part at the text limit, keeping its start and marking it cut', () => {
+    const delta = (text: string) => ({ messageId: 'msg_a', part: 'text' as const, ordinal: 0, delta: text })
+    let live = appendLive([], delta('a'.repeat(CHAT_TEXT_LIMIT - 2)))
+    expect(live[0]).not.toHaveProperty('truncated')
+    live = appendLive(live, delta('bcdef'))
+    expect(live[0]).toMatchObject({ text: `${'a'.repeat(CHAT_TEXT_LIMIT - 2)}bc`, truncated: true })
+    // Once cut, more text changes nothing.
+    expect(appendLive(live, delta('more'))).toBe(live)
+    expect(appendLive([], delta('x'.repeat(CHAT_TEXT_LIMIT + 1)))[0]).toMatchObject({ truncated: true })
+    expect(appendLive([], delta('x'.repeat(CHAT_TEXT_LIMIT + 1)))[0]!.text).toHaveLength(CHAT_TEXT_LIMIT)
+
+    // The cut shows in the merged message, and the cut fetched message, being as long, takes over.
+    expect(mergeLive([assistant([])], live)[0]).toMatchObject({ parts: [{ kind: 'text', truncated: true }] })
+    const fetched = [assistant([{ kind: 'text', text: live[0]!.text, truncated: true }])]
+    expect(pruneLive(fetched, live)).toEqual([])
   })
 
   it('forgets streamed text once the fetched message caught up', () => {

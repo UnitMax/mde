@@ -1,3 +1,4 @@
+import { CHAT_TEXT_LIMIT } from '@shared/chat-limits'
 import type {
   ChatAgent,
   ChatDelivery,
@@ -351,17 +352,30 @@ export interface LivePart {
   part: 'text' | 'reasoning'
   ordinal: number
   text: string
+  /** More came than `CHAT_TEXT_LIMIT`; only the start is kept, as when the message is fetched. */
+  truncated?: boolean
 }
 
+/** Text cut to `CHAT_TEXT_LIMIT`, saying whether it was. */
+function withinLimit(text: string): { text: string; truncated?: boolean } {
+  return text.length > CHAT_TEXT_LIMIT ? { text: text.slice(0, CHAT_TEXT_LIMIT), truncated: true } : { text }
+}
+
+/**
+ * Adds streamed text to its part. A part stops growing at `CHAT_TEXT_LIMIT`, the same cut the fetched message gets, so
+ * an agent that writes without end cannot fill memory or make each redraw slower than the last.
+ */
 export function appendLive(
   live: readonly LivePart[],
   delta: { messageId: string; part: 'text' | 'reasoning'; ordinal: number; delta: string },
 ): LivePart[] {
   const index = live.findIndex((item) =>
     item.messageId === delta.messageId && item.part === delta.part && item.ordinal === delta.ordinal)
-  if (index < 0) return [...live, { messageId: delta.messageId, part: delta.part, ordinal: delta.ordinal, text: delta.delta }]
+  if (index < 0) return [...live, { messageId: delta.messageId, part: delta.part, ordinal: delta.ordinal, ...withinLimit(delta.delta) }]
+  const current = live[index]!
+  if (current.truncated) return live as LivePart[]
   const next = [...live]
-  next[index] = { ...live[index]!, text: live[index]!.text + delta.delta }
+  next[index] = { ...current, ...withinLimit(current.text + delta.delta) }
   return next
 }
 
@@ -392,8 +406,9 @@ export function mergeLive(messages: readonly ChatMessage[], live: readonly LiveP
     if (message.kind !== 'assistant') continue
     const parts = [...message.parts]
     const at = nthPartIndex(parts, item.part, item.ordinal)
-    if (at < 0) parts.push({ kind: item.part, text: item.text })
-    else if ((parts[at] as { text: string }).text.length < item.text.length) parts[at] = { kind: item.part, text: item.text }
+    const streamed = { kind: item.part, text: item.text, ...(item.truncated ? { truncated: true } : {}) }
+    if (at < 0) parts.push(streamed)
+    else if ((parts[at] as { text: string }).text.length < item.text.length) parts[at] = streamed
     result[index] = { ...message, parts }
   }
   return result

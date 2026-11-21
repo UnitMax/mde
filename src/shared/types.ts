@@ -501,8 +501,9 @@ export interface ChatToolCall {
 }
 
 export type ChatPart =
-  | { kind: 'text'; text: string }
-  | { kind: 'reasoning'; text: string }
+  /** `truncated`: the text was longer than `CHAT_TEXT_LIMIT` and only its start is kept. */
+  | { kind: 'text'; text: string; truncated?: boolean }
+  | { kind: 'reasoning'; text: string; truncated?: boolean }
   | {
       kind: 'tool'
       id: string
