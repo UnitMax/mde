@@ -51,7 +51,10 @@ export interface BridgeStandbyOptions {
   /** Where the directories whose bridge was stopped are kept until the next start. */
   file: string
   client: { request(target: OpenCodeTarget, operation: ServiceOperation, request?: ServiceRequest): Promise<unknown> }
-  /** Whether the `mde` server in the target's OpenCode configuration starts this copy of MDE. */
+  /**
+   * Whether the `mde` server in the target's OpenCode configuration starts this copy of MDE; throws when the
+   * configuration cannot be read.
+   */
   owned(target: OpenCodeTarget): Promise<boolean>
   /** The server was connected again in one of the target's directories, so what the app shows is out of date. */
   changed?(target: OpenCodeTarget): void
@@ -216,10 +219,21 @@ export class BridgeStandby {
     if (!this.quitting) await this.write([...this.waiting.values()])
   }
 
-  /** True when the place needs nothing more: its server is connected, or it has no `mde` server any more. */
+  /**
+   * True when the place needs nothing more: its server is connected, it has no `mde` server any more, or the
+   * configured `mde` server is no longer this copy of MDE. That last one is not what the last quit stopped, so it is
+   * left as it is. It is asked before every try, and before the first list: listing loads the directory in OpenCode.
+   */
   private async resumePlace(place: StandbyPlace): Promise<boolean> {
     for (let attempt = 0; attempt <= RESUME_RETRY_MS.length && !this.quitting; attempt += 1) {
       if (attempt > 0) await this.sleep(RESUME_RETRY_MS[attempt - 1]!)
+      if (this.quitting) break
+      try {
+        if (!await this.options.owned(place.target)) return true
+      } catch {
+        // The configuration could not be read: nothing is asked or connected; try again, or keep it for the next start.
+        continue
+      }
       if (this.quitting) break
       try {
         const servers = parseMcpServers(await this.options.client.request(place.target, 'mcp.list', {

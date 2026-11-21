@@ -702,6 +702,11 @@ place where something other than the window can ask the main process to act, so 
   an answer, and the directories are ones MDE itself sent to the service in this run; the file that carries
   them to the next start (`mde-mcp-standby.json`, mode 0600) is re-validated on reading and used only as the
   directory of a list and a connect request for `mde`. It can make OpenCode load a directory, nothing more.
+  Before each try, including the first list, MDE reads OpenCode's global configuration again and goes on only
+  if `mde` is a local server whose command is exactly this copy of MDE. An entry pointed elsewhere while MDE was
+  closed is left as it is and the directory forgotten; a configuration that cannot be read means no request at
+  all, and the directory waits for the next start. Not covered: a project's own `opencode.json` can define
+  `mde` for its directory, and reading the merged configuration would itself load the directory.
 - **Install** writes only `mcp.servers.mde` = `{ type: "local", command: [...] }` into OpenCode's global
   configuration, with the configuration editor's guarantees (surgical JSONC edit, re-parse, serialized atomic
   write, nothing written to a file that does not parse). The command is built in the main process from

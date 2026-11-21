@@ -330,7 +330,11 @@ if (bridgeLaunch) {
       bridgeStandby = new BridgeStandby({
         file: join(app.getPath('userData'), MDE_MCP_STANDBY_FILE),
         client: serviceClient,
-        owned: async (target) => (await openCodeConfig.mdeMcpStatus(target, await mdeMcpCommand(target, self, toWsl))).state === 'installed',
+        owned: async (target) => {
+          const status = await openCodeConfig.mdeMcpStatus(target, await mdeMcpCommand(target, self, toWsl))
+          if (status.parseError) throw new Error(`OpenCode’s configuration cannot be read (${status.parseError}).`)
+          return status.state === 'installed'
+        },
         // The chat box's server list reads again, as on any MCP change OpenCode reports.
         changed: (target) => {
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.chatEvent, { type: 'mcp', target })

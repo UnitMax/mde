@@ -236,6 +236,47 @@ describe('MDE MCP standby', () => {
     await expect(fs.access(file)).rejects.toThrow()
   })
 
+  it('does not ask about or connect a directory whose server is no longer this MDE, and forgets it', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    await standby(async () => false).resume()
+
+    expect(service.calls).toEqual([])
+    expect(changed).toEqual([])
+    await expect(fs.access(file)).rejects.toThrow()
+  })
+
+  it('does not ask about or connect anything while the configuration cannot be read, and keeps the directory', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    const owned = vi.fn(async () => { throw new Error('OpenCode’s configuration cannot be read.') })
+    await standby(owned).resume()
+
+    expect(service.calls).toEqual([])
+    expect(owned.mock.calls.length).toBeGreaterThan(1)
+    expect(parseStandbyPlaces(await fs.readFile(file, 'utf8'))).toEqual([{ target: native, directory: '/home/me/app' }])
+  })
+
+  it('asks again whose server it is before every try, and stops once it is not this MDE', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    const original = service.request
+    let ours = true
+    service.request = async (target, operation, request) => {
+      if (operation === 'mcp.list') {
+        // The first look fails; before the next try the entry is pointed somewhere else.
+        ours = false
+        service.calls.push('list /home/me/app')
+        throw new Error('The OpenCode service is not reachable.')
+      }
+      return original(target, operation, request)
+    }
+    await standby(async () => ours).resume()
+
+    expect(service.calls).toEqual(['list /home/me/app'])
+    await expect(fs.access(file)).rejects.toThrow()
+  })
+
   it('tries again when a connect does not take, and when OpenCode does not answer at first', async () => {
     await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
     service.set('/home/me/app', { mde: 'disabled' })

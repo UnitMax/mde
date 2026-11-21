@@ -322,7 +322,10 @@ it. So MDE uses OpenCode's own switch:
   (the service client reports them), and where `mde` is `connected` it calls the disconnect route. OpenCode
   closes the bridge's stdin and the bridge exits. The directories are written to `mde-mcp-standby.json` before
   anything is stopped. Quitting waits at most two seconds for all of it.
-- **On starting** MDE reads that file and calls the connect route for each directory where `mde` is
+- **On starting** MDE reads that file and, for each directory, first reads OpenCode's global configuration
+  again: unless `mde` there still starts this copy of MDE, the directory is not asked about at all (listing
+  loads it) and is dropped from the file, or kept for the next start when the configuration cannot be read.
+  This is checked before every try. It then calls the connect route for each directory where `mde` is
   `disabled` or `failed`, then asks again until OpenCode says `connected`. It tries four times, 2, 5 and 10
   seconds apart, because the first start of a fresh build can be slow (Windows scans the new `mde.exe`,
   Electron starts cold through WSL) and OpenCode may still be loading the directory (an empty list). After an
