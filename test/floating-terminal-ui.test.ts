@@ -90,7 +90,7 @@ describe('breaking the terminal out', () => {
     expect(query('floating-terminal')).not.toBeNull()
     expect(query('floating-terminal')!.getAttribute('aria-label')).toBe('Floating terminal')
     expect(query('floating-terminal')!.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
-    expect(stored()).toEqual({ placement: 'floating', rect: null, maximized: false, bottomHeight: INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT })
+    expect(stored()).toEqual({ placement: 'floating', rect: null, maximized: false, bottomHeight: INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT, bottomHidden: false })
   })
 
   it('opens at the default place and takes the keyboard', async () => {

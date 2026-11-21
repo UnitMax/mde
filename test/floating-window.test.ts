@@ -103,13 +103,13 @@ describe('stored floating terminal', () => {
     expect(parseStoredFloatingTerminal('')).toEqual(DEFAULT_FLOATING_TERMINAL)
     expect(parseStoredFloatingTerminal('{not json')).toEqual(DEFAULT_FLOATING_TERMINAL)
     expect(parseStoredFloatingTerminal('7')).toEqual(DEFAULT_FLOATING_TERMINAL)
-    expect(DEFAULT_FLOATING_TERMINAL).toEqual({ placement: 'sidebar', rect: null, maximized: false, bottomHeight: 300 })
+    expect(DEFAULT_FLOATING_TERMINAL).toEqual({ placement: 'sidebar', rect: null, maximized: false, bottomHeight: 300, bottomHidden: false })
   })
 
   it('reads what was saved, and drops a window rectangle that is not one', () => {
-    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'floating', rect: start, maximized: true, bottomHeight: 420 })))
-      .toEqual({ placement: 'floating', rect: start, maximized: true, bottomHeight: 420 })
-    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'top', floating: 'yes', rect: { x: 1, y: 2, width: 0, height: 5 }, maximized: 1, bottomHeight: 'tall' }))).toEqual(DEFAULT_FLOATING_TERMINAL)
+    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'floating', rect: start, maximized: true, bottomHeight: 420, bottomHidden: true })))
+      .toEqual({ placement: 'floating', rect: start, maximized: true, bottomHeight: 420, bottomHidden: true })
+    expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'top', floating: 'yes', rect: { x: 1, y: 2, width: 0, height: 5 }, maximized: 1, bottomHeight: 'tall', bottomHidden: 'yes' }))).toEqual(DEFAULT_FLOATING_TERMINAL)
     expect(parseStoredFloatingTerminal(JSON.stringify({ placement: 'floating', rect: { ...start, extra: 'x' } })).rect).toEqual(start)
   })
 

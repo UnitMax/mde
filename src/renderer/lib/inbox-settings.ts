@@ -317,6 +317,8 @@ export interface StoredFloatingTerminal {
   rect: FloatingRect | null
   maximized: boolean
   bottomHeight: number
+  /** The bottom panel was hidden (F11 or its Hide button) when last left, so it starts hidden. */
+  bottomHidden: boolean
 }
 
 export const DEFAULT_FLOATING_TERMINAL: StoredFloatingTerminal = {
@@ -324,6 +326,7 @@ export const DEFAULT_FLOATING_TERMINAL: StoredFloatingTerminal = {
   rect: null,
   maximized: false,
   bottomHeight: INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT,
+  bottomHidden: false,
 }
 
 const PLACEMENTS: readonly InboxTerminalPlacement[] = ['sidebar', 'bottom', 'floating']
@@ -333,7 +336,7 @@ export function parseStoredFloatingTerminal(raw: string | null): StoredFloatingT
   try {
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== 'object') return DEFAULT_FLOATING_TERMINAL
-    const { placement, floating, rect, maximized, bottomHeight } = value as Record<string, unknown>
+    const { placement, floating, rect, maximized, bottomHeight, bottomHidden } = value as Record<string, unknown>
     return {
       // Before the bottom panel there was only `floating: true`.
       placement: PLACEMENTS.find((item) => item === placement) ?? (floating === true ? 'floating' : 'sidebar'),
@@ -342,6 +345,7 @@ export function parseStoredFloatingTerminal(raw: string | null): StoredFloatingT
       bottomHeight: typeof bottomHeight === 'number' && Number.isFinite(bottomHeight)
         ? Math.max(INBOX_BOTTOM_TERMINAL_MIN_HEIGHT, Math.round(bottomHeight))
         : INBOX_BOTTOM_TERMINAL_DEFAULT_HEIGHT,
+      bottomHidden: bottomHidden === true,
     }
   } catch {
     return DEFAULT_FLOATING_TERMINAL

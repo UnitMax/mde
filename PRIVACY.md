@@ -91,9 +91,9 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   background is shown and which one is chosen, whether the Inbox's unread and working threads are animated,
   and whether terminals are struck by lightning when a command is entered (a small JSON object of four
   booleans and a background name). Nothing is recorded about the commands themselves. Nothing leaves the device; the animations are drawn locally.
-- The renderer's local storage (`mde.inbox-floating-terminal`): whether the Inbox terminal floats over the
-  conversation, where its window was left (four pixel numbers) and whether it is maximized. No terminal
-  content.
+- The renderer's local storage (`mde.inbox-floating-terminal`): whether the Inbox terminal is in the sidebar,
+  in the panel below the conversation or floating over it, where its window was left (four pixel numbers), whether
+  it is maximized, the bottom panel's height and whether the panel was hidden. No terminal content.
 - The renderer's local storage (`mde.inbox-terminal-distro`): the WSL distribution chosen for the
   Inbox sidebar terminal. No entry means the Windows default distribution.
 - The renderer's local storage (`mde.alert-settings`): the Notifications choices: whether and how loudly

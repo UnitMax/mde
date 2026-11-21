@@ -16,7 +16,8 @@ interface Store {
   floating: boolean
   /**
    * The bottom panel or the floating window is on screen (F11 shows and hides either). The floating window starts
-   * hidden on every run, so a restart never covers the conversation; the bottom panel covers nothing and starts shown.
+   * hidden on every run, so a restart never covers the conversation; the bottom panel covers nothing and starts as it
+   * was left.
    */
   visible: boolean
   /** Where the window was left; null until it has been moved or resized. Kept between runs. */
@@ -46,8 +47,8 @@ interface Store {
 export const useInboxFloatingTerminal = create<Store>((set, get) => {
   const saved = getInboxFloatingTerminal()
   const keep = (): void => {
-    const { placement, rect, maximized, bottomHeight } = get()
-    saveInboxFloatingTerminal({ placement, rect, maximized, bottomHeight })
+    const { placement, visible, rect, maximized, bottomHeight } = get()
+    saveInboxFloatingTerminal({ placement, rect, maximized, bottomHeight, bottomHidden: placement === 'bottom' && !visible })
   }
   const place = (placement: InboxTerminalPlacement): void => {
     set({ placement, floating: placement === 'floating', visible: placement !== 'sidebar' })
@@ -63,7 +64,7 @@ export const useInboxFloatingTerminal = create<Store>((set, get) => {
   return {
     placement: saved.placement,
     floating: saved.placement === 'floating',
-    visible: saved.placement === 'bottom',
+    visible: saved.placement === 'bottom' && !saved.bottomHidden,
     rect: saved.rect,
     maximized: saved.maximized,
     bottomHeight: saved.bottomHeight,
@@ -73,11 +74,18 @@ export const useInboxFloatingTerminal = create<Store>((set, get) => {
     dock: () => place('sidebar'),
 
     toggle: () => {
-      if (get().placement !== 'sidebar') set({ visible: !get().visible })
+      if (get().placement === 'sidebar') return
+      set({ visible: !get().visible })
+      keep()
     },
-    hide: () => set({ visible: false }),
+    hide: () => {
+      set({ visible: false })
+      keep()
+    },
     show: () => {
-      if (get().placement !== 'sidebar') set({ visible: true })
+      if (get().placement === 'sidebar') return
+      set({ visible: true })
+      keep()
     },
 
     setRect: (rect, settle = true) => {

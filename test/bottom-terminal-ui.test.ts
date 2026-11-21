@@ -126,6 +126,21 @@ describe('the terminal at the bottom', () => {
     expect(useInboxFloatingTerminal.getState().placement).toBe('bottom')
   })
 
+  it('starts hidden when it was hidden when MDE was closed, and shown again once shown', async () => {
+    await click('bottom-terminal-move')
+    await click('bottom-terminal-hide')
+    expect(stored()).toMatchObject({ placement: 'bottom', bottomHidden: true })
+    vi.resetModules()
+    let fresh = (await import('../src/renderer/store/inbox-floating-terminal')).useInboxFloatingTerminal
+    expect(fresh.getState()).toMatchObject({ placement: 'bottom', visible: false })
+    // F11 brings it back, and that is kept too.
+    await act(async () => toggleListener!())
+    expect(stored()).toMatchObject({ placement: 'bottom', bottomHidden: false })
+    vi.resetModules()
+    fresh = (await import('../src/renderer/store/inbox-floating-terminal')).useInboxFloatingTerminal
+    expect(fresh.getState()).toMatchObject({ placement: 'bottom', visible: true })
+  })
+
   it('goes back to the sidebar, or floats, from its own header', async () => {
     await click('bottom-terminal-move')
     await click('floating-terminal-break-out')
