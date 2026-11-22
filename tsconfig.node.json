@@ -10,6 +10,7 @@
     "src/renderer/terminal/terminal-settings.ts",
     "src/renderer/theme/*.ts",
     "src/renderer/components/Sidebar.tsx",
+    "src/renderer/components/inbox/thread-list-peek.ts",
     "src/renderer/components/HighlightedText.tsx",
     "src/renderer/components/SessionSwitcher.tsx",
     "src/renderer/components/TerminalView.tsx",

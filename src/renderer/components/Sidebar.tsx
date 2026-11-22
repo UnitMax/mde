@@ -59,6 +59,7 @@ import {
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import { InboxPanel } from '@/components/InboxPanel'
 import { HiddenTerminalIndicator } from '@/components/inbox/HiddenTerminalIndicator'
+import { useThreadListPeek } from '@/components/inbox/thread-list-peek'
 import { useInboxView } from '@/store/inbox-view'
 
 function customSessionColor(color: Session['color']): Session['color'] {
@@ -155,173 +156,173 @@ function SessionRow({
   const backgroundStyle = sessionBackgroundStyle(session.color)
   return (
     <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div
-            ref={rowRef}
-            role="button"
-            tabIndex={0}
-            data-testid="session-row"
-            onClick={onSelect}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-            onKeyDown={(event) => {
-              if (event.key === 'F2' && event.target === event.currentTarget) {
-                event.preventDefault()
-                startRename()
-                return
-              }
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                onSelect()
-              }
-            }}
-            className={cn(
-              'group relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pl-4 pr-2 text-left',
-              customColor
-                ? 'text-fg transition-[filter] hover:brightness-110'
-                : selected
-                  ? 'bg-active text-fg'
-                  : 'text-fg-muted hover:bg-hover hover:text-fg',
-              dragging && 'opacity-60',
-              dropPosition === 'before' && 'border-t-2 border-accent',
-              dropPosition === 'after' && 'border-b-2 border-accent'
-            )}
-            style={backgroundStyle}
-          >
-            <button
-              type="button"
-              draggable={!dragDisabled}
-              disabled={dragDisabled}
-              aria-label={`Drag to reorder ${session.name}`}
-              title="Drag to reorder"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-              onDragStart={(event) => {
-                event.stopPropagation()
-                event.dataTransfer.effectAllowed = 'move'
-                event.dataTransfer.setData('text/plain', session.id)
-                onDragStart()
-              }}
-              onDragEnd={(event) => {
-                event.stopPropagation()
-                onDragEnd()
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              ref={rowRef}
+              role="button"
+              tabIndex={0}
+              data-testid="session-row"
+              onClick={onSelect}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+              onKeyDown={(event) => {
+                if (event.key === 'F2' && event.target === event.currentTarget) {
+                  event.preventDefault()
+                  startRename()
+                  return
+                }
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onSelect()
+                }
               }}
               className={cn(
-                'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
-                'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
-                'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
-                'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
-                dragging && 'pointer-events-auto opacity-100',
-                dragDisabled
-                  ? 'pointer-events-none cursor-default opacity-50'
-                  : 'cursor-grab active:cursor-grabbing'
+                'group relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pl-4 pr-2 text-left',
+                customColor
+                  ? 'text-fg transition-[filter] hover:brightness-110'
+                  : selected
+                    ? 'bg-active text-fg'
+                    : 'text-fg-muted hover:bg-hover hover:text-fg',
+                dragging && 'opacity-60',
+                dropPosition === 'before' && 'border-t-2 border-accent',
+                dropPosition === 'after' && 'border-b-2 border-accent'
               )}
+              style={backgroundStyle}
             >
-              <GripVertical className="h-3.5 w-3.5" />
-            </button>
-            <div className="min-w-0 flex-1">
-              {renaming ? (
-                <input
-                  autoFocus
-                  value={draftName}
-                  onChange={(event) => setDraftName(event.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') commitRename()
-                    if (event.key === 'Escape') {
-                      setDraftName(session.name)
-                      setRenaming(false)
-                    }
-                    event.stopPropagation()
-                  }}
-                  onClick={(event) => event.stopPropagation()}
-                  className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
-                />
-              ) : (
-                <div data-testid="session-name" className="truncate text-[13px] font-medium leading-tight">
-                  {session.name}
-                </div>
-              )}
-              <SessionEnvironment session={session} />
-            </div>
-            <button
-              type="button"
-              onClick={openMenuFromButton}
-              title="Session actions"
-              className={cn(
-                'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
-                'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
-              )}
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </ContextMenuTrigger>
-
-        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem
-            onSelect={startRename}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Rename
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void duplicateSession(session.id)}>
-            <Copy className="h-3.5 w-3.5" />
-            Duplicate session
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
-              {/* The same 14px box as the icons of the items above, so the labels line up. */}
-              <span aria-hidden="true" className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                <span
-                  className="h-3 w-3 rounded-full border border-fg/20"
-                  style={{ backgroundColor: sessionColorHex(sessionColor) }}
-                />
-              </span>
-              <span className="flex-1">Session color</span>
-              <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {SESSION_COLORS.map((option) => (
-                <ContextMenuItem
-                  key={option.id}
-                  onSelect={() => void setSessionColor(session.id, option.id)}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="h-3 w-3 shrink-0 rounded-full border border-fg/20"
-                    style={{ backgroundColor: option.hex }}
+              <button
+                type="button"
+                draggable={!dragDisabled}
+                disabled={dragDisabled}
+                aria-label={`Drag to reorder ${session.name}`}
+                title="Drag to reorder"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onDragStart={(event) => {
+                  event.stopPropagation()
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('text/plain', session.id)
+                  onDragStart()
+                }}
+                onDragEnd={(event) => {
+                  event.stopPropagation()
+                  onDragEnd()
+                }}
+                className={cn(
+                  'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
+                  'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
+                  'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+                  'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
+                  dragging && 'pointer-events-auto opacity-100',
+                  dragDisabled
+                    ? 'pointer-events-none cursor-default opacity-50'
+                    : 'cursor-grab active:cursor-grabbing'
+                )}
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
+              <div className="min-w-0 flex-1">
+                {renaming ? (
+                  <input
+                    autoFocus
+                    value={draftName}
+                    onChange={(event) => setDraftName(event.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitRename()
+                      if (event.key === 'Escape') {
+                        setDraftName(session.name)
+                        setRenaming(false)
+                      }
+                      event.stopPropagation()
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
                   />
-                  <span className="flex-1">{option.label}</span>
-                  {sessionColor === option.id && <Check className="h-3.5 w-3.5" />}
-                </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSeparator />
-          <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
-            <Trash2 className="h-3.5 w-3.5" />
-            Remove session
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+                ) : (
+                  <div data-testid="session-name" className="truncate text-[13px] font-medium leading-tight">
+                    {session.name}
+                  </div>
+                )}
+                <SessionEnvironment session={session} />
+              </div>
+              <button
+                type="button"
+                onClick={openMenuFromButton}
+                title="Session actions"
+                className={cn(
+                  'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
+                  'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
+                )}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </ContextMenuTrigger>
 
-      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
-        <AlertDialogContent>
-          <AlertDialogTitle>Remove “{session.name}”?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The session and its terminal process are removed from mde. Nothing on disk is deleted.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void removeSession(session.id)}>
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+            <ContextMenuItem
+              onSelect={startRename}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void duplicateSession(session.id)}>
+              <Copy className="h-3.5 w-3.5" />
+              Duplicate session
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                {/* The same 14px box as the icons of the items above, so the labels line up. */}
+                <span aria-hidden="true" className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                  <span
+                    className="h-3 w-3 rounded-full border border-fg/20"
+                    style={{ backgroundColor: sessionColorHex(sessionColor) }}
+                  />
+                </span>
+                <span className="flex-1">Session color</span>
+                <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {SESSION_COLORS.map((option) => (
+                  <ContextMenuItem
+                    key={option.id}
+                    onSelect={() => void setSessionColor(session.id, option.id)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-3 w-3 shrink-0 rounded-full border border-fg/20"
+                      style={{ backgroundColor: option.hex }}
+                    />
+                    <span className="flex-1">{option.label}</span>
+                    {sessionColor === option.id && <Check className="h-3.5 w-3.5" />}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+            <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove session
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+
+        <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
+          <AlertDialogContent>
+            <AlertDialogTitle>Remove “{session.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The session and its terminal process are removed from mde. Nothing on disk is deleted.
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void removeSession(session.id)}>
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </>
   )
 }
@@ -623,6 +624,7 @@ export function Sidebar({
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
   // Hidden, not unmounted: the Inbox panel also listens for Ctrl+N and keeps the drafts read.
   const threadListHidden = useInboxView((state) => state.threadListHidden) && activeSection === 'inbox'
+  const peek = useThreadListPeek(threadListHidden)
 
   const sessionList = sessions.length === 0 ? (
     <p className="px-2 py-1 text-xs text-fg-subtle">No sessions yet.</p>
@@ -721,9 +723,23 @@ export function Sidebar({
   }
 
   return (
+    <>
+    {threadListHidden && (
+      <div aria-hidden data-testid="inbox-thread-list-edge" className="absolute inset-y-0 left-0 z-40 w-1.5" {...peek.edge} />
+    )}
     <aside
       data-testid="sidebar"
-      className={cn('fancy-glass w-[260px] shrink-0 flex-col border-r border-line bg-panel', threadListHidden ? 'hidden' : 'flex')}
+      data-peek={peek.shown || undefined}
+      ref={peek.list.ref}
+      onPointerEnter={threadListHidden ? peek.list.onPointerEnter : undefined}
+      onPointerLeave={threadListHidden ? peek.list.onPointerLeave : undefined}
+      onBlur={threadListHidden ? peek.list.onBlur : undefined}
+      className={cn(
+        'fancy-glass flex w-[260px] shrink-0 flex-col border-r border-line bg-panel',
+        // Hidden, it slides in over the conversation from the left edge and out again, and takes no room.
+        threadListHidden && 'absolute inset-y-0 left-0 z-40 transition-[transform,visibility] duration-150 ease-out',
+        threadListHidden && (peek.shown ? 'translate-x-0 shadow-2xl' : 'invisible -translate-x-full'),
+      )}
     >
       <div className="min-h-0 flex-1 px-2 pb-2 pt-3">
         <div
@@ -797,5 +813,6 @@ export function Sidebar({
         )}
       </div>}
     </aside>
+    </>
   )
 }

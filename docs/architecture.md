@@ -467,6 +467,14 @@ drafts. The choice is kept in `localStorage` (`mde.inbox-thread-list-hidden`), o
 Inbox. Ctrl+O still switches threads while the list is hidden. The hidden-terminal reminder sits in that sidebar's
 foot, so it is out of sight too; F11 still brings the terminal back.
 
+While hidden, the list can be shown for a moment from the window's left edge, like a hidden Dock
+(`components/inbox/thread-list-peek.ts`): a 6 px strip along the left of the area under the title bar shows it after
+the pointer rests there for 100 ms (not while a mouse button is held, so a drag past the edge does not), and it slides
+in over the conversation and the floating terminal without taking room. It slides out 300 ms after the pointer leaves
+it, unless a text field in it, such as the search box, has the keyboard (then it goes once the keyboard moves
+elsewhere), and at once when a thread, a draft or a new thread is opened. Menus opened from it count as inside it.
+Nothing is saved: the list stays hidden until the button shows it.
+
 F9 puts the keyboard in the message box from anywhere in the
 Inbox, with the caret where it was left. Like F11 and F12 it is caught in the main process (`src/main/composer-key.ts`,
 `before-input-event` of the window and of MDE browser pages), so terminals and browser pages never see it, and only
