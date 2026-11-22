@@ -132,6 +132,12 @@ close each terminal. This exercises the unpacked `node-pty` native module and th
 bundled ConPTY files. Packaged builds carry no winpty fallback, so a terminal that
 opens here proves the ConPTY path works on its own.
 
+With several PowerShell and WSL terminals open across tabs and sessions, quit MDE
+and repeat a few times. Check that each terminal accepts input immediately after
+opening and that MDE exits cleanly. The pinned `node-pty` 1.2.0-beta.18 includes
+the [upstream fix](https://github.com/microsoft/node-pty/pull/922) for the
+`remove_pty_baton` crash when several terminals exit together.
+
 MDE does not fall back to Windows' inbox ConPTY when the bundled component cannot
 start. A damaged or incomplete release therefore leaves its terminal unavailable;
 re-extract a fresh release rather than attempting to bypass that protection.
@@ -212,17 +218,6 @@ extracting the application. Do not upload `builder-debug.yml`,
 from a build whose package audit failed.
 
 ## Known gaps
-
-Closing MDE with several terminals running can trigger the native
-`remove_pty_baton(baton->id)` assertion in `node-pty` 1.1.0's Windows ConPTY
-cleanup. This strongly matches the upstream terminal-handle race tracked in
-[node-pty issue #921](https://github.com/microsoft/node-pty/issues/921) and fixed
-by [PR #922](https://github.com/microsoft/node-pty/pull/922). The fix is currently
-available in the 1.2 beta releases. Keep the stable dependency for now; update
-`node-pty` once a stable release includes this fix, refresh the lockfile and
-third-party notices, and run the dependency audit. After upgrading, verify
-repeated application shutdown with several PowerShell and WSL terminals running,
-including panes in other tabs and sessions, using the extracted Windows ZIP.
 
 Windows releases are unsigned. Automated release builds attach a SHA-256 checksum
 alongside the ZIP; this detects corruption but does not provide a code signature.

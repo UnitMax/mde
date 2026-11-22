@@ -429,10 +429,7 @@ describe('PtyManager runtime terminal identities', () => {
 
     expect(ptyMock.spawn).toHaveBeenCalledOnce()
     expect(ptyMock.spawn.mock.calls[0]?.[0]).toBe(powershell)
-    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
-      useConpty: true,
-      useConptyDll: true,
-    })
+    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({ useConptyDll: true })
   })
 
   it('rejects unavailable host executables before creating PTYs', () => {

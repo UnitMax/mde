@@ -15,9 +15,9 @@ export const buildMetadataFiles = ['builder-debug.yml', 'builder-effective-confi
 // electron-builder's elevation helper, which only an NSIS target pulls in; the
 // Windows release is a plain ZIP, so seeing it means such a target came back
 // without `nsis.packElevateHelper: false`. The two winpty files are node-pty's
-// pre-ConPTY backend, kept out by exclusions in `win.files`; seeing them means one
-// of those was dropped. Neither reappearance is visible without looking, so name
-// them here. Compared case-insensitively.
+// pre-ConPTY backend, which node-pty stopped shipping in 1.2; seeing them means a
+// dependency change brought it back. Neither reappearance is visible without
+// looking, so name them here. Compared case-insensitively.
 export const forbiddenPackagedFiles = ['elevate.exe', 'winpty-agent.exe', 'winpty.dll']
 
 // node-pty's JavaScript must stay in app.asar, where Electron validates it with

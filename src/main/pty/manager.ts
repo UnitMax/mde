@@ -113,11 +113,8 @@ function spawnPty(
   // Do not retry with the inbox backend: a damaged or unavailable bundled
   // component must leave the terminal unavailable rather than changing its
   // security and behavior profile at runtime.
-  return nodePty.spawn(file, args, {
-    ...options,
-    useConpty: true,
-    useConptyDll: true,
-  })
+  // node-pty 1.2 always uses ConPTY on Windows, so only the bundled DLL needs asking for.
+  return nodePty.spawn(file, args, { ...options, useConptyDll: true })
 }
 
 /**

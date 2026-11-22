@@ -51,16 +51,9 @@ win:
     - '!node_modules/node-pty/src/**'
     - '!node_modules/node-pty/third_party/**'
     - '!node_modules/node-pty/prebuilds/darwin-*/**'
+    - '!node_modules/node-pty/prebuilds/linux-*/**'
     - '!node_modules/node-pty/prebuilds/win32-arm64/**'
     - '!node_modules/node-pty/prebuilds/win32-x64/*.pdb'
-    # node-pty only reaches for winpty below Windows build 18309, and its agent
-    # works by scraping a hidden console's screen buffer, which is hard to tell
-    # apart from console hijacking. MDE requires the ConPTY path, whose helper
-    # binaries are Microsoft-signed, so ship neither the winpty binding nor its
-    # runtime. This drops support for Windows 10 releases before 1903.
-    - '!node_modules/node-pty/prebuilds/win32-x64/pty.node'
-    - '!node_modules/node-pty/prebuilds/win32-x64/winpty.dll'
-    - '!node_modules/node-pty/prebuilds/win32-x64/winpty-agent.exe'
     # MDE fails closed if its bundled ConPTY cannot start, so node-pty's
     # inbox-ConPTY process-list helper is unreachable and is not shipped.
     - '!node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node'
