@@ -411,8 +411,8 @@ Settings → Browser or from its "Allow this host?" page; every other request a 
 fonts, analytics, WebSockets and redirects, is cancelled before it is sent and named on the tab. Only a local page
 can reach local addresses from within the page: a page from an allowed host cannot send requests to the services on
 your machine, though a link on it can still open a local page in the tab. A host is allowed only once it is saved;
-a host you remove is refused at once, and if the removal cannot be saved MDE tells you it will be allowed again next
-time. Allowed hosts
+a host you remove is refused at once, and if the removal cannot be saved Settings keeps listing it as allowed again next
+time, with a button to save the removal again. Allowed hosts
 receive whatever the page sends them, as in any browser. A link, redirect or new window to another host is not
 contacted: the tab asks whether to allow the host, and the address reaches your system browser only if you choose
 **Open in system browser** there (or **Open link in system browser** when right-clicking a link); a page cannot hand

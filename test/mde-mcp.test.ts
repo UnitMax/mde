@@ -356,6 +356,14 @@ describe('MDE MCP open_terminal', () => {
     expect(await openTerminal({})).toMatchObject({ ok: true })
   })
 
+  it('keeps to the terminal limit when calls arrive together', async () => {
+    const { openTerminal, terminals } = tools()
+    for (let index = 0; index < MDE_MCP_TERMINALS_PER_MINUTE - 1; index += 1) expect(await openTerminal({})).toMatchObject({ ok: true })
+    const results = await Promise.all([openTerminal({}), openTerminal({}), openTerminal({})])
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(terminals).toHaveLength(MDE_MCP_TERMINALS_PER_MINUTE)
+  })
+
   it('passes on why MDE could not open the terminal', async () => {
     const { openTerminal } = tools({ terminal: new Error('The Inbox terminal has no room for another pane.') })
     expect(await openTerminal({ command: 'ls' })).toEqual({ ok: false, error: 'The Inbox terminal has no room for another pane.' })
@@ -526,6 +534,15 @@ describe('MDE MCP tools', () => {
     expect(await call({ prompt: 'Hi' })).toMatchObject({ ok: false, error: expect.stringContaining('a minute') })
     advance(60_001)
     expect(await call({ prompt: 'Hi' })).toMatchObject({ ok: true })
+  })
+
+  it('keeps to the thread limit when calls arrive together', async () => {
+    const { call, created } = tools({ composer: { model } })
+    for (let index = 0; index < MDE_MCP_SPAWNS_PER_MINUTE - 1; index += 1) expect(await call({ prompt: 'Hi' })).toMatchObject({ ok: true })
+    // A worktree makes each call wait on the current branch as well as the caller and the folder.
+    const results = await Promise.all([1, 2, 3].map(() => call({ prompt: 'Hi', worktree: {} })))
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(created).toHaveLength(MDE_MCP_SPAWNS_PER_MINUTE)
   })
 
   it('refuses where the Inbox is unavailable, for another OpenCode, and for unknown tools', async () => {

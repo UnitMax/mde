@@ -25,7 +25,7 @@ function tab(overrides: Partial<BrowserTab> = {}): BrowserTab {
   return { id: TAB_ID, url: 'http://localhost:3000/', title: 'App', loading: false, canGoBack: false, canGoForward: false, blocked: null, blockedHosts: [], error: null, ...overrides }
 }
 
-const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, webrtc: false, webrtcUnsaved: false, tabs, activeId: tabs[0]?.id ?? null, allowedHosts })
+const state = (tabs: BrowserTab[], allowedHosts: string[] = []): BrowserState => ({ enabled: true, webrtc: false, webrtcUnsaved: false, tabs, activeId: tabs[0]?.id ?? null, allowedHosts, unsavedRemovals: [] })
 
 let api: {
   setEnabled: ReturnType<typeof vi.fn>
@@ -219,6 +219,18 @@ describe('Settings → Browser', () => {
     await click(byTestId('browser-webrtc-save-again'))
     expect(api.setWebRTC).toHaveBeenCalledWith(false)
     expect(byTestId('browser-webrtc-unsaved')).toBeNull()
+  })
+
+  it('lists a host whose removal could not be saved, and saves it again on request', async () => {
+    useInboxBrowser.setState({ state: { ...state([]), unsavedRemovals: ['staging.test'] }, error: 'staging.test is refused now, but this could not be saved, so MDE will allow it again next time. Choose Save again to retry.' })
+    api.removeHost.mockImplementationOnce(async () => state([]))
+    await render(createElement(BrowserSettings))
+    expect(byTestId('browser-host-unsaved')!.textContent).toMatch(/staging\.test is refused now/)
+    // Said once, beside the host, not again as an alert.
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    await click(byTestId('browser-host-save-again'))
+    expect(api.removeHost).toHaveBeenCalledWith('staging.test')
+    expect(byTestId('browser-host-unsaved')).toBeNull()
   })
 
   it('says the browsing data was cleared only when it was', async () => {

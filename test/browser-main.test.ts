@@ -308,13 +308,39 @@ describe('MDE browser (main process)', () => {
     await rm(dir, { recursive: true, force: true })
     await writeFile(dir, '')
     await expect(browser.removeHost('staging.test')).rejects.toThrow(/could not be saved/)
-    expect(browser.state().allowedHosts).toEqual([])
+    expect(browser.state()).toMatchObject({ allowedHosts: [], unsavedRemovals: ['staging.test'] })
     expect(request('https://staging.test/api', local.id)).toBe(false)
     // Any later save that works keeps the removal.
     await rm(dir, { force: true })
     await mkdir(dir)
     await browser.allowHost('a.test')
     expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ allowedHosts: ['a.test'] })
+  })
+
+  it('saves a removal that could not be saved when it is removed again', async () => {
+    const browser = await enabledBrowser()
+    await browser.allowHost('staging.test')
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await expect(browser.removeHost('staging.test')).rejects.toThrow(/could not be saved/)
+    // Trying again while saving still fails tries the save again.
+    await expect(browser.removeHost('staging.test')).rejects.toThrow(/could not be saved/)
+    expect(browser.state().unsavedRemovals).toEqual(['staging.test'])
+    await rm(dir, { force: true })
+    await mkdir(dir)
+    expect((await browser.removeHost('staging.test')).unsavedRemovals).toEqual([])
+    expect(JSON.parse(await readFile(join(dir, 'browser.json'), 'utf8'))).toMatchObject({ allowedHosts: [] })
+  })
+
+  it('forgets an unsaved removal once the host is allowed again', async () => {
+    const browser = await enabledBrowser()
+    await browser.allowHost('staging.test')
+    await rm(dir, { recursive: true, force: true })
+    await writeFile(dir, '')
+    await expect(browser.removeHost('staging.test')).rejects.toThrow(/could not be saved/)
+    await rm(dir, { force: true })
+    await mkdir(dir)
+    expect(await browser.allowHost('staging.test')).toMatchObject({ allowedHosts: ['staging.test'], unsavedRemovals: [] })
   })
 
   it('reads whether it is on and the allowed hosts back, dropping local, invalid and repeated entries', async () => {

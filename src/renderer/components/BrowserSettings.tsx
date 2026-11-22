@@ -25,6 +25,8 @@ export function BrowserSettings(): JSX.Element {
   const [switching, setSwitching] = useState(false)
   const [switchingWebRTC, setSwitchingWebRTC] = useState(false)
   const [webrtcError, setWebRTCError] = useState<string | null>(null)
+  // A removal that could not be saved is shown with its host below, so its error is not repeated here.
+  const unsavedRemovalError = store.state.unsavedRemovals.some((entry) => store.error?.startsWith(`${entry} is refused now`))
   const typed = host.trim() ? normalizeAllowedHost(host) : null
   const add = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
@@ -115,6 +117,24 @@ export function BrowserSettings(): JSX.Element {
             ))}
           </ul>
         )}
+        {store.state.unsavedRemovals.map((entry) => (
+          <div key={entry} data-testid="browser-host-unsaved" className="flex items-start gap-2 px-1 text-[11px] text-warn">
+            <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="font-mono">{entry}</span> is refused now, but that could not be saved, so MDE will allow it
+              again next time.
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              data-testid="browser-host-save-again"
+              onClick={() => void store.removeHost(entry)}
+            >
+              Save again
+            </Button>
+          </div>
+        ))}
         <form className="flex items-center gap-2" onSubmit={(event) => void add(event)}>
           <Input
             value={host}
@@ -130,7 +150,7 @@ export function BrowserSettings(): JSX.Element {
           </Button>
         </form>
         {host.trim() && !typed && <p className="text-[11px] text-danger">Enter a host name or an IP address, without wildcards.</p>}
-        {store.error && store.error !== webrtcError && <p role="alert" className="text-[11px] text-danger">{store.error}</p>}
+        {store.error && store.error !== webrtcError && !unsavedRemovalError && <p role="alert" className="text-[11px] text-danger">{store.error}</p>}
       </div>
 
       <div className="space-y-2">

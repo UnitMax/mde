@@ -174,6 +174,8 @@ export class MdeBrowser {
   private webrtc = false
   /** What browser.json says about WebRTC, which differs from `webrtc` after a choice that could not be saved. */
   private savedWebRTC = false
+  /** Hosts refused now whose removal could not be saved yet, so browser.json still allows them. */
+  private unsavedRemovals: string[] = []
   private changingWebRTC = false
   /** The write of browser.json under way; writes run one after another, so the last one written is the newest. */
   private writing: Promise<void> = Promise.resolve()
@@ -277,6 +279,7 @@ export class MdeBrowser {
       tabs: this.tabs.map((tab) => ({ ...tab.state, blockedHosts: [...tab.state.blockedHosts] })),
       activeId: this.activeId,
       allowedHosts: [...this.allowed],
+      unsavedRemovals: [...this.unsavedRemovals],
     }
   }
 
@@ -542,6 +545,7 @@ export class MdeBrowser {
         },
         written: () => {
           if (!this.allowed.includes(host)) this.allowed = [...this.allowed, host]
+          this.unsavedRemovals = this.unsavedRemovals.filter((entry) => entry !== host)
         },
       })
     }
@@ -560,16 +564,20 @@ export class MdeBrowser {
     return this.state()
   }
 
-  /** Stops allowing a host. Pages already open keep what they loaded; their next requests to it are refused. */
+  /**
+   * Stops allowing a host. Pages already open keep what they loaded; their next requests to it are refused. A removal
+   * that could not be saved stays listed as such, and removing the host again saves it again.
+   */
   async removeHost(host: string): Promise<BrowserState> {
     const name = host.toLowerCase()
-    if (this.allowed.includes(name)) {
+    if (this.allowed.includes(name) || this.unsavedRemovals.includes(name)) {
       // Refused at once, whether or not it can be kept; a later save that works keeps it too.
       this.allowed = this.allowed.filter((entry) => entry !== name)
+      if (!this.unsavedRemovals.includes(name)) this.unsavedRemovals = [...this.unsavedRemovals, name]
       try {
         await this.save()
       } catch {
-        throw new Error(`${name} is refused now, but this could not be saved, so MDE will allow it again next time. Try again.`)
+        throw new Error(`${name} is refused now, but this could not be saved, so MDE will allow it again next time. Choose Save again to retry.`)
       } finally {
         this.changed()
       }
@@ -639,13 +647,12 @@ export class MdeBrowser {
   private save(next: { webrtc?: boolean; hosts?: (current: string[]) => string[]; written?: () => void } = {}): Promise<void> {
     const write = this.writing.catch(() => undefined).then(async () => {
       const webrtc = next.webrtc ?? this.webrtc
-      await writeJsonAtomic(this.options.file, {
-        version: 1,
-        enabled: this.enabled,
-        webrtc,
-        allowedHosts: next.hosts ? next.hosts(this.allowed) : this.allowed,
-      })
+      const hosts = next.hosts ? next.hosts(this.allowed) : this.allowed
+      const removals = this.unsavedRemovals
+      await writeJsonAtomic(this.options.file, { version: 1, enabled: this.enabled, webrtc, allowedHosts: hosts })
       this.savedWebRTC = webrtc
+      // The removals made before this write are kept now; one made while it ran waits for its own write.
+      this.unsavedRemovals = this.unsavedRemovals.filter((entry) => !removals.includes(entry) || hosts.includes(entry))
       next.written?.()
     })
     this.writing = write

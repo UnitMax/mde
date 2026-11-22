@@ -221,6 +221,26 @@ export class MdeMcpTools {
     return match ?? this.host.addFolder(target, directory)
   }
 
+  /** Refuses a thread over the limit of a minute; returns the time to count it at. */
+  private checkSpawnLimit(): number {
+    const now = this.host.now()
+    this.spawns = this.spawns.filter((at) => now - at < 60_000)
+    if (this.spawns.length >= MDE_MCP_SPAWNS_PER_MINUTE) {
+      throw new ToolError(`Agents may start at most ${MDE_MCP_SPAWNS_PER_MINUTE} threads a minute. Wait a moment and try again.`)
+    }
+    return now
+  }
+
+  /** Refuses a terminal over the limit of a minute; returns the time to count it at. */
+  private checkTerminalLimit(): number {
+    const now = this.host.now()
+    this.terminals = this.terminals.filter((at) => now - at < 60_000)
+    if (this.terminals.length >= MDE_MCP_TERMINALS_PER_MINUTE) {
+      throw new ToolError(`Agents may open at most ${MDE_MCP_TERMINALS_PER_MINUTE} terminals a minute. Wait a moment and try again.`)
+    }
+    return now
+  }
+
   private async createThread(request: MdeMcpRequest): Promise<MdeMcpResponse> {
     const args = request.arguments
     const unknown = Object.keys(args).find((key) => !CREATE_KEYS.has(key))
@@ -253,11 +273,7 @@ export class MdeMcpTools {
     if (this.depth(parent) + 1 > MDE_MCP_MAX_DEPTH) {
       throw new ToolError(`Threads started by agents may only go ${MDE_MCP_MAX_DEPTH} levels deep, and this one is already at the limit.`)
     }
-    const now = this.host.now()
-    this.spawns = this.spawns.filter((at) => now - at < 60_000)
-    if (this.spawns.length >= MDE_MCP_SPAWNS_PER_MINUTE) {
-      throw new ToolError(`Agents may start at most ${MDE_MCP_SPAWNS_PER_MINUTE} threads a minute. Wait a moment and try again.`)
-    }
+    this.checkSpawnLimit()
 
     const target = request.target
     const directory = directoryText
@@ -282,8 +298,10 @@ export class MdeMcpTools {
     // choose a mode: a thread with no Inbox caller runs under the OpenCode configuration, as its caller does.
     const permissionMode = parent?.permissionMode
 
-    // Counted before the work starts, so calls arriving together cannot all slip under the limit.
-    this.spawns.push(now)
+    // Checked again and counted with no wait between, right before the work starts: calls arriving together each
+    // looked things up above, so only here can they not all slip under the limit.
+    const spawnedAt = this.checkSpawnLimit()
+    this.spawns.push(spawnedAt)
     const thread = await this.host.create(
       { folderId: folder.id, text: prompt, agent, model, ...(permissionMode ? { permissionMode } : {}), ...(worktree ? { worktree } : {}) },
       parent ? { parentId: parent.id } : {},
@@ -325,11 +343,7 @@ export class MdeMcpTools {
     const title = optionalText(args, 'title', MDE_MCP_TERMINAL_TITLE_LIMIT)
     if (title && terminalCommandProblem(title)) throw new ToolError('`title` is not valid.')
 
-    const now = this.host.now()
-    this.terminals = this.terminals.filter((at) => now - at < 60_000)
-    if (this.terminals.length >= MDE_MCP_TERMINALS_PER_MINUTE) {
-      throw new ToolError(`Agents may open at most ${MDE_MCP_TERMINALS_PER_MINUTE} terminals a minute. Wait a moment and try again.`)
-    }
+    this.checkTerminalLimit()
 
     const target = request.target
     // The caller only names the pane's origin and its default directory here, so a failed lookup is no reason to refuse.
@@ -339,7 +353,9 @@ export class MdeMcpTools {
       : parent?.directory ?? callerDirectory(target, request.cwd)
     if (!directory) throw new ToolError('MDE cannot tell which directory the terminal starts in. Pass `directory`.')
 
-    this.terminals.push(now)
+    // Checked again and counted with no wait between, so calls arriving together cannot all slip under the limit.
+    const openedAt = this.checkTerminalLimit()
+    this.terminals.push(openedAt)
     const paneTitle = title ?? (command ? (command.length > MDE_MCP_TERMINAL_TITLE_LIMIT ? `${command.slice(0, MDE_MCP_TERMINAL_TITLE_LIMIT - 1)}…` : command) : 'Agent terminal')
     let result: McpTerminalResult & { directory: string }
     try {

@@ -73,6 +73,8 @@ export interface BrowserState {
   activeId: string | null
   /** The hosts allowed besides the local ones, as the person added them. */
   allowedHosts: string[]
+  /** Hosts refused now whose removal could not be saved, so browser.json still allows them. */
+  unsavedRemovals: string[]
 }
 
 /** Where the active tab is drawn, in CSS pixels of the window's page; null hides it. */
