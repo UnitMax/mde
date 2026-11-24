@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   applyCommand,
   filterCommands,
+  newThreadCommands,
   parseInvocation,
   slashCommands,
   slashTriggerAt,
@@ -142,7 +143,7 @@ describe('parseInvocation', () => {
 })
 
 describe('the Inbox commands', () => {
-  type GoalChange = Parameters<Parameters<typeof slashCommands>[0]['goal']>[0]
+  type GoalChange = Parameters<NonNullable<Parameters<typeof slashCommands>[0]['goal']>>[0]
   const actions = () => ({
     ask: vi.fn(async (_question: string) => undefined),
     fork: vi.fn(async () => undefined),
@@ -271,5 +272,41 @@ describe('the Inbox commands', () => {
     const names = slashCommands(actions()).flatMap((command) => [command.name, ...(command.aliases ?? [])])
     for (const name of names) expect(name).toMatch(/^[a-z][a-z0-9-]*$/)
     expect(new Set(names).size).toBe(names.length)
+  })
+})
+
+describe('the commands of a new thread', () => {
+  it('offers only the commands whose actions are given', () => {
+    expect(slashCommands({}).map((command) => command.name)).toEqual([])
+    expect(slashCommands({ goal: vi.fn() }).map((command) => command.name)).toEqual(['goal'])
+    expect(slashCommands({ ask: vi.fn(), compact: vi.fn() }).map((command) => command.name)).toEqual(['btw', 'compact'])
+  })
+
+  it('has /goal alone, which starts the thread with the objective', async () => {
+    const start = vi.fn(async (_objective: string) => undefined)
+    const list = newThreadCommands(start)
+    expect(list.map((command) => command.name)).toEqual(['goal'])
+    expect(list[0]!.argument).toEqual({ hint: 'an objective', required: true })
+    expect(list[0]!.description).toMatch(/Start the thread with a goal/)
+    // There is nothing to ask about, fork or compact before the thread has a conversation: those are plain text.
+    for (const text of ['/btw why?', '/fork', '/compact', '/summarize']) expect(parseInvocation(list, text)).toBeNull()
+    const invocation = parseInvocation(list, '/goal  Make the tests pass. ')!
+    await invocation.command.run(invocation.args)
+    expect(start).toHaveBeenCalledExactlyOnceWith('Make the tests pass.')
+  })
+
+  it('refuses pause, resume and clear, and objectives OpenCode would refuse, without starting anything', () => {
+    const start = vi.fn()
+    const [goal] = newThreadCommands(start)
+    expect(() => goal!.run('pause')).toThrow('There is no goal to pause yet.')
+    expect(() => goal!.run('Resume')).toThrow(/no goal to resume/)
+    expect(() => goal!.run('clear')).toThrow(/no goal to clear/)
+    expect(() => goal!.run('x'.repeat(4001))).toThrow(/at most 4,000 characters/)
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('gives a failed start back to the box', async () => {
+    const [goal] = newThreadCommands(async () => { throw new Error('Choose an agent and a model first.') })
+    await expect(goal!.run('Ship it')).rejects.toThrow('Choose an agent and a model first.')
   })
 })

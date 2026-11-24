@@ -257,7 +257,9 @@ the validated `chat:*` channels.
   the renderer, the IPC validator and the service). The main process sends `POST
   /api/session/{sessionID}/command` with the body `{ name: 'goal', text }`: the command name is fixed to
   `goal`, so the renderer cannot run any other command of OpenCode's, and `text` is the objective or the
-  action word. The answers are read strictly: a goal is kept only with a known status, bounded counts and
+  action word. `chat:create` may carry `goal: true` (the validator accepts `true` or nothing) to start the
+  new thread with that same fixed command instead of a prompt; its `text` is then the objective, checked by
+  `goalObjectiveProblem` in the service before the session is made, and attachments are refused with it. The answers are read strictly: a goal is kept only with a known status, bounded counts and
   an ID of the usual form, its objective and reason are capped and stripped of control characters, and the
   `rpc.opencode.goal.changed` event is passed on only when it parses the same way. The goal's text reaches the
   renderer as plain text (the objective, the reviewer's reason) or as a note in the conversation, never as

@@ -88,54 +88,77 @@ export function parseInvocation(commands: readonly SlashCommand[], text: string)
   return command ? { command, args: (match[2] ?? '').trim(), nameEnd: 1 + match[1]!.length } : null
 }
 
-/** What the commands need from the thread they run in. */
+/**
+ * What the commands need from the thread they run in. A command whose action is left out is not offered: a new
+ * thread, which has no conversation yet, has nothing to ask about, fork or compact, so it gives `goal` alone.
+ */
 export interface SlashActions {
   /** Asks a side question about the conversation; the answer is shown apart from it. */
-  ask: (question: string) => void | Promise<void>
+  ask?: (question: string) => void | Promise<void>
   /** Opens the thread's earlier side questions; left out while it has none. */
   asked?: () => void
   /** Forks the whole conversation into a new thread, which is opened. */
-  fork: () => void | Promise<void>
+  fork?: () => void | Promise<void>
   /** Compacts the conversation: it is summarized to free up context. */
-  compact: () => void | Promise<void>
+  compact?: () => void | Promise<void>
   /** Sets the thread's goal, or pauses, resumes or clears it. */
-  goal: (change: { action: 'set'; objective: string } | { action: GoalKeyword }) => void | Promise<void>
+  goal?: (change: { action: 'set'; objective: string } | { action: GoalKeyword }) => void | Promise<void>
 }
 
-/** Every command of the Inbox message box. A new one is another entry here, with what it needs added to {@link SlashActions}. */
+/** The commands of the Inbox message box that `actions` can do. A new one is another entry here, with what it needs added to {@link SlashActions}. */
 export function slashCommands(actions: SlashActions): SlashCommand[] {
-  return [
-    {
+  const { ask, fork, compact, goal } = actions
+  const commands: SlashCommand[] = []
+  if (ask) {
+    commands.push({
       name: 'btw',
       description: 'Ask a side question. It is answered from this conversation and not added to it.',
       // On its own it opens the earlier side questions, once there are any.
       argument: { hint: 'your question', required: !actions.asked },
       // A question about a quoted passage needs the passage: the model cannot tell which part was meant.
       takesQuotes: true,
-      run: (question) => question ? actions.ask(question) : actions.asked?.(),
-    },
-    {
+      run: (question) => question ? ask(question) : actions.asked?.(),
+    })
+  }
+  if (fork) {
+    commands.push({
       name: 'fork',
       description: 'Fork this thread. A new thread starts with a copy of the conversation, and this one stays as it is.',
-      run: () => actions.fork(),
-    },
-    {
+      run: () => fork(),
+    })
+  }
+  if (compact) {
+    commands.push({
       name: 'compact',
       aliases: ['summarize'],
       description: 'Compact the conversation. It is summarized to free up context.',
-      run: () => actions.compact(),
-    },
-    {
+      run: () => compact(),
+    })
+  }
+  if (goal) {
+    commands.push({
       name: 'goal',
       description: 'Keep working until an objective is met. “/goal pause”, “resume” and “clear” manage the goal.',
       argument: { hint: 'an objective', required: true },
       run: (args) => {
         const keyword = goalKeyword(args)
-        if (keyword) return actions.goal({ action: keyword })
+        if (keyword) return goal({ action: keyword })
         const problem = goalObjectiveProblem(args)
         if (problem) throw new Error(problem)
-        return actions.goal({ action: 'set', objective: args.trim() })
+        return goal({ action: 'set', objective: args.trim() })
       },
+    })
+  }
+  return commands
+}
+
+/** The commands of a thread that is not started yet: only a goal can be given to one, and it starts the thread. */
+export function newThreadCommands(start: (objective: string) => void | Promise<void>): SlashCommand[] {
+  const [goal] = slashCommands({
+    goal: (change) => {
+      if (change.action !== 'set') throw new Error(`There is no goal to ${change.action} yet. Write an objective after /goal to start the thread with one.`)
+      return start(change.objective)
     },
-  ]
+  })
+  return [{ ...goal!, description: 'Start the thread with a goal: the agent keeps working until the objective is met.' }]
 }

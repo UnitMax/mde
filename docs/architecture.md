@@ -1564,8 +1564,9 @@ message; a file with a `mention` that is read from a `file:` address is shown as
 marks in the bubble, titled with the path), not as an attachment beside the text.
 
 **Slash commands.** In a conversation's message box, a message that starts with `/` and the name of a
-command is that command, not a message for the agent. (The new-thread page has no commands, because a
-command acts on a thread, so a slash there is plain text.) Typing a `/` as the first character opens a
+command is that command, not a message for the agent. The new-thread page offers only the commands that
+make sense before there is a conversation, which is `/goal` alone (`newThreadCommands()`): `/btw`, `/fork`
+and `/compact` act on a conversation, so there they are plain text. Typing a `/` as the first character opens a
 list of the commands that fit (`CompletionPicker`, the same list the `$` skills use; the rules are in
 `lib/slash-commands.ts`): Up and Down move, Tab writes `/name ` over the word (without the space for a
 command that takes nothing), Enter does the same, or runs a command that takes nothing more, Escape closes
@@ -1582,7 +1583,8 @@ is read in any case, as a whole word at the very start. Everything else that sta
 as `/etc/hosts is wrong` or `/btwx`, is an ordinary message and is sent as written. The commands are MDE's
 own and are defined in one place, `slashCommands()` in `lib/slash-commands.ts`: a name, aliases, a
 description, an optional argument (a hint and whether it is required) and `run`. A new command is one
-more entry there, with whatever it needs from the thread added to `SlashActions`. The entry points
+more entry there, with whatever it needs from the thread added to `SlashActions`; a command whose action is
+left out of `SlashActions` is not offered. The entry points
 (typing `/`, the list keys, Escape) are in the keyboard shortcut list.
 
 **Side questions (`/btw`).** `/btw <question>` asks something about the conversation without becoming
@@ -1699,6 +1701,15 @@ also applies the agent and model the box shows to the session, as a message woul
 with `send`), so the goal does not run on a model the person did not choose. A service without the
 command says to update OpenCode; OpenCode's own refusals (pausing a goal that is not active, for one) are
 passed on in its words.
+
+On the new-thread page `/goal <objective>` starts the thread with the goal instead of a first message: the
+page calls `createThread` with `goal: true` and the objective as `text`, in the folder, worktree, agent,
+model and permission mode it shows, and `InboxChatService.create` runs the `goal` command where it would
+send `session.prompt`. Pause, resume and clear are refused there (there is no goal yet), and so is a page
+set to save an automation, which starts its threads with a message. The page's draft moves into the
+thread as usual; files and quotes the goal did not take stay in the new thread's box for the next
+message. When the command fails the thread exists already, so it opens with the reason and `/goal
+<objective>` in its box, to be run again from there.
 
 The state is read with the plugin's RPC, `POST /api/rpc/opencode.goal/get` (`chat:goal`,
 `InboxChatService.goal`), when a thread is opened and when the event stream reconnects, and is pushed by

@@ -600,7 +600,14 @@ export class InboxChatService {
     const folder = this.folder(request.folderId)
     // A worktree folder already is one: threads started in it run in it, and a new worktree is cut from the real folder.
     if (request.worktree && folder.worktree) throw new Error('This folder is already a worktree. Start the thread in it, or start a new worktree from the folder it came from.')
-    const text = this.promptText(request.text, request.attachmentIds)
+    // A goal is the objective alone: the files of the draft are not sent, and stay in the new thread's box.
+    const goal = request.goal === true
+    if (goal) {
+      const problem = goalObjectiveProblem(request.text)
+      if (problem) throw new Error(problem)
+      if (request.attachmentIds?.length) throw new Error('A goal cannot carry attached files.')
+    }
+    const text = goal ? request.text.trim() : this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
     if (request.permissionMode !== undefined && !isThreadPermissionMode(request.permissionMode)) throw new Error('Choose a permission mode.')
     const permissionMode = request.permissionMode && request.permissionMode !== 'default' ? request.permissionMode : undefined
@@ -647,18 +654,32 @@ export class InboxChatService {
     if (!unattended) this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
     if (draftKey) await this.dependencies.drafts?.move(draftKey, `thread:${thread.id}`)
     try {
-      await this.dependencies.client.request(folder.target, 'session.prompt', {
-        params: { sessionID: created.id },
-        body: await this.promptBody({ target: folder.target, directory: place?.directory ?? folder.directory }, text, files),
-      })
+      if (goal) await this.startGoal(folder.target, thread.id, text)
+      else {
+        await this.dependencies.client.request(folder.target, 'session.prompt', {
+          params: { sessionID: created.id },
+          body: await this.promptBody({ target: folder.target, directory: place?.directory ?? folder.directory }, text, files),
+        })
+      }
     } catch (error) {
       this.dependencies.recorder.markStatus(thread.id, 'idle')
+      if (goal) {
+        // The box gave the command up when it ran: it goes into the thread's box, unless quotes it left there are in the way.
+        const drafts = this.dependencies.drafts
+        if (drafts && !(await drafts.get(`thread:${thread.id}`).catch(() => null))?.text.trim()) {
+          await drafts.text(`thread:${thread.id}`, `/goal ${text}`).catch(() => undefined)
+        }
+        const unsupported = error instanceof Error && /does not support goals/.test(error.message)
+        return { ...(this.dependencies.store.get(thread.id) ?? thread), sendError: unsupported ? error.message : 'Could not set the goal. Run /goal in this thread to try again.' }
+      }
       // An agent's or an automation's prompt has no draft behind it; it becomes the thread's draft, so the person can send it.
       if (unattended) await this.dependencies.drafts?.text(`thread:${thread.id}`, text).catch(() => undefined)
       if (this.dependencies.drafts) return { ...(this.dependencies.store.get(thread.id) ?? thread), sendError: 'Could not send the first message. Your draft has been kept; try sending again.' }
       throw error
     }
-    await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
+    // The files and quotes a goal did not take stay in the box for the thread's next message.
+    const left = goal ? await this.dependencies.drafts?.get(`thread:${thread.id}`) : undefined
+    if (!left?.attachments.length && !left?.text.trim()) await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     return this.dependencies.store.get(thread.id) ?? thread
   }
 
@@ -1087,9 +1108,15 @@ export class InboxChatService {
     }
     this.streams.ensure(thread.target)
     if (request.action === 'set') await this.applyChoice(thread, request)
+    await this.startGoal(thread.target, thread.id, text)
+    if (request.action === 'set' || request.action === 'resume') this.dependencies.recorder.markStatus(thread.id, 'working')
+  }
+
+  /** Runs OpenCode's `goal` command in a session: an objective sets the goal, a keyword pauses, resumes or clears it. */
+  private async startGoal(target: OpenCodeTarget, sessionId: string, text: string): Promise<void> {
     try {
-      await this.dependencies.client.request(thread.target, 'session.command', {
-        params: { sessionID: thread.id },
+      await this.dependencies.client.request(target, 'session.command', {
+        params: { sessionID: sessionId },
         body: { name: 'goal', text },
       })
     } catch (error) {
@@ -1099,7 +1126,6 @@ export class InboxChatService {
       }
       throw error
     }
-    if (request.action === 'set' || request.action === 'resume') this.dependencies.recorder.markStatus(thread.id, 'working')
   }
 
   async interrupt(threadId: string): Promise<void> {

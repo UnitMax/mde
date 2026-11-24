@@ -27,6 +27,7 @@ import { automationScheduleInSentence, automationScheduleLabel, automationTimeLa
 import { useInboxAutomations } from '@/store/inbox-automations'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { findModel, initialChoice } from '@/lib/chat'
+import { newThreadCommands } from '@/lib/slash-commands'
 import { defaultWorktreeBase, inboxThreadFolder, inboxWorktreeSource } from '@/lib/inbox'
 import { optionsKey, useInboxChat } from '@/store/inbox-chat'
 import { useInboxDrafts } from '@/store/inbox-drafts'
@@ -225,6 +226,17 @@ export function NewThreadView(): JSX.Element {
   const now = useNow()
   const pickers = <AutomationPicker value={schedule} onChange={chooseSchedule} count={automationCount} onManage={() => openAutomations()} />
 
+  // `/goal` starts the thread with a goal instead of a message, where and how a message would start it. The other
+  // commands work on a conversation, which a thread that is not started does not have yet.
+  const startWithGoal = async (objective: string): Promise<void> => {
+    if (!folder) return
+    if (schedule) throw new Error('An automation cannot start with a goal. Turn off the schedule, or write what every run should do.')
+    if (branchProblem) throw new Error(branchProblem)
+    if (!agent || !model) throw new Error('Choose an agent and a model first.')
+    await createThread({ folderId: folder.id, text: objective, goal: true, agent, model, draftId: page.id, ...(worktree ? { worktree } : {}), ...(permissionMode !== 'default' ? { permissionMode } : {}) })
+  }
+  const commands = newThreadCommands(startWithGoal)
+
   // What the draft remembers of how it would start: the agent and model once they are known, and a worktree
   // when one is chosen, whether or not Git has answered yet. Left out until then, so a draft keeps what it had.
   const savedBase = here.base ?? base
@@ -354,6 +366,7 @@ export function NewThreadView(): JSX.Element {
             placeholder={schedule ? 'Describe what every run should do' : 'Describe what you want to build or change'}
             scheduled={schedule ? { label: 'Schedule', title: `Save as an automation: ${automationScheduleLabel(schedule)}` } : undefined}
             sendBlocked={Boolean(branchProblem)}
+            commands={commands}
             // The servers of the folder itself: a new worktree loads its own, so then they are shown but not switched.
             // The permissions sit in the box's toolbar, where a thread has them too.
             extraPickers={<>

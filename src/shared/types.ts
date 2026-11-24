@@ -854,6 +854,11 @@ export interface ChatCreateRequest {
   worktree?: { base: string; branch?: string }
   /** Left out, or `default`, sends no rules: the OpenCode configuration decides. */
   permissionMode?: ThreadPermissionMode
+  /**
+   * Start with a goal (`/goal`) instead of a message: `text` is the objective, and the agent keeps working until
+   * OpenCode's reviewer finds it met. Attachments are not sent; they stay in the new thread's box.
+   */
+  goal?: true
 }
 
 export interface ChatThreadRequest {

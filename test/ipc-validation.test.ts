@@ -329,6 +329,9 @@ describe('IPC payload boundary', () => {
     const started = { folderId: 'fld_1234', text: 'Hi', agent: 'build', model }
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...started, permissionMode: 'full' })).not.toThrow()
     rejects(IpcChannels.chatCreate, { ...started, permissionMode: 'everything' })
+    // A thread started with `/goal`: the flag is true or absent, nothing else.
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...started, goal: true })).not.toThrow()
+    for (const goal of [false, 'yes', 1]) rejects(IpcChannels.chatCreate, { ...started, goal })
     // Taking back a held message names the thread and the message, and nothing else.
     for (const bad of [
       {},

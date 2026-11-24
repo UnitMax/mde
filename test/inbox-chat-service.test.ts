@@ -2096,6 +2096,61 @@ describe('Inbox new-thread drafts', () => {
     } finally { await done() }
   })
 
+  it('starts a thread with a goal instead of a message, and leaves the draft’s files in the new thread’s box', async () => {
+    const { service, folder, calls, drafts, store, done } = await withDrafts({ 'session.create': { data: { id: 'ses_new' } }, 'session.command': null })
+    try {
+      await service.draft({ key: 'draft:drf_one', action: 'add', name: 'notes.txt', mime: 'text/plain', data: new Uint8Array([65]), folderId: folder.id })
+      // The box gave the command up when it ran it.
+      await service.draft({ key: 'draft:drf_one', action: 'text', text: '', folderId: folder.id })
+      const thread = await service.create({ folderId: folder.id, text: '  Make the tests pass.  ', goal: true, agent: 'build', model, draftId: 'drf_one' })
+      expect(thread.sendError).toBeUndefined()
+      expect(calls.map((call) => call.operation)).not.toContain('session.prompt')
+      expect(calls.find((call) => call.operation === 'session.command')?.request).toEqual({ params: { sessionID: 'ses_new' }, body: { name: 'goal', text: 'Make the tests pass.' } })
+      expect(store.get('ses_new')?.status).toBe('working')
+      expect((await service.drafts()).drafts).toEqual([])
+      expect(await drafts.get('thread:ses_new')).toMatchObject({ text: '', attachments: [{ name: 'notes.txt' }] })
+    } finally { await done() }
+  })
+
+  it('starts a goal thread with nothing left behind when the draft was only the command', async () => {
+    const { service, folder, drafts, done } = await withDrafts({ 'session.create': { data: { id: 'ses_new' } }, 'session.command': null })
+    try {
+      await service.draft({ key: 'draft:drf_one', action: 'text', text: '/goal Ship it', folderId: folder.id })
+      await service.draft({ key: 'draft:drf_one', action: 'text', text: '', folderId: folder.id })
+      await service.create({ folderId: folder.id, text: 'Ship it', goal: true, agent: 'build', model, draftId: 'drf_one' })
+      expect((await service.drafts()).threads).toEqual([])
+      expect(await drafts.get('thread:ses_new')).toMatchObject({ text: '', attachments: [] })
+    } finally { await done() }
+  })
+
+  it('keeps a goal that could not be set as /goal in the new thread’s box, and says why', async () => {
+    const { service, folder, drafts, store, done } = await withDrafts({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.command': new OpenCodeServiceError('Command not found: goal', 404, 'CommandNotFoundError'),
+    })
+    try {
+      const thread = await service.create({ folderId: folder.id, text: 'Ship it', goal: true, agent: 'build', model, draftId: 'drf_one' })
+      expect(thread.sendError).toMatch(/does not support goals/)
+      expect(store.get('ses_new')?.status).toBe('idle')
+      expect(await drafts.get('thread:ses_new')).toMatchObject({ text: '/goal Ship it' })
+    } finally { await done() }
+    const other = await withDrafts({ 'session.create': { data: { id: 'ses_new' } }, 'session.command': new Error('Unavailable') })
+    try {
+      const thread = await other.service.create({ folderId: other.folder.id, text: 'Ship it', goal: true, agent: 'build', model })
+      expect(thread.sendError).toBe('Could not set the goal. Run /goal in this thread to try again.')
+    } finally { await other.done() }
+  })
+
+  it('refuses a goal OpenCode would refuse, or one with files, before making anything', async () => {
+    const { service, folder, calls, done } = await withDrafts({ 'session.create': { data: { id: 'ses_new' } }, 'session.command': null })
+    try {
+      await expect(service.create({ folderId: folder.id, text: 'pause', goal: true, agent: 'build', model })).rejects.toThrow()
+      await expect(service.create({ folderId: folder.id, text: '  ', goal: true, agent: 'build', model })).rejects.toThrow('Say what the goal is.')
+      await expect(service.create({ folderId: folder.id, text: 'Ship it', goal: true, agent: 'build', model, draftId: 'drf_one', attachmentIds: ['a'] })).rejects.toThrow('cannot carry attached files')
+      expect(calls).toEqual([])
+    } finally { await done() }
+  })
+
   it('keeps the draft listed when the thread could not be created at all', async () => {
     const { service, folder, done } = await withDrafts({ 'session.create': new Error('Unavailable') })
     try {
