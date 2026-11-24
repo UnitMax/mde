@@ -474,6 +474,41 @@ describe('the command shown in the text', () => {
   })
 })
 
+describe('the skills shown in the text', () => {
+  const marked = (container: HTMLElement): string[] => Array.from(container.querySelectorAll('.chat-input-skill')).map((element) => element.textContent ?? '')
+
+  it('marks each $skill the message invokes, as the sender reads it', async () => {
+    const { container, box } = await setup()
+    await type(box, 'Use $demo, then $deploy.')
+    expect(marked(container)).toEqual(['$demo', '$deploy'])
+    // The sender invokes a skill once: only its first mention is one.
+    await type(box, '$demo and $demo again')
+    expect(marked(container)).toEqual(['$demo'])
+  })
+
+  it('leaves text that only looks like a skill plain', async () => {
+    const { container, box } = await setup()
+    for (const value of ['echo $HOME', 'costs $5', 'cost$demo', '$demos', '$dem', '$demo.md', 'plain text']) {
+      await type(box, value)
+      expect(marked(container)).toEqual([])
+    }
+  })
+
+  it('marks nothing after a command, which is not sent as a message, nor while there are no skills', async () => {
+    const { all } = makeCommands()
+    const withCommands = await setup({ commands: all })
+    await type(withCommands.box, '/btw what does $demo do?')
+    expect(marked(withCommands.container)).toEqual([])
+    await type(withCommands.box, 'what does $demo do?')
+    expect(marked(withCommands.container)).toEqual(['$demo'])
+    dispose?.()
+    document.body.innerHTML = ''
+    const bare = await setup({ options: { status: 'ready', value: { agents: [], models: [], defaultModel: null, defaultAgent: null, skills: [] } } })
+    await type(bare.box, 'Use $demo')
+    expect(marked(bare.container)).toEqual([])
+  })
+})
+
 describe('Escape in the message box', () => {
   it('closes the open list and nothing else', async () => {
     const { all } = makeCommands()

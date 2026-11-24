@@ -125,6 +125,15 @@ function fileMarks(state: EditorState, ranges: ChatInputProps['mentionRanges']):
   return found.length ? Decoration.set(found.map((range) => Decoration.mark({ class: 'chat-input-file' }).range(range.from, range.to)), true) : Decoration.none
 }
 
+/** Asks the skill marks to be worked out again for text that did not change, when the skills did. */
+const refreshSkillMarks = StateEffect.define<null>()
+
+/** The `$skill` names the message invokes, marked so that they can be told from text that only looks like one (`$HOME`). */
+function skillMarks(state: EditorState, ranges: ChatInputProps['skillRanges']): DecorationSet {
+  const found = (ranges?.(state.doc.toString()) ?? []).filter((range) => range.to > range.from && range.to <= state.doc.length)
+  return found.length ? Decoration.set(found.map((range) => Decoration.mark({ class: 'chat-input-skill' }).range(range.from, range.to)), true) : Decoration.none
+}
+
 const inputTheme = EditorView.theme({
   '&': { color: 'var(--color-fg)', fontSize: '14px', backgroundColor: 'transparent' },
   '&.cm-focused': { outline: 'none' },
@@ -140,6 +149,11 @@ const inputTheme = EditorView.theme({
   },
   '.chat-input-quote-mark': { color: 'var(--color-fg-subtle)' },
   '.chat-input-file': {
+    color: 'var(--color-accent)',
+    backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+    borderRadius: '4px',
+  },
+  '.chat-input-skill': {
     color: 'var(--color-accent)',
     backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
     borderRadius: '4px',
@@ -242,6 +256,8 @@ interface ChatInputProps {
   commandToken?: (text: string) => { from: number; to: number } | null
   /** The parts of the text that name a file or folder of the project; they are marked. Read like `commandToken`. */
   mentionRanges?: (text: string) => { from: number; to: number }[]
+  /** The `$skill` names the message invokes; they are marked. Read like `commandToken`. */
+  skillRanges?: (text: string) => { from: number; to: number }[]
 }
 
 /** Markdown remains plain text, with bullet markers displayed as bullets while editing. */
@@ -279,6 +295,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             update: (value, transaction) =>
               transaction.docChanged || transaction.effects.some((effect) => effect.is(refreshFileMarks))
                 ? fileMarks(transaction.state, latest.current.mentionRanges)
+                : value,
+            provide: (field) => EditorView.decorations.from(field),
+          }),
+          StateField.define<DecorationSet>({
+            create: (state) => skillMarks(state, latest.current.skillRanges),
+            update: (value, transaction) =>
+              transaction.docChanged || transaction.effects.some((effect) => effect.is(refreshSkillMarks))
+                ? skillMarks(transaction.state, latest.current.skillRanges)
                 : value,
             provide: (field) => EditorView.decorations.from(field),
           }),
@@ -354,6 +378,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   useLayoutEffect(() => {
     viewRef.current?.dispatch({ effects: refreshFileMarks.of(null) })
   }, [props.mentionRanges])
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({ effects: refreshSkillMarks.of(null) })
+  }, [props.skillRanges])
 
   useLayoutEffect(() => {
     const view = viewRef.current!

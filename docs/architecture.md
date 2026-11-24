@@ -1513,7 +1513,10 @@ model the skill's instructions with the message. The skills are listed for the d
 runs in (the worktree, for a thread started in one), because OpenCode refuses a skill its session cannot
 see. `$text` that is not a skill is plain text, a message without a `$` costs no extra request, and if
 the listing fails the message goes without the skill rather than not at all. The offsets are UTF-16
-indices; OpenCode stores them as given and does not check them. In the conversation, the user's message
+indices; OpenCode stores them as given and does not check them. In the box, each `$id` that will go as a
+skill is marked like a mentioned file (a CodeMirror mark in `ChatInput`, `skillMentions` over the box's
+skill list, so the first mention of each only, and none after a slash command, which is not sent as a
+message); `$HOME` and other `$text` stay plain. In the conversation, the user's message
 shows a chip for each skill it used. When the model loads a skill itself (OpenCode's `skill` tool) the
 call is a "Loaded the demo skill" row that expands to the skill's instructions and the files that
 come with it, without OpenCode's wrapper and its note about the skill's directory; a skill that cannot be

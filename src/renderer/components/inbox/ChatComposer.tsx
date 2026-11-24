@@ -6,7 +6,7 @@ import { terminalReferenceTokens } from '@shared/terminal-references'
 import { useInboxChat } from '@/store/inbox-chat'
 import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatFileEntry, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { fileMentionTokens, fileTriggerAt } from '@shared/file-mentions'
-import { skillTriggerAt } from '@shared/skills'
+import { skillMentions, skillTriggerAt } from '@shared/skills'
 import { addQuote, joinQuotes, leadingQuotes, MESSAGE_TEXT_LIMIT } from '@/lib/chat-quote'
 import { applyFile, describeFile, enterFolder } from '@/lib/file-mentions'
 import { applySkill, filterSkills } from '@/lib/skills'
@@ -536,6 +536,14 @@ export const ChatComposer = forwardRef(function ChatComposer({
     const found = parseInvocation(commands, value)
     return found ? { from: 0, to: found.nameEnd } : null
   }, [commands])
+  // The `$skill` names that go to OpenCode as skills: the ones the sender finds, with its rules. A command is not
+  // sent as a message, so what follows its name invokes nothing and stays plain.
+  const skillRanges = useCallback(
+    (value: string) => (skills.length === 0 || parseInvocation(commands, value)
+      ? []
+      : skillMentions(value, skills.map((skill) => skill.id)).map((mention) => ({ from: mention.start, to: mention.end }))),
+    [skills, commands],
+  )
   const canRun = !disabled && !sending && !adding && loaded
   const missingArgument = Boolean(invocation?.command.argument?.required && !invocation.args)
   // Text after a command that takes none: Enter says so instead of running it.
@@ -981,6 +989,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           onSelect={(next, caret) => setCursor({ text: next, at: caret })}
           commandToken={commandToken}
           mentionRanges={mentionRanges}
+          skillRanges={skillRanges}
           controls={pickerOpen ? listId : undefined}
           activeDescendant={pickerOpen ? `${listId}-${activeIndex}` : undefined}
           onPaste={(event) => {
