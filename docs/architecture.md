@@ -632,6 +632,18 @@ thread and applies the OpenCode service events of the threads it holds:
 - Finishing, failing, or asking for input or permission moves the thread to the top, marks it
   unread, and brings it back from Parked, as a reply does in mail. Starting work changes only
   the status chip, so a busy thread does not keep moving.
+- A finish waits for the thread's background work (`src/main/inbox/background-hold.ts`). OpenCode
+  ends a turn while subagents or shells it started in the background still run, and starts a new
+  turn when one reports back, so taken as they come a thread would go done and unread, working,
+  done and unread again. When a working thread's turn succeeds, the main process first reads its
+  running jobs (the same list as the background tasks bar, subagents' jobs included). With none the
+  thread finishes at once; with some it stays working, and its status reads "Working · N in
+  background" (`backgroundTasks`, never kept across a restart). The list is read again on each
+  `experimental.job.updated` event for the thread and every 5 seconds. Once it is empty, the thread
+  waits 3 seconds for the turn with the results (a subagent's report starts it at once); if none
+  starts, the held finish is applied. A new turn, a failure or a stop replaces what was held; a
+  question or permission request is shown as usual and the hold goes on. When the jobs cannot be
+  read (an OpenCode without the list, a failed request) the finish is applied as it came.
 - While a thread is working or waiting for an answer it carries `workingSince`, the time its run
   began on this computer's clock. Asking and being answered does not restart it; stopping, however
   it stops, removes it. It is not trusted across a restart: a thread that was working is shown

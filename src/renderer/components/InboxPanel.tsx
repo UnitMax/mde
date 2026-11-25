@@ -130,6 +130,20 @@ export function InboxStatusBadge({
       className={cn(cued && 'inbox-cue-pop')}
     >
       {chip.label}
+      {thread.status === 'working' && thread.backgroundTasks !== undefined && thread.backgroundTasks > 0 && (
+        <>
+          <span aria-hidden="true" className="opacity-50">
+            ·
+          </span>
+          <span
+            data-testid="inbox-status-background"
+            className="font-normal opacity-75"
+            title="The agent's turn is over; it waits for work it started in the background."
+          >
+            {thread.backgroundTasks} in background
+          </span>
+        </>
+      )}
       {elapsed && thread.status === 'working' && thread.workingSince !== undefined && (
         <>
           <span aria-hidden="true" className="opacity-50">

@@ -202,6 +202,19 @@ describe('Inbox Working section', () => {
     expect(listIds()).toEqual(['ses_parked'])
   })
 
+  it('says how many background tasks a working thread waits for once its turn is over', async () => {
+    useWorkspace.setState({ inboxThreads: [
+      thread({ id: 'ses_run', status: 'working', workingSince: Date.now(), backgroundTasks: 2 }),
+      thread({ id: 'ses_run2', status: 'working', workingSince: Date.now() }),
+    ] })
+    useInboxView.setState({ workingSection: true })
+    await render()
+    const chip = (id: string) => container.querySelector(`[data-testid="inbox-thread-${id}"] [data-testid="inbox-status-chip"]`)
+    expect(chip('ses_run')?.querySelector('[data-testid="inbox-status-background"]')?.textContent).toBe('2 in background')
+    expect(chip('ses_run')?.textContent).toContain('Working')
+    expect(chip('ses_run2')?.querySelector('[data-testid="inbox-status-background"]')).toBeNull()
+  })
+
   it('keeps working threads out of the Unread tab too', async () => {
     useWorkspace.setState({ inboxThreads: [
       // The more recent one first, whatever the clock says between the two lines.

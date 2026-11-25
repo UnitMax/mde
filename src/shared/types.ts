@@ -172,6 +172,11 @@ export interface InboxThread {
    * for an answer and gone once it stops; a run is not restarted by the agent asking and being answered.
    */
   workingSince?: number
+  /**
+   * Set while a working thread's agent has ended its turn but work it started in the background (subagents, shells)
+   * still runs: how many such tasks. Never saved across a restart.
+   */
+  backgroundTasks?: number
   readAt: number
   archived: boolean
   /** Keeps the thread at the top of the sidebar list, including while it is working. */

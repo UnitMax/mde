@@ -106,6 +106,7 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     a.attentionReason === b.attentionReason &&
     a.lastActivityAt === b.lastActivityAt &&
     a.workingSince === b.workingSince &&
+    a.backgroundTasks === b.backgroundTasks &&
     a.readAt === b.readAt &&
     a.archived === b.archived &&
     Boolean(a.pinned) === Boolean(b.pinned) &&
@@ -341,6 +342,14 @@ export class InboxRecorder {
     if (thread) this.transition(thread, { status })
   }
 
+  /** Shows how many background tasks a working thread waits for, its turn over; 0 clears it. */
+  markBackground(id: string, count: number): void {
+    const thread = this.store.get(id)
+    if (!thread) return
+    const { backgroundTasks: _previous, ...rest } = thread
+    this.save(thread, count > 0 && thread.status === 'working' ? { ...rest, backgroundTasks: count } : rest)
+  }
+
   /**
    * Applies an OpenCode service event to a thread the inbox already knows.
    * Events never add threads: only starting one in the Inbox does.
@@ -375,12 +384,13 @@ export class InboxRecorder {
     const workingSince = busy ? (isBusy(existing.status) ? existing.workingSince ?? now : now) : undefined
     // New activity brings a snoozed thread back early, like a reply to a snoozed mail, and anything that happens
     // in a thread that woke up replaces "Woke up".
-    const { attentionReason: _previousReason, workingSince: _previousSince, snoozedUntil, woke, ...rest } = existing
+    const { attentionReason: _previousReason, workingSince: _previousSince, backgroundTasks, snoozedUntil, woke, ...rest } = existing
     const next: InboxThread = {
       ...rest,
       status,
       ...(status === 'attention' && attentionReason ? { attentionReason } : {}),
       ...(workingSince !== undefined ? { workingSince } : {}),
+      ...(backgroundTasks !== undefined && status === 'working' ? { backgroundTasks } : {}),
       title: report.title ?? existing.title,
       ...(report.model ?? existing.model ? { model: report.model ?? existing.model } : {}),
       ...(snoozedUntil !== undefined && !activity ? { snoozedUntil } : {}),

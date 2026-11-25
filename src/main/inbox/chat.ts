@@ -65,6 +65,7 @@ import type {
 } from '@shared/types'
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
 import { listBackgroundTasks } from '../opencode/service/background'
+import { BackgroundHold } from './background-hold'
 import { serviceTargetKey } from '../opencode/service/discovery'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
 import { goalObjectiveProblem } from '@shared/goal'
@@ -313,8 +314,20 @@ export class InboxChatService {
   private configuredExecutable = 'opencode'
   private readonly titleRegenerations = new Map<string, Promise<void>>()
   private readonly titleReads = new Map<string, { renamed: boolean }>()
+  /** Keeps a thread working while its agent's turn is over but its background work goes on. */
+  private readonly hold: BackgroundHold
 
   constructor(private readonly dependencies: InboxChatDependencies) {
+    this.hold = new BackgroundHold({
+      thread: (id) => dependencies.store.get(id),
+      countJobs: async (thread) => {
+        const state = await listBackgroundTasks(dependencies.client, thread)
+        if (!state.supported) throw new Error('This OpenCode lists no background tasks.')
+        return state.tasks.length
+      },
+      apply: (event) => dependencies.recorder.applyServiceEvent(event),
+      setBackground: (id, count) => dependencies.recorder.markBackground(id, count),
+    })
     this.searcher = new InboxSearch(dependencies)
     this.streams = new ServiceEventStreams(dependencies.client, {
       onEvent: (target, event) => this.onEvent(event, target),
@@ -346,6 +359,7 @@ export class InboxChatService {
 
   stop(): void {
     this.streams.stopAll()
+    this.hold.stop()
     this.subagentParents.clear()
     this.subagentCalls.clear()
     this.sessionOwners.clear()
@@ -1559,7 +1573,7 @@ export class InboxChatService {
   }
 
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
-    this.dependencies.recorder.applyServiceEvent(event)
+    this.hold.apply(event)
     const sessionId = serviceEventSessionId(event)
     // A subagent open in a subagent view: its conversation or its running changed, and is read again.
     const watched = sessionId && this.watchedSubagents.size > 0 ? this.watchedSubagents.get(`${serviceTargetKey(target)}\n${sessionId}`) : undefined
