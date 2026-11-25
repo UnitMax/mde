@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { AlertTriangle, Check, Hourglass, LoaderCircle, MessageCircleQuestionMark, Pause, Play, Search, Target, X } from 'lucide-react'
 import type { ChatGoal } from '@shared/types'
 import type { GoalPhase } from '@/lib/chat'
@@ -14,9 +14,6 @@ export const GOAL_REVIEW_DELAY_MS = 900
  * that was just set, has not been told it is running yet; that is not waiting.
  */
 export const GOAL_WAIT_DELAY_MS = 2500
-
-/** An objective longer than this, or on several lines, can be opened to read in full. */
-const LONG_OBJECTIVE = 160
 
 /** OpenCode's own reason when the person paused the goal; the status already says it. */
 const PAUSED_BY_PERSON = 'Paused by the user'
@@ -62,6 +59,42 @@ export function useSettledPhase(phase: GoalPhase): GoalPhase {
   return settled
 }
 
+/**
+ * Whether the text in `ref`, shut to three lines, has more than fits, so a "Show all" is worth offering. Measured, not
+ * guessed from its length: a narrow card cuts off short text too, and a wide one fits more. Measured again when the card
+ * changes size; while the text is open it is not, and what it was keeps the "Show less" there.
+ */
+function useCutOff(ref: RefObject<HTMLElement | null>, text: string, open: boolean): boolean {
+  const [cutOff, setCutOff] = useState(false)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element || open) return undefined
+    const measure = (): void => setCutOff(element.scrollHeight > element.clientHeight + 1)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [ref, text, open])
+  return cutOff
+}
+
+function ShowAll({ open, onToggle, testId }: { open: boolean; onToggle: () => void; testId: string }): JSX.Element {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-expanded={open}
+      // A click on it must not take the caret out of the message box.
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onToggle}
+      className="-mt-0.5 w-fit text-[12px] text-accent hover:underline"
+    >
+      {open ? 'Show less' : 'Show all'}
+    </button>
+  )
+}
+
 function Mark({ status, phase, look }: { status: ChatGoal['status']; phase: GoalPhase; look: Look }): JSX.Element {
   const icon = status === 'complete' ? <Check className="h-4 w-4" />
     : status === 'paused' ? <Pause className="h-3.5 w-3.5" />
@@ -100,16 +133,20 @@ export function ChatGoalCard({
   const [busy, setBusy] = useState<GoalAction | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [reasonOpen, setReasonOpen] = useState(false)
+  const objectiveRef = useRef<HTMLParagraphElement>(null)
+  const reasonRef = useRef<HTMLParagraphElement>(null)
 
   const settled = useSettledPhase(phase)
   const active = goal.status === 'active'
   const look: Look = goal.status === 'active' ? LOOKS[settled] : LOOKS[goal.status]
   const live = active && (settled === 'working' || settled === 'reviewing')
-  const long = goal.objective.length > LONG_OBJECTIVE || goal.objective.includes('\n')
   const round = goal.rounds + 1
   const left = goal.maxRounds - goal.rounds
   const nearLimit = active && left <= 5
   const reason = goal.status === 'paused' && goal.reason === PAUSED_BY_PERSON ? undefined : goal.reason
+  const long = useCutOff(objectiveRef, goal.objective, open)
+  const longReason = useCutOff(reasonRef, reason ?? '', reasonOpen)
 
   const run = (action: GoalAction): void => {
     if (busy) return
@@ -135,10 +172,22 @@ export function ChatGoalCard({
   if (reason) {
     const heading = goal.status === 'active' ? 'Last check' : goal.status === 'complete' ? 'Evidence' : 'Why'
     note = (
-      <p data-testid="chat-goal-reason" title={reason} className="chat-selectable flex gap-1.5 text-[12px] leading-[18px] text-fg-muted">
-        <span className="shrink-0 text-fg-subtle">{heading}</span>
-        <span className="line-clamp-3 min-w-0 whitespace-pre-wrap break-words">{reason}</span>
-      </p>
+      <div data-testid="chat-goal-reason" className="flex flex-col gap-0.5">
+        <span className="text-[11px] font-medium text-fg-subtle">{heading}</span>
+        <p
+          ref={reasonRef}
+          data-testid="chat-goal-reason-text"
+          className={cn(
+            'chat-selectable min-w-0 whitespace-pre-wrap break-words text-[12px] leading-[18px] text-fg-muted',
+            // Opened, up to twelve lines, then it scrolls, so the card never pushes the conversation out of sight.
+            reasonOpen ? 'max-h-[216px] overflow-y-auto' : 'line-clamp-3',
+          )}
+          tabIndex={reasonOpen ? 0 : undefined}
+        >
+          {reason}
+        </p>
+        {(longReason || reasonOpen) && <ShowAll open={reasonOpen} onToggle={() => setReasonOpen((value) => !value)} testId="chat-goal-reason-toggle" />}
+      </div>
     )
   }
 
@@ -213,6 +262,7 @@ export function ChatGoalCard({
           </div>
 
           <p
+            ref={objectiveRef}
             data-testid="chat-goal-objective"
             className={cn(
               'chat-selectable whitespace-pre-wrap break-words text-[13.5px] leading-5 text-fg',
@@ -222,18 +272,7 @@ export function ChatGoalCard({
           >
             {goal.objective}
           </p>
-          {long && (
-            <button
-              type="button"
-              data-testid="chat-goal-toggle"
-              aria-expanded={open}
-              onMouseDown={keepFocus}
-              onClick={() => setOpen((value) => !value)}
-              className="-mt-0.5 w-fit text-[12px] text-accent hover:underline"
-            >
-              {open ? 'Show less' : 'Show all'}
-            </button>
-          )}
+          {(long || open) && <ShowAll open={open} onToggle={() => setOpen((value) => !value)} testId="chat-goal-toggle" />}
 
           {note}
           {goal.status === 'paused' && running && (

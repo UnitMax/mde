@@ -1734,9 +1734,11 @@ old state back.
 
 While a goal exists the thread shows **`ChatGoalCard`** above the message box (in the same slot as the
 `/btw` card, which stacks below it). It has a target mark and the word GOAL, a status line, the round, the
-objective (opening to the whole of a long or multi-line one with "Show all"), the reviewer's reason, and the
+objective, the reviewer's reason under its own heading (Last check, Evidence or Why), and the
 actions that fit: Pause while it is active (Resume while paused, Dismiss once it is met) and a clear
-button. The status line says what an active goal is doing (`goalPhase` in `lib/chat.ts`, from the
+button. The objective and the reason each show three lines; when the text is cut off there (measured,
+again on resize, not guessed from its length), a "Show all" under it opens the whole text, the reason up to
+twelve lines before it scrolls, so the card never pushes the conversation out of sight. The status line says what an active goal is doing (`goalPhase` in `lib/chat.ts`, from the
 messages and whether the agent runs): "Working toward the goal"; "Checking whether the goal is met…" when
 the agent is idle after a finished reply, which is the reviewer's turn (it runs inside the agent's
 execution, so the thread stays *working*); "Waiting for background work" when nothing runs and no reviewer

@@ -79,6 +79,29 @@ const byId = (id: string): HTMLElement | null => document.body.querySelector<HTM
 const text = (id: string): string => byId(id)?.textContent ?? ''
 const card = (): HTMLElement | null => byId('chat-goal')
 const click = (id: string) => act(async () => { byId(id)!.click() })
+/**
+ * A stand-in for the layout happy-dom does not do: text runs 80 characters to an 18px line, and an element shut with
+ * `line-clamp-3` shows three lines of it. Enough for the card to tell text that is cut off from text that fits.
+ */
+function fakeLineLayout(): () => void {
+  const proto = HTMLElement.prototype
+  const scroll = Object.getOwnPropertyDescriptor(proto, 'scrollHeight')
+  const client = Object.getOwnPropertyDescriptor(proto, 'clientHeight')
+  const height = (element: HTMLElement): number => Math.max(1, Math.ceil((element.textContent ?? '').length / 80)) * 18
+  Object.defineProperty(proto, 'scrollHeight', { configurable: true, get(this: HTMLElement) { return height(this) } })
+  Object.defineProperty(proto, 'clientHeight', {
+    configurable: true,
+    get(this: HTMLElement) { return this.className.includes('line-clamp-3') ? Math.min(height(this), 54) : height(this) },
+  })
+  return () => {
+    if (scroll) Object.defineProperty(proto, 'scrollHeight', scroll)
+    else delete (proto as unknown as Record<string, unknown>).scrollHeight
+    if (client) Object.defineProperty(proto, 'clientHeight', client)
+    else delete (proto as unknown as Record<string, unknown>).clientHeight
+  }
+}
+let restoreLayout: (() => void) | undefined
+
 /** Tells the store what the service's event stream would. */
 const tell = (next: ChatGoal | null) => act(async () => { useInboxChat.getState().applyEvent({ type: 'goal', threadId: 'ses_one', goal: next }) })
 
@@ -103,6 +126,8 @@ beforeEach(() => {
 })
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
+  restoreLayout?.()
+  restoreLayout = undefined
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
 })
@@ -235,6 +260,7 @@ describe('the goal card', () => {
   })
 
   it('shows a long objective in three lines and opens it in full on request', async () => {
+    restoreLayout = fakeLineLayout()
     const long = `Port the settings screen to the new form library.\n${'Keep every existing behavior and test. '.repeat(8)}`
     current = goal({ objective: long })
     await render()
@@ -252,10 +278,48 @@ describe('the goal card', () => {
   })
 
   it('offers no toggle for a short objective', async () => {
+    restoreLayout = fakeLineLayout()
     current = goal()
     await render()
     await vi.waitFor(() => expect(card()).not.toBeNull())
     expect(byId('chat-goal-toggle')).toBeNull()
+  })
+
+  it('shows long evidence in three lines and opens it in full on request', async () => {
+    restoreLayout = fakeLineLayout()
+    const evidence = `All tests pass.\n${'The typecheck is clean and every changed file has a test that covers it. '.repeat(6)}`
+    current = goal({ status: 'complete', rounds: 3, reason: evidence })
+    await render()
+    await vi.waitFor(() => expect(card()).not.toBeNull())
+    const reason = (): HTMLElement => byId('chat-goal-reason-text')!
+    expect(reason().className).toContain('line-clamp-3')
+    expect(byId('chat-goal-toggle')).toBeNull()
+    const toggle = (): HTMLElement | null => byId('chat-goal-reason-toggle')
+    expect(toggle()?.textContent).toBe('Show all')
+    expect(toggle()?.getAttribute('aria-expanded')).toBe('false')
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    toggle()!.dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
+
+    await click('chat-goal-reason-toggle')
+    expect(reason().className).not.toContain('line-clamp-3')
+    expect(reason().className).toContain('overflow-y-auto')
+    expect(reason().textContent).toBe(evidence)
+    expect(toggle()?.textContent).toBe('Show less')
+    expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+
+    await click('chat-goal-reason-toggle')
+    expect(reason().className).toContain('line-clamp-3')
+    expect(toggle()?.textContent).toBe('Show all')
+  })
+
+  it('offers no toggle for evidence that fits', async () => {
+    restoreLayout = fakeLineLayout()
+    current = goal({ status: 'complete', reason: 'All 12 tests pass in the last run.' })
+    await render()
+    await vi.waitFor(() => expect(card()).not.toBeNull())
+    expect(text('chat-goal-reason')).toBe('EvidenceAll 12 tests pass in the last run.')
+    expect(byId('chat-goal-reason-toggle')).toBeNull()
   })
 
   it('warns when the agent made no progress, and when only a few rounds are left', async () => {
