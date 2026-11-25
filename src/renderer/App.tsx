@@ -74,7 +74,7 @@ import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxTerminal } from '@/store/inbox-terminal'
 import { useInboxChanges } from '@/store/inbox-changes'
 import { useSessionGitGraph } from '@/store/session-git-graph'
-import { requestInboxComposerFocus } from '@/lib/inbox-composer-focus'
+import { focusInboxComposerWhenReady, requestInboxComposerFocus } from '@/lib/inbox-composer-focus'
 
 type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
@@ -733,6 +733,47 @@ export function App(): JSX.Element {
       void api.setActive(false)
     }
   }, [composerKeyActive, inboxRootId])
+  // F6, F7 and F8 open Sessions, To Do and the Inbox, like the title bar's buttons, from anywhere in the window: the
+  // main process catches them so a terminal or a browser page never sees them. The view that had the keyboard is gone,
+  // so it goes where typing belongs in the new one: the session's terminal, or the Inbox's message box. An open dialog
+  // keeps the keyboard and the view.
+  const viewKeyActive = ready && windowMode !== 'mini'
+  useEffect(() => {
+    if (!viewKeyActive) return
+    const api = window.api.workspaceViewKey
+    void api.setActive(true)
+    let stopFocus: (() => void) | undefined
+    const stop = api.onSelect((view) => {
+      if (view !== 'sessions' && view !== 'todo' && view !== 'inbox') return
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      stopFocus?.()
+      stopFocus = undefined
+      const workspace = useWorkspace.getState()
+      if (workspace.activeWorkspaceView === view) return
+      workspace.setWorkspaceView(view)
+      if (view === 'inbox') {
+        stopFocus = focusInboxComposerWhenReady()
+        return
+      }
+      if (view !== 'sessions') return
+      const session = workspace.sessions.find((candidate) => candidate.id === workspace.selectedSessionId)
+      // A file viewer lies over the terminals; it keeps the view as it is.
+      if (!session || workspace.openFiles[session.id] !== undefined) return
+      const tabId = activeSessionTab(session).id
+      const { panes } = layoutForTab(session, tabId)
+      const terminalId = panes.some((pane) => pane.terminalId === focusedTerminalIdRef.current)
+        ? focusedTerminalIdRef.current
+        : panes[0]?.terminalId
+      if (!terminalId) return
+      terminalFocusRequestId.current += 1
+      setPendingTerminalFocus({ sessionId: session.id, tabId, terminalId })
+    })
+    return () => {
+      stop()
+      stopFocus?.()
+      void api.setActive(false)
+    }
+  }, [viewKeyActive])
   useEffect(() => {
     if (!filePickerAvailable) return
     const onKeyDown = (event: KeyboardEvent): void => {

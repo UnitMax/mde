@@ -162,6 +162,7 @@ import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveReque
 import type { TaskbarAttention } from './taskbar-attention'
 import type { FloatingTerminalKey } from './floating-terminal-key'
 import type { ComposerKey } from './composer-key'
+import type { WorkspaceViewKey } from './workspace-view-key'
 import type { FileViewerKey } from './file-viewer-key'
 import type { WslResourceMonitor } from './wsl/resources'
 import type { TaskbarAttentionRequest } from '@shared/taskbar-attention'
@@ -429,7 +430,8 @@ export function registerIpcHandlers(
   wslResources?: WslResourceMonitor,
   fileViewerKey?: FileViewerKey,
   browser?: MdeBrowser,
-  composerKey?: ComposerKey
+  composerKey?: ComposerKey,
+  workspaceViewKey?: WorkspaceViewKey
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
@@ -824,6 +826,7 @@ export function registerIpcHandlers(
   handle<{ active: boolean }, void>(IpcChannels.floatingTerminalActive, ({ active }) => floatingTerminalKey?.setActive(active))
   handle<{ open: boolean }, void>(IpcChannels.fileViewerOpen, ({ open }) => fileViewerKey?.setOpen(open))
   handle<{ active: boolean }, void>(IpcChannels.inboxComposerKeyActive, ({ active }) => composerKey?.setActive(active))
+  handle<{ active: boolean }, void>(IpcChannels.workspaceViewKeyActive, ({ active }) => workspaceViewKey?.setActive(active))
 
   // The MDE browser. Without one (no window yet), the calls fail rather than pretend.
   const browserOnly = (): MdeBrowser => {

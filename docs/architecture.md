@@ -91,6 +91,15 @@ startup). A missing thread opens the Inbox's new-thread page; that page's empty 
 remembered. Missing, malformed or unavailable storage defaults to Sessions. No existing workspace
 or Inbox records are changed to store this preference.
 
+F6, F7 and F8 open Sessions, To Do and the Inbox, and each title bar button shows its key as a small keycap. Like F9
+to F12 they are caught in the main process (`src/main/workspace-view-key.ts`, `before-input-event` of the window and of
+MDE browser pages), so terminals and browser pages never see them, while the renderer says the full window is on screen
+(`workspace-view-key:active`; not in the mini window), and sent to it as `workspace-view:select`. A held key is
+swallowed. An open dialog ignores the key. The view that had the keyboard is gone, so the keyboard goes where typing
+belongs in the new one: the selected session's focused terminal (not while a file viewer covers it), or the Inbox
+message box (`focusInboxComposerWhenReady`, which waits a few frames for the box to mount). F2 stays the rename key and
+F5 the MDE browser's reload.
+
 Keyboard shortcuts are listed in the app under Settings → Shortcuts, grouped by where they work
 (Everywhere, Inbox, Terminal, Files and To Do) and searchable; that list is defined in
 `src/renderer/terminal/keyboard-shortcuts.ts`. It holds only shortcuts worth looking up: the keys every

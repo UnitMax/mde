@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { IpcChannels, IpcEvents, type RendererApi, type WslResourceSample } from '@shared/ipc'
+import { IpcChannels, IpcEvents, type RendererApi, type WorkspaceViewName, type WslResourceSample } from '@shared/ipc'
 import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
 import type { TerminalReadRequest } from '@shared/terminal-references'
 import type { InboxAutomation } from '@shared/automations'
@@ -250,6 +250,10 @@ const api: RendererApi = {
     setActive: (active) => ipcRenderer.invoke(IpcChannels.inboxComposerKeyActive, { active }),
     onFocus: (listener) => subscribe<void>(IpcEvents.inboxComposerFocus, () => listener()),
     onSidebarToggle: (listener) => subscribe<void>(IpcEvents.inboxSidebarToggle, () => listener())
+  },
+  workspaceViewKey: {
+    setActive: (active) => ipcRenderer.invoke(IpcChannels.workspaceViewKeyActive, { active }),
+    onSelect: (listener) => subscribe<WorkspaceViewName>(IpcEvents.workspaceViewSelect, (view) => listener(view))
   },
   browser: {
     state: () => ipcRenderer.invoke(IpcChannels.browserState),

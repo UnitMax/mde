@@ -124,6 +124,9 @@ import type {
   TerminalReferenceCreateRequest
 } from './terminal-references'
 
+/** The title bar's sections: Sessions, To Do and the Inbox. */
+export type WorkspaceViewName = 'sessions' | 'todo' | 'inbox'
+
 export interface WorkspaceData {
   todoProjects: TodoProject[]
   todoTasks: TodoTask[]
@@ -282,6 +285,8 @@ export const IpcChannels = {
   floatingTerminalActive: 'floating-terminal:active',
   /** The Inbox is on screen (or no longer is), so F9 should put the keyboard in its message box. */
   inboxComposerKeyActive: 'inbox-composer-key:active',
+  /** The full window is on screen (or no longer is), so F6, F7 and F8 should open its sections. */
+  workspaceViewKeyActive: 'workspace-view-key:active',
   fileViewerOpen: 'file-viewer:open',
 
   browserState: 'browser:state',
@@ -319,6 +324,8 @@ export const IpcEvents = {
   /** F9 was pressed while the Inbox is on screen: put the keyboard in the message box. */
   inboxComposerFocus: 'inbox-composer:focus',
   inboxSidebarToggle: 'inbox-sidebar:toggle',
+  /** F6, F7 or F8 was pressed: open Sessions, To Do or the Inbox. Carries the section. */
+  workspaceViewSelect: 'workspace-view:select',
   /** Ctrl+W (Cmd+W) was pressed while a file viewer is open: close it. */
   fileViewerClose: 'file-viewer:close',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
@@ -867,6 +874,12 @@ export interface RendererApi {
     onFocus(listener: () => void): () => void
     /** F10 was pressed while it is: switch the right-hand sidebar between docked and floating. */
     onSidebarToggle(listener: () => void): () => void
+  }
+  workspaceViewKey: {
+    /** Says whether the full window is on screen, so the main process hands F6, F7 and F8 to it instead of letting them through. */
+    setActive(active: boolean): Promise<void>
+    /** F6, F7 or F8 was pressed while it is: open that section. */
+    onSelect(listener: (view: WorkspaceViewName) => void): () => void
   }
   /** The MDE browser in the Inbox sidebar; see `src/shared/browser.ts`. */
   browser: {

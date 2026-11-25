@@ -55,6 +55,12 @@ export function getKeyboardShortcutGroups(
       label: 'Everywhere',
       where: 'Works in every view.',
       shortcuts: [
+        {
+          id: 'workspace-sections',
+          keys: ['F6', 'F7', 'F8'],
+          description: 'Open Sessions, To Do, the Inbox: the sections of the title bar. The keyboard goes to the session\'s terminal or the Inbox message box.',
+          note: platform === 'darwin' ? 'On a Mac keyboard, hold Fn unless F-keys are set to work as standard function keys.' : undefined
+        },
         { id: 'session-switcher-open', keys: [`${primaryModifier}+O`], description: 'Switch to another session; in the Inbox, to another thread (archived and snoozed ones too when you type).' },
         { id: 'mini-window-toggle', keys: ['F12'], description: 'Shrink MDE into the always-on-top mini Inbox window, and back.' },
         {

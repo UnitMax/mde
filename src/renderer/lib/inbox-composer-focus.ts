@@ -12,3 +12,26 @@ export function onInboxComposerFocusRequest(listener: () => void): () => void {
 export function requestInboxComposerFocus(): void {
   for (const listener of listeners) listener()
 }
+
+const ATTEMPTS = 8
+
+/**
+ * Asks for the keyboard once a box is on the page, trying for a few frames while the Inbox mounts (F8 opens it from
+ * another view). Returns a function that stops trying.
+ */
+export function focusInboxComposerWhenReady(): () => void {
+  let attempts = 0
+  let frame: number | undefined
+  const focus = (): void => {
+    if (listeners.size > 0) {
+      requestInboxComposerFocus()
+      return
+    }
+    attempts += 1
+    if (attempts < ATTEMPTS) frame = window.requestAnimationFrame(focus)
+  }
+  frame = window.requestAnimationFrame(focus)
+  return () => {
+    if (frame !== undefined) window.cancelAnimationFrame(frame)
+  }
+}

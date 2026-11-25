@@ -158,6 +158,7 @@ const validPayloads = {
   [IpcChannels.attentionBeep]: undefined,
   [IpcChannels.floatingTerminalActive]: { active: true },
   [IpcChannels.inboxComposerKeyActive]: { active: true },
+  [IpcChannels.workspaceViewKeyActive]: { active: true },
   [IpcChannels.fileViewerOpen]: { open: true },
   [IpcChannels.browserState]: undefined,
   [IpcChannels.browserSetEnabled]: { enabled: true },
@@ -554,6 +555,7 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.floatingTerminalActive, { active: 'yes' })
     rejects(IpcChannels.floatingTerminalActive, {})
     rejects(IpcChannels.inboxComposerKeyActive, { active: 1 })
+    rejects(IpcChannels.workspaceViewKeyActive, { active: 'yes' })
     rejects(IpcChannels.wslResourcesWatch, { enabled: 1 })
     rejects(IpcChannels.wslResourcesWatch, undefined)
     expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: null })).not.toThrow()

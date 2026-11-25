@@ -386,6 +386,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.attentionBeep]: noPayload,
   [IpcChannels.floatingTerminalActive]: object({ active: boolean }),
   [IpcChannels.inboxComposerKeyActive]: object({ active: boolean }),
+  [IpcChannels.workspaceViewKeyActive]: object({ active: boolean }),
   [IpcChannels.fileViewerOpen]: object({ open: boolean }),
   [IpcChannels.browserState]: noPayload,
   [IpcChannels.browserSetEnabled]: object({ enabled: boolean }),

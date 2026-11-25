@@ -106,6 +106,9 @@ describe('TitleBar', () => {
     const nav = container.querySelector<HTMLElement>('header nav')!
     expect(nav.className).toContain('app-no-drag')
     expect(nav.querySelector('[aria-label="Sessions"]')?.getAttribute('aria-pressed')).toBe('true')
+    // Each section shows the key that opens it.
+    expect(Array.from(nav.querySelectorAll('[data-testid="workspace-section-key"]'), (key) => key.textContent)).toEqual(['F6', 'F7', 'F8'])
+    expect(nav.querySelector('[aria-label="To Do"]')?.getAttribute('aria-keyshortcuts')).toBe('F7')
     act(() => (nav.querySelector('[aria-label="Inbox"]') as HTMLButtonElement).click())
     expect(select).toHaveBeenCalledWith('inbox')
     act(() => useWorkspace.setState({ sidebarCollapsed: true, activeWorkspaceView: 'inbox' }))

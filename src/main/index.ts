@@ -8,6 +8,7 @@ import { TitleBarController } from './window-chrome'
 import { TaskbarAttention } from './taskbar-attention'
 import { FloatingTerminalKey } from './floating-terminal-key'
 import { ComposerKey } from './composer-key'
+import { WorkspaceViewKey } from './workspace-view-key'
 import { FileViewerKey } from './file-viewer-key'
 import { WslResourceMonitor } from './wsl/resources'
 import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
@@ -79,6 +80,8 @@ const titleBar = new TitleBarController({
 /** Whether F11 belongs to the Inbox's floating terminal; the renderer says so while it has one. */
 const floatingTerminalKey = new FloatingTerminalKey()
 const composerKey = new ComposerKey()
+/** Whether F6, F7 and F8 open the title bar's sections; the renderer says so while the full window shows them. */
+const workspaceViewKey = new WorkspaceViewKey()
 const fileViewerKey = new FileViewerKey()
 /** Reads WSL's CPU and memory while the renderer shows the title bar meter. */
 const wslResources = new WslResourceMonitor((sample) => {
@@ -114,8 +117,8 @@ const ptyManager = new PtyManager({
   }
 }, terminalDirectories, () => app.getLocale())
 /**
- * The mini window's key (F12), the floating terminal's (F11) and the Inbox message box's (F9) and sidebar's (F10), which work whichever
- * page has the keyboard: the window's, or a page of the MDE browser. True when the key was taken.
+ * The mini window's key (F12), the floating terminal's (F11), the Inbox message box's (F9) and sidebar's (F10), and the
+ * section keys (F6 Sessions, F7 To Do, F8 Inbox), which work whichever page has the keyboard: the window's, or a page of the MDE browser. True when the key was taken.
  */
 function windowKey(input: Electron.Input): boolean {
   const miniWindowAction = getMiniWindowAction(input)
@@ -136,6 +139,15 @@ function windowKey(input: Electron.Input): boolean {
       mainWindow?.webContents.send(IpcEvents.inboxComposerFocus)
     } else if (composerAction === 'sidebar') {
       mainWindow?.webContents.send(IpcEvents.inboxSidebarToggle)
+    }
+    return true
+  }
+  const view = workspaceViewKey.action(input)
+  if (view) {
+    if (view !== 'ignore') {
+      // From a page of the MDE browser, the keyboard comes back to the window, which may no longer show that page.
+      mainWindow?.webContents.focus()
+      mainWindow?.webContents.send(IpcEvents.workspaceViewSelect, view)
     }
     return true
   }
@@ -189,6 +201,7 @@ function createWindow(): void {
   // A reloaded page has no floating terminal until it says so again.
   mainWindow.webContents.on('did-start-loading', () => floatingTerminalKey.setActive(false))
   mainWindow.webContents.on('did-start-loading', () => composerKey.setActive(false))
+  mainWindow.webContents.on('did-start-loading', () => workspaceViewKey.setActive(false))
   // Nor a file viewer.
   mainWindow.webContents.on('did-start-loading', () => fileViewerKey.setOpen(false))
   // Nor a meter: the page asks for the readings again when it shows one.
@@ -423,7 +436,8 @@ if (bridgeLaunch) {
       wslResources,
       fileViewerKey,
       browser,
-      composerKey
+      composerKey,
+      workspaceViewKey
     )
     createWindow()
 
