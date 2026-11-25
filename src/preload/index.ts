@@ -213,6 +213,11 @@ const api: RendererApi = {
     terminalSettings: () => ipcRenderer.invoke(IpcChannels.mdeMcpTerminalSettings),
     setTerminalSettings: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpSetTerminalSettings, req)
   },
+  toolReviewer: {
+    settings: () => ipcRenderer.invoke(IpcChannels.toolReviewerSettings),
+    save: (req) => ipcRenderer.invoke(IpcChannels.toolReviewerSave, req),
+    test: () => ipcRenderer.invoke(IpcChannels.toolReviewerTest)
+  },
   agentTerminals: {
     onOpen: (listener) => subscribe<AgentTerminalOpenRequest>(IpcEvents.agentTerminalOpen, listener),
     claim: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalClaim, req),

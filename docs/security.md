@@ -5,8 +5,8 @@ Security-relevant design and maintenance notes. The privacy and network statemen
 
 ## Network boundary
 
-MDE has no telemetry, remote crash uploader, updater, direct provider client or
-remote MCP client. Its own MCP server (the MDE MCP) is a local bridge over a Unix socket or named pipe,
+MDE has no telemetry, remote crash uploader, updater or remote MCP client, and no direct provider client except
+the tool reviewer a person sets up (see [Tool reviewer boundary](#tool-reviewer-boundary)). Its own MCP server (the MDE MCP) is a local bridge over a Unix socket or named pipe,
 not a network listener. The application HTTP client accepts loopback OpenCode origins
 and rejects redirects. The MDE browser (the Inbox Browser tab) loads pages only from local addresses and
 the hosts the person allowed; see [MDE browser boundary](#mde-browser-boundary). This is not a guarantee of no external traffic: OpenCode,
@@ -582,6 +582,38 @@ scheduled, and neither agents nor the MDE MCP can create or change automations. 
 one thread per automation per look, moves the next run past now and writes the file before starting, and
 leaves a run out while the previous run's thread is still working, so a missed stretch or a short interval
 cannot start a pile of agents.
+
+### Tool reviewer boundary
+
+The "Auto (reviewed)" permission mode lets a model approve an agent's actions, so the reviewer is built to fail
+towards asking. OpenCode is given the "Ask first" rules for such a thread; the main process holds each
+`permission.asked` back (the thread is not marked as needing input yet), reads the request from OpenCode's list, and
+judges it (`src/main/inbox/tool-reviewer.ts`, `review-gate.ts`):
+
+- **It can only approve or leave the request to the person.** It never rejects. Approving goes through
+  `replyPermission` with the revision it read, so a request that changed since is not approved, and only ever
+  "once": the reviewer never saves an approval for the project.
+- **Without a reviewer the mode is "Ask first".** No URL and model, a key that cannot be decrypted, a timeout
+  (20 s), an HTTP error, a redirect, an answer that is not exactly `{verdict, risk, reason}` with known values: the
+  request is shown as usual with the reason it was not reviewed. Only `allow` at low risk (or medium, when the person
+  turned that switch off) approves.
+- **Fixed rules first.** A few shell commands that only read inside the project (`ls`, `cat`, `rg`, `git status`,
+  ...; no substitution, redirection or path outside the folder) and edits of ordinary files inside the folder are
+  approved without the model. Plainly dangerous commands (piping a download into a shell, `sudo`, force-push,
+  recursive deletes outside the folder, raw network tools) and anything touching `.env` files, keys, `.ssh`, Git
+  hooks or CI files are asked about without the model, whatever it would say.
+- **The model sees only what the person wrote and what is asked.** The prompt holds the person's last three
+  messages (OpenCode's `user` messages, not the synthetic ones subagent reports and goal nudges use) and the request.
+  It never contains tool output, the agent's text or the request's own explanation, so text planted in a file or a
+  web page has no channel to the reviewer; the action's own text (a command, a patch) is marked as data, but a model
+  can still be swayed by it, which is why the rules above are applied first and the result only ever approves once.
+- **The person stays in charge.** While a request is reviewed its card says so and can be answered; the review then
+  gives way (`permission.replied` settles it). A request that arrived while MDE was not listening is shown
+  unreviewed. Let-through calls are marked on their tool rows with the reason, in memory only.
+- **The key stays in main.** It is stored with `safeStorage` (`tool-reviewer.json`, mode 0600), sent only as the
+  `Authorization` header to the configured endpoint, and never returned over IPC: `tool-reviewer:settings` says only
+  whether one is saved. The endpoint must be https, or http on `localhost`, `127.0.0.1` or `[::1]`, with no
+  credentials, query or fragment in the URL.
 
 ### MDE browser boundary
 

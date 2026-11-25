@@ -12,7 +12,7 @@ import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatCo
 import { ChatGoalCard, type GoalAction } from '@/components/inbox/ChatGoalCard'
 import { McpChip } from '@/components/inbox/McpChip'
 import { PermissionModePicker } from '@/components/inbox/PermissionModePicker'
-import { ChatFileSourceContext, McpServerNamesContext } from '@/components/inbox/mcp-context'
+import { ChatFileSourceContext, McpServerNamesContext, ReviewedCallsContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { ChatPendingView } from '@/components/inbox/ChatPendingView'
 import { ChatQuoteButton } from '@/components/inbox/ChatQuoteButton'
@@ -562,6 +562,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   return (
     <ChatFileSourceContext.Provider value={fileSource}>
     <McpServerNamesContext.Provider value={mcpNames}>
+    <ReviewedCallsContext.Provider value={requests?.reviewedCalls}>
     <SubagentOpenContext.Provider value={openSubagent}>
     <div
       ref={rootRef}
@@ -771,6 +772,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       />
     </div>
     </SubagentOpenContext.Provider>
+    </ReviewedCallsContext.Provider>
     </McpServerNamesContext.Provider>
     </ChatFileSourceContext.Provider>
   )

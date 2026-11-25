@@ -16,6 +16,7 @@ import {
   ListChecks,
   MessageCircleQuestion,
   Search,
+  ShieldCheck,
   SquareTerminal,
   Wrench,
   type LucideIcon,
@@ -24,7 +25,7 @@ import type { ChatPart } from '@shared/types'
 import { FileChangeView, useSyntaxColors } from '@/components/inbox/ChatFileChange'
 import { McpCallView, Arguments } from '@/components/inbox/ChatMcpCall'
 import { ChatViewCall } from '@/components/inbox/ChatViewCall'
-import { McpServerNamesContext } from '@/components/inbox/mcp-context'
+import { McpServerNamesContext, ReviewedCallsContext } from '@/components/inbox/mcp-context'
 import { ShellSteps } from '@/components/inbox/ShellSteps'
 import {
   ActivityRow,
@@ -889,7 +890,29 @@ function GenericCall({ part }: ViewProps): JSX.Element {
 }
 
 /** One tool call of the agent, drawn the way that kind of call is best read. */
+/** A tool call's row, with a line under it when the tool reviewer let the call through without asking. */
 export function ToolCallView({ part, directory }: ViewProps): JSX.Element {
+  const reviewed = useContext(ReviewedCallsContext)?.[part.id]
+  const row = <ToolCallRow part={part} directory={directory} />
+  if (!reviewed) return row
+  return (
+    <>
+      {row}
+      <p
+        data-testid="chat-tool-reviewed"
+        className="-mt-0.5 mb-0.5 flex min-w-0 items-center gap-1 pl-6 text-[11px] text-fg-subtle"
+        title={reviewed.reason}
+      >
+        <ShieldCheck aria-hidden className="h-3 w-3 shrink-0" />
+        <span className="min-w-0 truncate">
+          Approved by {reviewed.by === 'rules' ? 'MDE’s rules' : 'the reviewer'}: {reviewed.reason}
+        </span>
+      </p>
+    </>
+  )
+}
+
+function ToolCallRow({ part, directory }: ViewProps): JSX.Element {
   const kind = toolKind(part.name)
   // A fresh fetch brings new objects with the same content; the diff is only worked out again when the content changes.
   const patches = part.patches?.map((patch) => `${patch.path}\u0000${patch.patch}`).join('\u0001')

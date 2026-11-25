@@ -1,5 +1,9 @@
 import { createContext } from 'react'
 import type { ChatFileSource } from '@/lib/chat-file-links'
+import type { ChatRequests } from '@shared/types'
+
+/** The open thread's tool calls the tool reviewer let through, by call ID, so their rows can say so. */
+export const ReviewedCallsContext = createContext<ChatRequests['reviewedCalls']>(undefined)
 
 /**
  * The names of the MCP servers OpenCode has for the open thread. A tool call is told apart as a server's from a

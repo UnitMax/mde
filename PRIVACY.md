@@ -4,9 +4,10 @@ This document describes the privacy and network behavior of the released MDE app
 
 ## Summary
 
-MDE contains no telemetry, analytics, remote crash uploader, automatic update checks, or direct
-model-provider or remote MCP client. Its application HTTP client connects to OpenCode's loopback
-service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
+MDE contains no telemetry, analytics, remote crash uploader, automatic update checks, or remote MCP
+client. Its application HTTP client connects to OpenCode's loopback service. The one direct model call MDE makes
+is the tool reviewer, and only once you set one up in Settings → OpenCode: it sends the actions of threads in the
+"Auto (reviewed)" permission mode to the endpoint you entered (see the network section). This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
 suppress external filters, except the **Fetch** buttons in the Git graph and in the new-thread
 branch picker, which you press to fetch a repository's remotes. The MDE browser (the Inbox Browser tab) connects
@@ -40,6 +41,11 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   field can offer them again. Written at most once a second while pages are opened, and on quit. Clear browsing data
   (Settings → Browser, or the ⋯ menu of the Browser tab) deletes it with the rest of the browsing data; turning the
   browser off keeps it.
+- `tool-reviewer.json` under Electron's user-data directory: the tool reviewer's endpoint URL, model ID, whether
+  medium-risk actions still ask, and its API key, which is stored only encrypted by the operating system (Electron
+  `safeStorage`: the Keychain on macOS, DPAPI on Windows) and is never sent to the window; where the system offers no
+  encryption, MDE refuses to save a key. Written when you save the reviewer settings; emptying the URL and model and
+  removing the key turns the reviewer off. Its verdicts are kept only in memory while MDE runs.
 - `inbox-asides.json` under Electron's user-data directory: the answered `/btw` side questions of each
   Inbox thread (the question, the answer and when it arrived, the newest 20 per thread), so they can
   be read again after their card is closed and after a restart. Written when a side question is
@@ -404,6 +410,17 @@ activity; service startup can occur during options/configuration reads or
 restored thread activity. Provider and MCP connections resulting from these OpenCode operations are
 made by OpenCode. The accepted `localhost` name still depends on OS name resolution, and MDE does
 not install an application-wide firewall or independently verify the actual socket peer.
+
+The tool reviewer, once you enter an endpoint and model in Settings → OpenCode, is the one place MDE talks to a
+model directly. For each permission request of a thread in the "Auto (reviewed)" mode that MDE's fixed rules do not
+settle, the main process sends a request to `<endpoint>/chat/completions` with: the folder the thread works in, your
+latest three messages in that thread (each cut to 1,500 characters), and the action asked for (its kind, its targets
+such as the shell command, file paths or URL, the patterns "Always allow" would save, and the details OpenCode
+attached, such as an edit's patch or an MCP tool's input, cut to 4,000 characters), plus your API key when you saved
+one. Nothing else from the conversation is sent: no replies of the agent and no tool output. The request uses https
+(plain http only for `localhost`), refuses redirects and gives up after 20 seconds. **Test** in the settings sends
+a fixed sample instead. Which provider then sees and keeps this data is up to the endpoint you chose; a local server
+such as Ollama or LM Studio keeps it on your machine. Threads in other modes send nothing to it.
 
 The MDE browser in the Inbox sidebar loads the pages you open in it. Its pages can connect only to local
 addresses (`localhost` and its subdomains, `127.0.0.0/8`, `[::1]`, `0.0.0.0`) and to the hosts you allowed in

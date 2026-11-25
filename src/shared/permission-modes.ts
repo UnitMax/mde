@@ -11,8 +11,11 @@ import type { PermissionRule } from '@shared/opencode-config'
  * subagent takes its thread's rules with it. A tool a mode denies is taken from the agent, not refused when called.
  *
  * Approvals saved with "Always" still count where a mode asks; only a deny is final.
+ *
+ * `reviewed` gives OpenCode the same rules as `ask`: what makes it different happens in MDE, which hands each request
+ * to the tool reviewer before showing it, approves the ones the reviewer finds safe and asks about the rest.
  */
-export const THREAD_PERMISSION_MODES = ['default', 'read-only', 'ask', 'auto-edit', 'full', 'full-web-asks'] as const
+export const THREAD_PERMISSION_MODES = ['default', 'read-only', 'ask', 'reviewed', 'auto-edit', 'full', 'full-web-asks'] as const
 export type ThreadPermissionMode = (typeof THREAD_PERMISSION_MODES)[number]
 
 export function isThreadPermissionMode(value: unknown): value is ThreadPermissionMode {
@@ -50,6 +53,7 @@ const RULES: Record<Exclude<ThreadPermissionMode, 'default'>, PermissionRule[]> 
   // Looking outside the project is still looking, so it asks rather than being refused.
   'read-only': rules({ ...all('deny'), external_directory: 'ask' }),
   ask: rules(all('ask')),
+  reviewed: rules(all('ask')),
   'auto-edit': rules({ ...all('ask'), edit: 'allow' }),
   full: rules(all('allow')),
   'full-web-asks': rules({ ...all('allow'), webfetch: 'ask', websearch: 'ask' }),
@@ -71,6 +75,7 @@ export const THREAD_PERMISSION_MODE_INFO: readonly ThreadPermissionModeInfo[] = 
   { id: 'default', label: 'Default permissions', description: 'Your OpenCode settings, global and project.' },
   { id: 'read-only', label: 'Read-only', description: 'Can read and search; no edits, commands, web or MCP tools.' },
   { id: 'ask', label: 'Ask first', description: 'Asks before edits, commands, web and MCP tools.' },
+  { id: 'reviewed', label: 'Auto (reviewed)', description: 'A reviewer model approves safe actions; risky ones ask you.' },
   { id: 'auto-edit', label: 'Auto-accept edits', description: 'Edits go through; commands, web and MCP tools ask.' },
   { id: 'full', label: 'Full access', description: 'Nothing asks.' },
   { id: 'full-web-asks', label: 'Full access, web asks', description: 'Nothing asks except web fetch and search.' },

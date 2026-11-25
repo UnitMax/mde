@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, LoaderCircle, MessageCircleQuestion, ShieldAlert } from 'lucide-react'
+import { Bot, LoaderCircle, MessageCircleQuestion, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { ChatForm, ChatFormField, ChatPermission, ChatRequestSubagent } from '@shared/types'
+import type { ChatPermissionReview } from '@shared/tool-reviewer'
 import { alwaysAllowHint, hasHiddenCharacters, visibleSegments } from '@/lib/saved-permissions'
 import { Button } from '@/components/ui/button'
 import { formAnswer, initialFormDraft, permissionTitle, type FormDraft } from '@/lib/chat'
@@ -105,6 +106,7 @@ export function PermissionCard({
           This request changed while it was open. Check it again before you answer.
         </p>
       )}
+      {permission.review && <ReviewLine review={permission.review} />}
       {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot read this permission request. Reject it here, or answer it in an OpenCode terminal.</p>}
       {hidden && <p role="alert" data-testid="chat-permission-hidden" className="mb-2 text-[13px] text-warn">This request contains invisible characters. Each one is shown as a marked code such as U+202E.</p>}
       {permission.resources.length > 0 && (
@@ -138,6 +140,40 @@ export function PermissionCard({
       <AlwaysAllowHint permission={permission} />
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}
     </Card>
+  )
+}
+
+const RISK_LABEL: Record<'low' | 'medium' | 'high', string> = { low: 'Low risk', medium: 'Medium risk', high: 'High risk' }
+
+/**
+ * What the tool reviewer made of the request, in the "Auto (reviewed)" mode: still looking (the person may answer
+ * meanwhile), why it asks, or why it could not judge.
+ */
+function ReviewLine({ review }: { review: ChatPermissionReview }): JSX.Element {
+  if (review.state === 'reviewing') {
+    return (
+      <p data-testid="chat-permission-review" data-state="reviewing" className="mb-2 flex items-center gap-1.5 text-[12.5px] text-fg-muted">
+        <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin" />
+        The reviewer is looking at this. You can answer it yourself meanwhile.
+      </p>
+    )
+  }
+  if (review.state === 'unavailable') {
+    return (
+      <p data-testid="chat-permission-review" data-state="unavailable" className="mb-2 text-[12.5px] leading-snug text-fg-muted">
+        <span className="font-medium text-fg">Not reviewed:</span> {review.reason}
+      </p>
+    )
+  }
+  return (
+    <p data-testid="chat-permission-review" data-state="asked" data-risk={review.risk} className="mb-2 flex gap-1.5 text-[12.5px] leading-snug text-fg-muted">
+      <ShieldCheck aria-hidden className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', review.risk === 'high' ? 'text-danger' : 'text-warn')} />
+      <span>
+        <span className={cn('font-medium', review.risk === 'high' ? 'text-danger' : 'text-warn')}>{RISK_LABEL[review.risk]}</span>
+        {' · '}
+        {review.by === 'rules' ? 'MDE’s rules' : 'Reviewer'}: <VisibleText text={review.reason} />
+      </span>
+    </p>
   )
 }
 

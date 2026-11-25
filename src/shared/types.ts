@@ -1,3 +1,4 @@
+import type { ChatPermissionReview } from './tool-reviewer'
 import type { FileRoot } from './ipc'
 import type { ThreadPermissionMode } from './permission-modes'
 
@@ -742,6 +743,8 @@ export interface ChatPermission {
   revision: string
   /** Set when a subagent of the thread asks: its session, where the answer goes, and its title (the task). */
   subagent?: ChatRequestSubagent
+  /** In the "Auto (reviewed)" mode: what the tool reviewer made of the request. */
+  review?: ChatPermissionReview
 }
 
 /** The subagent session a permission request or question came from. */
@@ -781,6 +784,11 @@ export interface ChatForm {
 export interface ChatRequests {
   permissions: ChatPermission[]
   forms: ChatForm[]
+  /**
+   * The tool calls the tool reviewer let through without asking, by call ID, with its reason: the conversation marks
+   * them. Kept while MDE runs.
+   */
+  reviewedCalls?: Record<string, { reason: string; by: 'rules' | 'model' }>
 }
 
 export type ChatFormValue = string | number | boolean | string[]

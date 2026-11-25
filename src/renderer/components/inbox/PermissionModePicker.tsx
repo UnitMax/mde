@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Eye, FilePen, GlobeLock, LoaderCircle, Shield, ShieldOff, ShieldQuestion, type LucideIcon } from 'lucide-react'
+import { Check, Eye, FilePen, GlobeLock, LoaderCircle, Shield, ShieldCheck, ShieldOff, ShieldQuestion, type LucideIcon } from 'lucide-react'
 import {
   THREAD_PERMISSION_MODE_INFO,
   threadPermissionModeInfo,
@@ -21,6 +21,7 @@ export const PERMISSION_MODE_ICONS: Record<ThreadPermissionMode, LucideIcon> = {
   default: Shield,
   'read-only': Eye,
   ask: ShieldQuestion,
+  reviewed: ShieldCheck,
   'auto-edit': FilePen,
   full: ShieldOff,
   'full-web-asks': GlobeLock,

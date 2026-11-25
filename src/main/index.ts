@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, nativeImage, nativeTheme, powerMonitor, screen, session, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell } from 'electron'
+import { ToolReviewerSettingsStore } from './inbox/tool-reviewer-settings'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
@@ -49,6 +50,7 @@ let inboxDrafts: InboxDraftStore | null = null
 let inboxAsides: InboxAsideHistory | null = null
 let inboxAutomations: InboxAutomations | null = null
 let inboxChat: InboxChatService | null = null
+let toolReviewerSettings: ToolReviewerSettingsStore | null = null
 let mdeMcp: McpListener | null = null
 let browser: MdeBrowser | null = null
 let bridgeStandby: BridgeStandby | null = null
@@ -315,6 +317,11 @@ if (bridgeLaunch) {
       }
     })
     inboxAsides = new InboxAsideHistory(join(app.getPath('userData'), 'inbox-asides.json'), (threadId) => Boolean(inboxStore?.get(threadId)))
+    const toolReviewer = toolReviewerSettings = new ToolReviewerSettingsStore(join(app.getPath('userData'), 'tool-reviewer.json'), {
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (text) => safeStorage.encryptString(text),
+      decrypt: (data) => safeStorage.decryptString(data),
+    })
     inboxChat = new InboxChatService({
       drafts: inboxDrafts,
       asides: inboxAsides,
@@ -332,6 +339,7 @@ if (bridgeLaunch) {
         }
       },
       onMcpServers: (target, directory, servers) => bridgeStandby?.revive(target, directory, servers),
+      reviewer: toolReviewer,
     })
     // Threads that were still working when MDE last quit start receiving their events again.
     inboxChat.start()
@@ -430,7 +438,7 @@ if (bridgeLaunch) {
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, terminalReferences, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
+      { recorder: inboxRecorder, chat: inboxChat, toolReviewer: toolReviewerSettings ?? undefined, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, terminalReferences, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
       taskbarAttention,
       floatingTerminalKey,
       wslResources,

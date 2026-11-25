@@ -1,3 +1,4 @@
+import { TOOL_REVIEWER_LIMITS } from '@shared/tool-reviewer'
 import { isPersistedTerminalLayout, MAX_TERMINAL_COUNT } from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
 import { BROWSER_URL_LIMIT } from '@shared/browser'
@@ -283,7 +284,15 @@ export const ipcPayloadValidators = {
   [IpcChannels.mdeMcpInstall]: object({ kind, distro: optional(distro) }),
   [IpcChannels.mdeMcpRemove]: object({ kind, distro: optional(distro) }),
   [IpcChannels.mdeMcpTerminalSettings]: noPayload,
+  [IpcChannels.toolReviewerSettings]: noPayload,
+  [IpcChannels.toolReviewerTest]: noPayload,
   [IpcChannels.mdeMcpSetTerminalSettings]: object({ commands: oneOf('ask', 'run'), allowedUntil: optional((value) => value === null) }),
+  [IpcChannels.toolReviewerSave]: object({
+    baseUrl: string(TOOL_REVIEWER_LIMITS.baseUrl, true),
+    model: string(TOOL_REVIEWER_LIMITS.model, true),
+    askMediumRisk: boolean,
+    key: optional((value) => value === null || (typeof value === 'string' && value.length <= TOOL_REVIEWER_LIMITS.key)),
+  }),
   [IpcChannels.agentTerminalClaim]: object({ requestId: id, terminalId: id, palette }),
   [IpcChannels.agentTerminalRefuse]: object({ requestId: id, reason: string(1000) }),
   [IpcChannels.agentTerminalDecide]: object({ terminalId: id, decision: oneOf('run', 'run-for-hour', 'cancel') }),

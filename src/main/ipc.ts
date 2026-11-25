@@ -1,3 +1,6 @@
+import type { ToolReviewerSettings, ToolReviewerSettingsUpdate, ToolReviewerTestResult } from '@shared/tool-reviewer'
+import type { ToolReviewerSettingsStore } from './inbox/tool-reviewer-settings'
+import { testToolReviewer } from './inbox/tool-reviewer'
 import { constants, promises as fs } from 'node:fs'
 import { isFileRoot } from '@shared/file-root'
 import type {
@@ -424,6 +427,8 @@ export function registerIpcHandlers(
     terminalReferences?: TerminalReferences
     /** Absent where the Inbox does not run: nothing is listed and nothing can be saved. */
     automations?: InboxAutomations
+    /** The tool reviewer's settings; absent where the Inbox does not run. */
+    toolReviewer?: ToolReviewerSettingsStore
   },
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey,
@@ -702,6 +707,13 @@ export function registerIpcHandlers(
     if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
     return agentTerminals.setSettings(req)
   })
+  const reviewerSettings = (): ToolReviewerSettingsStore => {
+    if (!inbox.toolReviewer) throw new Error('The tool reviewer is not available here.')
+    return inbox.toolReviewer
+  }
+  handle<void, ToolReviewerSettings>(IpcChannels.toolReviewerSettings, () => reviewerSettings().get())
+  handle<ToolReviewerSettingsUpdate, ToolReviewerSettings>(IpcChannels.toolReviewerSave, (req) => reviewerSettings().save(req))
+  handle<void, ToolReviewerTestResult>(IpcChannels.toolReviewerTest, async () => testToolReviewer(await reviewerSettings().endpoint()))
   handle<AgentTerminalClaim, void>(IpcChannels.agentTerminalClaim, async (req) => {
     if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
     await agentTerminals.claim(req)

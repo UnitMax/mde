@@ -66,6 +66,8 @@ import type {
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
 import { listBackgroundTasks } from '../opencode/service/background'
 import { BackgroundHold } from './background-hold'
+import { ReviewGate, type GateRequest } from './review-gate'
+import type { ReviewEndpoint } from './tool-reviewer'
 import { serviceTargetKey } from '../opencode/service/discovery'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
 import { goalObjectiveProblem } from '@shared/goal'
@@ -208,7 +210,15 @@ export interface InboxChatDependencies {
    * it fails (not a repository), nothing counts as ignored.
    */
   ignored?(root: DirectoryContext, paths: string[]): Promise<Set<string>>
+  /**
+   * The tool reviewer for threads in the "Auto (reviewed)" mode: where its model is (null while it is not set up),
+   * and how to reach it (tests pass a fake). Without it such threads ask about everything, like "Ask first".
+   */
+  reviewer?: { endpoint(): Promise<ReviewEndpoint | null>; fetch?: typeof fetch }
 }
+
+/** How many of the person's messages the tool reviewer is shown, read from this many of the newest messages. */
+const REVIEW_MESSAGE_SCAN = 40
 
 /** The last part of a project path, a folder's with its `/`. */
 function fileName(path: string): string {
@@ -316,8 +326,28 @@ export class InboxChatService {
   private readonly titleReads = new Map<string, { renamed: boolean }>()
   /** Keeps a thread working while its agent's turn is over but its background work goes on. */
   private readonly hold: BackgroundHold
+  /** Holds the permission requests of "Auto (reviewed)" threads back for the tool reviewer. */
+  private readonly gate: ReviewGate
 
   constructor(private readonly dependencies: InboxChatDependencies) {
+    this.gate = new ReviewGate({
+      readRequest: (threadId, sessionId, requestId) => this.gateRequest(threadId, sessionId, requestId),
+      context: (threadId) => this.reviewContext(threadId),
+      endpoint: async () => await dependencies.reviewer?.endpoint() ?? null,
+      approve: (threadId, sessionId, requestId, revision) => this.replyPermission({
+        threadId,
+        requestId,
+        decision: 'once',
+        revision,
+        ...(sessionId !== threadId ? { sessionId } : {}),
+      }),
+      release: (threadId) => this.hold.apply({ type: 'permission.asked', data: { sessionID: threadId } }),
+      changed: (threadId) => {
+        if (this.subscribed.has(threadId)) this.dependencies.send({ type: 'requests', threadId })
+      },
+      now: () => dependencies.now(),
+      ...(dependencies.reviewer?.fetch ? { fetch: dependencies.reviewer.fetch } : {}),
+    })
     this.hold = new BackgroundHold({
       thread: (id) => dependencies.store.get(id),
       countJobs: async (thread) => {
@@ -1364,10 +1394,51 @@ export class InboxChatService {
       // A subagent's request that cannot be listed is no reason to hide the thread's own.
       this.subagentRequests(thread).catch((): ChatRequests => ({ permissions: [], forms: [] })),
     ])
+    const reviewedCalls = this.gate.reviewedCalls(threadId)
     return {
-      permissions: [...parsePermissions(permissions), ...subagents.permissions],
+      permissions: [...parsePermissions(permissions), ...subagents.permissions].map((permission) => {
+        const review = this.gate.review(permission.id)
+        return review ? { ...permission, review } : permission
+      }),
       forms: [...parseForms(forms), ...subagents.forms],
+      ...(reviewedCalls.length > 0
+        ? { reviewedCalls: Object.fromEntries(reviewedCalls.map((call) => [call.callId, { reason: call.reason, by: call.by }])) }
+        : {}),
     }
+  }
+
+  /** Whether a thread's permission requests go to the tool reviewer first. */
+  private reviewed(threadId: string): boolean {
+    return this.dependencies.reviewer !== undefined && this.dependencies.store.get(threadId)?.permissionMode === 'reviewed'
+  }
+
+  /**
+   * An open permission request as the tool reviewer reads it, with OpenCode's details and the tool call it is for;
+   * a subagent's is looked for in the directory's list, under its own session.
+   */
+  private async gateRequest(threadId: string, sessionId: string, requestId: string): Promise<GateRequest | null> {
+    const thread = this.thread(threadId)
+    const answer = sessionId === thread.id
+      ? await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: thread.id } })
+      : await this.dependencies.client.request(thread.target, 'permission.request.list', { query: { 'location[directory]': thread.directory } })
+    if (sessionId !== thread.id && requestSessionIds(answer).get(requestId) !== sessionId) return null
+    const permission = parsePermissions(answer).find((entry) => entry.id === requestId)
+    if (!permission) return null
+    const raw = (answer as { data?: unknown[] }).data?.find((item) => (item as { id?: unknown } | null)?.id === requestId) as Record<string, unknown> | undefined
+    const source = raw?.source as Record<string, unknown> | undefined
+    const callId = typeof source?.id === 'string' && source.id.length <= 200 ? source.id : undefined
+    return { permission, ...(raw?.metadata !== undefined ? { metadata: raw.metadata } : {}), ...(callId ? { callId } : {}) }
+  }
+
+  /** The folder a thread works in and the person's latest messages, oldest first, for the tool reviewer. */
+  private async reviewContext(threadId: string): Promise<{ directory: string; userMessages: string[] }> {
+    const thread = this.thread(threadId)
+    const answer = parseTurnMarkers(await this.dependencies.client.request(thread.target, 'session.message.list', {
+      params: { sessionID: thread.id },
+      query: { limit: String(REVIEW_MESSAGE_SCAN), order: 'desc' },
+    }))
+    const userMessages = answer.markers.filter((marker) => marker.kind === 'user' && marker.text?.trim()).map((marker) => marker.text!).reverse()
+    return { directory: thread.directory, userMessages }
   }
 
   private async subagentRequests(thread: InboxThread): Promise<ChatRequests> {
@@ -1573,8 +1644,15 @@ export class InboxChatService {
   }
 
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
-    this.hold.apply(event)
     const sessionId = serviceEventSessionId(event)
+    const requestId = typeof event.data.id === 'string' && /^per_[A-Za-z0-9_-]{1,200}$/.test(event.data.id) ? event.data.id : null
+    if (event.type === 'permission.replied' && requestId) this.gate.settle(requestId)
+    // A request of an "Auto (reviewed)" thread waits for the reviewer before the thread is said to need input.
+    if (event.type === 'permission.asked' && requestId && sessionId && this.reviewed(sessionId)) {
+      this.gate.begin(sessionId, sessionId, requestId)
+      return
+    }
+    this.hold.apply(event)
     // A subagent open in a subagent view: its conversation or its running changed, and is read again.
     const watched = sessionId && this.watchedSubagents.size > 0 ? this.watchedSubagents.get(`${serviceTargetKey(target)}\n${sessionId}`) : undefined
     if (watched && sessionId && (MESSAGE_EVENTS.has(event.type) || event.type.startsWith('session.execution.') ||
@@ -1662,6 +1740,11 @@ export class InboxChatService {
   private async forwardSubagentRequest(event: ServiceEvent, target: OpenCodeTarget, sessionId: string): Promise<void> {
     const owner = await this.sessionOwner(target, sessionId).catch(() => null)
     if (!owner) return
+    const requestId = typeof event.data.id === 'string' && /^per_[A-Za-z0-9_-]{1,200}$/.test(event.data.id) ? event.data.id : null
+    if (event.type === 'permission.asked' && requestId && this.reviewed(owner.threadId)) {
+      this.gate.begin(owner.threadId, sessionId, requestId)
+      return
+    }
     this.dependencies.recorder.applyServiceEvent({ ...event, data: { ...event.data, sessionID: owner.threadId } })
     if (!this.subscribed.has(owner.threadId)) return
     this.dependencies.send({ type: 'requests', threadId: owner.threadId })

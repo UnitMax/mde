@@ -2181,6 +2181,7 @@ is remembered across threads.
 | Default permissions | Sends nothing: the OpenCode configuration, global and project, decides alone. |
 | Read-only | Edits, shell, Code Mode, web fetch and search and MCP tools are denied; outside the project asks. |
 | Ask first | Edits, shell, Code Mode, web, MCP tools and outside the project all ask. |
+| Auto (reviewed) | OpenCode asks as in Ask first; MDE's tool reviewer answers the safe requests and leaves the rest to you. |
 | Auto-accept edits | Edits are allowed; the rest asks. |
 | Full access | All of them are allowed. |
 | Full access, web asks | All allowed, except web fetch and web search, which ask. |
@@ -2206,6 +2207,34 @@ default. `inbox.json` keeps only the mode's name (`permissionMode`, absent for t
 is dropped. A thread an agent starts through the MDE MCP takes the mode of the thread that asked (copied when it
 starts), uses the configuration when the caller is known to be outside the Inbox, and is not started when the
 caller cannot be told.
+
+**Tool reviewer.** The "Auto (reviewed)" mode (`reviewed`) gives OpenCode the "Ask first" rules; the difference is in
+MDE. `InboxChatService.onEvent` hands a `permission.asked` of such a thread (and, through `forwardSubagentRequest`,
+of its subagents) to `ReviewGate` instead of the recorder, so the thread does not turn to "needs input" yet, and
+sends a `requests` event so an open conversation shows the card with "The reviewer is looking at this" (it can be
+answered meanwhile; `permission.replied` settles the review). The gate reads the request from
+`session.permission.list` (a subagent's from `permission.request.list` under its session), with OpenCode's
+`metadata` and `source.id` (the tool call ID), and the person's latest messages from one page of
+`session.message.list`, then calls `reviewRequest` (`src/main/inbox/tool-reviewer.ts`):
+
+1. No reviewer set up: not reviewed, asks.
+2. `screenRequest`: fixed rules approve plain reading commands and ordinary in-folder edits, and ask about plainly
+   dangerous commands and secret, hook and CI paths, without the model.
+3. Otherwise `askReviewModel` posts to `<base URL>/chat/completions` (OpenAI-compatible, `temperature: 0`, a strict
+   `json_schema` response format, asked again without it on a 400; `max_tokens` 2000 because thinking models spend
+   it before answering) and `readReviewAnswer` reads the reply strictly.
+
+An approval is sent as `replyPermission` "once" with the revision read, and remembered by call ID
+(`ChatRequests.reviewedCalls`, memory only, the newest 500 per thread), which `ToolCallView` shows as an "Approved by
+the reviewer: ..." line under the tool row. Anything else lets the held event through to the recorder (the thread
+needs input) with the verdict on the card (`ChatPermission.review`: asked with risk, reason and whether rules or the
+model decided, or unavailable with why). Settings → OpenCode → Tool reviewer (`ToolReviewerSettings`) edits the URL,
+model, key and the "Ask about medium risk" switch through `tool-reviewer:settings`/`save`/`test`; main keeps them in
+`tool-reviewer.json` (`ToolReviewerSettingsStore`), the key encrypted with `safeStorage`. Facts checked live on
+OpenCode 2.4.1 (a shell request carries the command in `resources` and `save` patterns; an edit the relative path and
+its patch in `metadata.files`; a web fetch the URL; several requests of one step arrive at once) and with a free
+OpenRouter model, which answered in 1 to 4 seconds. OpenCode's own `generate` routes were not used: the stateless
+`/api/experimental/generate/text` refuses OpenCode's free models, and the session-bound one uses the session's model.
 
 **Composer dock.** `ComposerDock` is the tray tucked behind the top edge of the message box (the thread's and the
 new-thread page's), matching the worktree strip below the new-thread box. It holds rows that draw themselves or

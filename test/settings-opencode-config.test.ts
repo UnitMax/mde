@@ -6,6 +6,7 @@ import { SettingsDialog } from '../src/renderer/components/SettingsDialog'
 import { getTerminalSettings, saveTerminalSettings } from '../src/renderer/terminal/terminal-settings'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { MdeMcpStatus, MdeMcpTerminalSettings, MdeMcpTerminalSettingsUpdate } from '../src/shared/mde-mcp'
+import type { ToolReviewerSettings, ToolReviewerSettingsUpdate, ToolReviewerTestResult } from '../src/shared/tool-reviewer'
 
 const missing: MdeMcpStatus = { state: 'missing', file: '~/.config/opencode/opencode.jsonc', parseError: null }
 const mdeMcp = {
@@ -14,6 +15,15 @@ const mdeMcp = {
   remove: vi.fn(async (_req: unknown) => missing),
   terminalSettings: vi.fn(async (): Promise<MdeMcpTerminalSettings> => ({ commands: 'ask', allowedUntil: null })),
   setTerminalSettings: vi.fn(async (req: MdeMcpTerminalSettingsUpdate): Promise<MdeMcpTerminalSettings> => ({ commands: req.commands, allowedUntil: null })),
+}
+
+const reviewerOff: ToolReviewerSettings = { baseUrl: '', model: '', askMediumRisk: true, hasKey: false }
+const toolReviewer = {
+  settings: vi.fn(async (): Promise<ToolReviewerSettings> => reviewerOff),
+  save: vi.fn(async (req: ToolReviewerSettingsUpdate): Promise<ToolReviewerSettings> => ({
+    baseUrl: req.baseUrl.trim(), model: req.model.trim(), askMediumRisk: req.askMediumRisk, hasKey: typeof req.key === 'string',
+  })),
+  test: vi.fn(async (): Promise<ToolReviewerTestResult> => ({ ok: true, milliseconds: 1400 })),
 }
 
 describe('Settings → OpenCode', () => {
@@ -32,7 +42,7 @@ describe('Settings → OpenCode', () => {
 
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    vi.stubGlobal('api', { pty: { resize: vi.fn() }, wsl: { distros: vi.fn(async () => []) }, mdeMcp })
+    vi.stubGlobal('api', { pty: { resize: vi.fn() }, wsl: { distros: vi.fn(async () => []) }, mdeMcp, toolReviewer })
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -97,6 +107,55 @@ describe('Settings → OpenCode', () => {
     await act(async () => entry()!.querySelector<HTMLButtonElement>('button')!.click())
     expect(useWorkspace.getState().settingsDialog.open).toBe(false)
     expect(useWorkspace.getState().opencodeConfigDialog.open).toBe(true)
+  })
+
+  describe('Tool reviewer', () => {
+    const field = (id: string): HTMLInputElement => document.body.querySelector<HTMLInputElement>(`[data-testid="${id}"]`)!
+    const button = (id: string): HTMLButtonElement | null => document.body.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)
+    const type = async (id: string, value: string): Promise<void> => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      await act(async () => {
+        setValue.call(field(id), value)
+        field(id).dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+
+    beforeEach(() => {
+      toolReviewer.settings.mockClear()
+      toolReviewer.save.mockClear()
+      toolReviewer.test.mockClear()
+    })
+
+    it('saves the endpoint, model and key, and never shows the key again', async () => {
+      await show('darwin')
+      expect(button('tool-reviewer-save')?.disabled).toBe(true)
+      await type('tool-reviewer-url', 'https://openrouter.ai/api/v1')
+      await type('tool-reviewer-model', 'vendor/model:free')
+      await type('tool-reviewer-key', 'sk-test-1')
+      await act(async () => button('tool-reviewer-save')!.click())
+      expect(toolReviewer.save).toHaveBeenCalledWith({ baseUrl: 'https://openrouter.ai/api/v1', model: 'vendor/model:free', askMediumRisk: true, key: 'sk-test-1' })
+      expect(field('tool-reviewer-key').value).toBe('')
+      expect(field('tool-reviewer-key').placeholder).toContain('Saved')
+      expect(button('tool-reviewer-remove-key')).not.toBeNull()
+    })
+
+    it('says what is wrong with the URL before saving', async () => {
+      await show('darwin')
+      await type('tool-reviewer-url', 'http://reviewer.example/v1')
+      await type('tool-reviewer-model', 'm')
+      expect(document.body.querySelector('[data-testid="tool-reviewer-problem"]')?.textContent).toContain('https')
+      expect(button('tool-reviewer-save')?.disabled).toBe(true)
+    })
+
+    it('tests the saved reviewer and shows how long it took, or why it failed', async () => {
+      toolReviewer.settings.mockResolvedValueOnce({ baseUrl: 'http://localhost:11434/v1', model: 'llama', askMediumRisk: true, hasKey: false })
+      await show('darwin')
+      await act(async () => button('tool-reviewer-test')!.click())
+      expect(document.body.querySelector('[data-testid="tool-reviewer-test-result"]')?.textContent).toBe('The reviewer answered in 1.4 s.')
+      toolReviewer.test.mockResolvedValueOnce({ ok: false, reason: 'The reviewer refused the API key.' })
+      await act(async () => button('tool-reviewer-test')!.click())
+      expect(document.body.querySelector('[data-testid="tool-reviewer-test-result"]')?.textContent).toBe('The reviewer refused the API key.')
+    })
   })
 
   describe('MDE MCP', () => {

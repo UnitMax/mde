@@ -1,3 +1,4 @@
+import type { ToolReviewerSettings, ToolReviewerSettingsUpdate, ToolReviewerTestResult } from './tool-reviewer'
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
 import type { BrowserAction, BrowserBounds, BrowserHistoryEntry, BrowserState } from './browser'
@@ -269,6 +270,9 @@ export const IpcChannels = {
   mdeMcpRemove: 'mde-mcp:remove',
   mdeMcpTerminalSettings: 'mde-mcp:terminal-settings',
   mdeMcpSetTerminalSettings: 'mde-mcp:set-terminal-settings',
+  toolReviewerSettings: 'tool-reviewer:settings',
+  toolReviewerSave: 'tool-reviewer:save',
+  toolReviewerTest: 'tool-reviewer:test',
   agentTerminalClaim: 'agent-terminal:claim',
   agentTerminalRefuse: 'agent-terminal:refuse',
   agentTerminalDecide: 'agent-terminal:decide',
@@ -817,6 +821,15 @@ export interface RendererApi {
     /** Whether commands agents ask to run in a terminal they open run at once or wait for approval. */
     terminalSettings(): Promise<MdeMcpTerminalSettings>
     setTerminalSettings(req: MdeMcpTerminalSettingsUpdate): Promise<MdeMcpTerminalSettings>
+  }
+  /**
+   * The tool reviewer of the "Auto (reviewed)" permission mode: its endpoint, model and key (kept encrypted in
+   * main; only whether one is saved comes back), and a test that asks it about a harmless sample.
+   */
+  toolReviewer: {
+    settings(): Promise<ToolReviewerSettings>
+    save(req: ToolReviewerSettingsUpdate): Promise<ToolReviewerSettings>
+    test(): Promise<ToolReviewerTestResult>
   }
   /**
    * Inbox terminal panes agents open through the MDE MCP. Main asks for a pane; the window answers with the
